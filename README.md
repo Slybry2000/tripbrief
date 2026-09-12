@@ -1,9 +1,9 @@
 # TripBrief
 
-TripBrief turns a messy group-travel request into one consistent supplier brief,
-routes it to selected travel partners, and converts their differently formatted
-replies into a live, evidence-backed comparison. A human advisor always chooses
-the suppliers and the winning proposal.
+TripBrief turns a group-travel request into one consistent brief, researches
+prospective suppliers, and converts recorded supplier replies into a live,
+evidence-backed comparison. A human advisor always chooses the suppliers and
+the winning proposal.
 
 ## Hackathon boundary
 
@@ -17,10 +17,11 @@ The intended sponsor roles are:
 - Convex: database, server functions, workflows, and live updates.
 - Firecrawl: research supplied partner websites and attach cited evidence.
 - OpenAI: structure proposal text and identify comparable facts with citations.
-- AgentMail: provide a case inbox and route supplier replies to the correct brief.
+- AgentMail: give each brief its own inbox for future supplier-reply routing.
 
-These integrations count only after working behavior is present in source and has
-been tested. Listing an integration here is not evidence that it has shipped.
+Firecrawl has been tested with a fictional local brief. OpenAI and AgentMail are
+wired but await one user-approved, fictional live test. Listing a planned behavior
+is not evidence that it has shipped.
 
 ## Safety rules
 
@@ -41,6 +42,15 @@ npm run dev
 
 The project currently uses a local Convex deployment and is not publicly
 deployed.
+
+## Demo path
+
+1. Open a private trial workspace and create a fictional group-travel brief.
+2. Search public supplier websites with Firecrawl and save a prospective partner.
+3. Create the brief's AgentMail inbox; no supplier email is sent.
+4. Paste a fictional supplier reply, review OpenAI's evidence-only draft, and
+   record the verified offer.
+5. Compare offers live and record a human decision with its reason.
 
 ## Submission gates
 

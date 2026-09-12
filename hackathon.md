@@ -23,7 +23,7 @@ agent rules and hackathon logging skill, and documented public-data and submissi
 boundaries before adding product features (`package.json`, `AGENTS.md`,
 `README.md`).
 
-### 2026-09-12 - working tree
+### 2026-09-12 - 9b525dc
 Built the local brief-to-comparison workflow with authenticated ownership,
 numbered requirements, exact-source offer evidence, and human-controlled selection
 (`convex/trips.ts`, `convex/schema.ts`, `src/App.tsx`). Build, lint, and four
@@ -36,7 +36,7 @@ rate-limiter component. Nine tests and lint pass, including burst-limit rejectio
 Research remains restricted to an enabled test workspace during integration testing.
 OpenAI, AgentMail, and public deployment remain unfinished.
 
-### 2026-09-12 - working tree
+### 2026-09-12 - 9b525dc
 Added a review-only OpenAI analysis action that returns structured, exact-source
 evidence for every requirement; it cannot select or save an offer (`convex/analysis.ts`).
 Added on-demand AgentMail inbox provisioning for each brief without sending email
