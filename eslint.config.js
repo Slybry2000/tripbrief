@@ -9,6 +9,10 @@ import convexPlugin from "@convex-dev/eslint-plugin";
 export default defineConfig([
   {
     ignores: [
+      ".agents/**",
+      ".claude/**",
+      ".cursor/**",
+      ".convex/**",
       "dist",
       "eslint.config.js",
       "convex/_generated",
