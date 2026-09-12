@@ -11,12 +11,12 @@
 - **Convex features:** local backend scaffold
 - **Auth:** none
 - **AI models:** none
-- **Started:** 2026-09-12T07:15:54Z
-- **Last updated:** 2026-09-12T07:25:12Z
+- **Started:** 2026-09-12T07:27:18Z
+- **Last updated:** 2026-09-12T07:27:18Z
 
 ## Log
 
-### 2026-09-12 - working tree
+### 2026-09-12 - f33b224
 Created a new standalone React and Convex project with the neutral TripBrief
 identity. Established a local Convex deployment, installed the official Convex
 agent rules and hackathon logging skill, and documented public-data and submission
