@@ -84,7 +84,7 @@ export function parseInbox(body: unknown): { inboxId: string; email: string } {
     "email" in body && typeof body.email === "string" ? body.email : "";
   if (
     !inboxId ||
-    !/^inbox_/i.test(inboxId) ||
+    inboxId.length > 200 ||
     !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
   )
     throw new ConvexError("Inbox service returned an invalid inbox.");
