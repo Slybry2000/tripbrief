@@ -41,12 +41,16 @@ npm install
 npm run dev
 ```
 
-The project currently uses a local Convex deployment and is not publicly
-deployed.
+Public app: https://tripbrief.perseidechocreations.chatgpt.site
+
+Public source: https://github.com/Slybry2000/tripbrief
+
+Local development still uses the configured local Convex deployment. Production
+uses a separate Convex deployment with server-side secrets and shared-use quotas.
 
 ## Demo path
 
-1. Open a private trial workspace and create a fictional group-travel brief.
+1. Start a private trial workspace and create a fictional group-travel brief.
 2. Search public supplier websites with Firecrawl and save a prospective partner.
 3. Create the brief's AgentMail inbox; no supplier email is sent.
 4. Paste a fictional supplier reply, review OpenAI's evidence-only draft, and

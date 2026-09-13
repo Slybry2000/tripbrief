@@ -3,16 +3,16 @@
 - **Project:** TripBrief
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Turns group-travel requirements and supplier replies into a live, evidence-backed comparison while keeping supplier selection human-controlled.
-- **Live app:** not deployed
-- **Repo:** none
-- **Frontend:** not deployed
-- **Convex deployment:** not deployed
+- **Live app:** https://tripbrief.perseidechocreations.chatgpt.site
+- **Repo:** https://github.com/Slybry2000/tripbrief
+- **Frontend:** https://tripbrief.perseidechocreations.chatgpt.site
+- **Convex deployment:** https://hip-minnow-543.convex.cloud
 - **Components:** @convex-dev/rate-limiter
 - **Convex features:** schema, indexes, queries, mutations, realtime queries, auth HTTP routes
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
-- **Last updated:** 2026-09-12T18:36:03Z
+- **Last updated:** 2026-09-13T20:19:53Z
 
 ## Log
 
@@ -42,11 +42,19 @@ evidence for every requirement; it cannot select or save an offer (`convex/analy
 Added on-demand AgentMail inbox provisioning for each brief without sending email
 (`convex/inboxes.ts`). Twelve tests, lint, and the production build pass.
 
-### 2026-09-12 - uncommitted integration verification
+### 2026-09-12 - 7048343
 Ran one user-approved fictional OpenAI analysis in the local app. It returned
 structured requirement coverage with verbatim evidence from the supplied fictional
 offer and made no selection or write. Provisioned a distinct AgentMail inbox for
 the same fictional brief; no email was sent. Corrected the response parser to
 accept AgentMail's documented non-empty inbox IDs rather than assuming a prefix.
 The production build, all twelve tests, and targeted lint for the changed files
-pass. Public deployment and repository publication remain unfinished.
+pass.
+
+### 2026-09-13 - 1ee5fe1
+Linked the local build to the TripBrief Convex project and deployed the schema,
+functions, auth, and rate-limiter component to production. Replaced the private
+test-user gate with transactional per-user and global quotas for OpenAI and
+AgentMail while retaining Firecrawl quotas (`convex/integrationLimits.ts`). All
+fourteen tests, lint, and the production build pass. Published the source on
+GitHub and deployed the production frontend to a public `chatgpt.site` URL.
