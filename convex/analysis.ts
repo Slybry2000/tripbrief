@@ -1,5 +1,5 @@
 import { action, env } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { assessment } from "./schema";
@@ -24,9 +24,9 @@ export const analyzeOffer = action({
   handler: async (ctx, args): Promise<AnalysisResult> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Please sign in.");
-    // This local integration is deliberately scoped to the test workspace until
-    // production identity and cost controls are configured.
-    if (env.RESEARCH_TEST_USER_ID !== userId)
+    // A configured test user keeps local integration work private. Production
+    // omits this switch and relies on transactional user + global quotas.
+    if (env.RESEARCH_TEST_USER_ID && env.RESEARCH_TEST_USER_ID !== userId)
       throw new ConvexError(
         "AI analysis is not enabled for this preview workspace yet.",
       );
@@ -39,6 +39,9 @@ export const analyzeOffer = action({
       );
     if (!env.OPENAI_API_KEY)
       throw new ConvexError("AI analysis has not been configured.");
+    await ctx.runMutation(internal.integrationLimits.consumeAnalysis, {
+      tripId: args.tripId,
+    });
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {

@@ -17,6 +17,9 @@ export const provision = action({
     if (trip.agentMailInboxEmail) return { email: trip.agentMailInboxEmail };
     if (!env.AGENTMAIL_API_KEY)
       throw new ConvexError("Trip inboxes have not been configured.");
+    await ctx.runMutation(internal.integrationLimits.consumeInbox, {
+      tripId: args.tripId,
+    });
     const response = await fetch("https://api.agentmail.to/v0/inboxes", {
       method: "POST",
       headers: {

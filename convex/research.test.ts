@@ -5,7 +5,7 @@ import schema from "./schema";
 import { api } from "./_generated/api";
 import { parseResults } from "./research";
 
-test("research fails closed before network access for signed-out and unapproved workspaces", async () => {
+test("research fails closed before network access when signed out or unconfigured", async () => {
   const t = convexTest(schema, import.meta.glob("./**/*.ts"));
   const advisor = t.withIdentity({ subject: "research-advisor|session" });
   const tripId = await advisor.mutation(api.trips.create, {
@@ -27,7 +27,7 @@ test("research fails closed before network access for signed-out and unapproved 
         tripId,
         query: "Portugal operators",
       }),
-    ).rejects.toThrow("not enabled");
+    ).rejects.toThrow("not been configured");
     expect(network).not.toHaveBeenCalled();
   } finally {
     network.mockRestore();

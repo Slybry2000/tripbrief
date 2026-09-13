@@ -11,9 +11,9 @@ export const search = action({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new ConvexError("Please sign in.");
-    // Until shared-use quotas are installed, only an explicitly enabled test
-    // workspace may consume provider credits. Never expose the key to clients.
-    if (env.RESEARCH_TEST_USER_ID !== userId) {
+    // A configured test user keeps local integration work private. Production
+    // omits this switch and relies on transactional user + global quotas.
+    if (env.RESEARCH_TEST_USER_ID && env.RESEARCH_TEST_USER_ID !== userId) {
       throw new ConvexError(
         "Live research is not enabled for this preview workspace yet.",
       );
