@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
-- **Last updated:** 2026-09-13T20:19:53Z
+- **Last updated:** 2026-09-13T17:19:35-07:00
 
 ## Log
 
@@ -58,3 +58,15 @@ test-user gate with transactional per-user and global quotas for OpenAI and
 AgentMail while retaining Firecrawl quotas (`convex/integrationLimits.ts`). All
 fourteen tests, lint, and the production build pass. Published the source on
 GitHub and deployed the production frontend to a public `chatgpt.site` URL.
+
+### 2026-09-13 - fe06fec
+Replaced the requester-entered proposal as the primary workflow with a true
+two-sided supplier portal. Requesters now create revocable, high-entropy,
+single-use response links; suppliers open a no-login page that exposes only the
+minimum structured trip scope and submit their own price, proposal, and exact
+requirement evidence. Submissions atomically become owner-scoped offers in the
+live comparison (`convex/invites.ts`, `src/SupplierPortal.tsx`). Added three
+capability and authorization tests; all 17 tests, lint, TypeScript, and the
+production build pass. Production diagnostics also identified and removed an
+unsupported request-timeout signal that prevented Firecrawl searches from
+connecting in the deployed Convex runtime.

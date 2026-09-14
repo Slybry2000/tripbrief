@@ -1,9 +1,9 @@
 # TripBrief
 
 TripBrief turns a group-travel request into one consistent brief, researches
-prospective suppliers, and converts recorded supplier replies into a live,
-evidence-backed comparison. A human advisor always chooses the suppliers and
-the winning proposal.
+prospective suppliers, and gives each supplier a secure response link. Supplier
+submissions flow into a live, evidence-backed comparison while a human advisor
+always chooses the suppliers and the winning proposal.
 
 ## Hackathon boundary
 
@@ -52,10 +52,13 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
 
 1. Start a private trial workspace and create a fictional group-travel brief.
 2. Search public supplier websites with Firecrawl and save a prospective partner.
-3. Create the brief's AgentMail inbox; no supplier email is sent.
-4. Paste a fictional supplier reply, review OpenAI's evidence-only draft, and
-   record the verified offer.
-5. Compare offers live and record a human decision with its reason.
+3. Create a secure response link for a fictional supplier and open it in a
+   separate browser tab—no supplier account is required.
+4. Submit the supplier's fictional proposal through its dedicated portal and
+   watch it appear in the requester's live comparison.
+5. Optionally create the brief's AgentMail inbox, research prospects with
+   Firecrawl, or use OpenAI to structure an emailed-response fallback.
+6. Compare offers and record a human decision with its reason.
 
 ## Submission gates
 
