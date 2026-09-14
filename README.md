@@ -19,7 +19,8 @@ The intended sponsor roles are:
 - OpenAI: structure proposal text and identify comparable facts with citations.
 - AgentMail: give each brief its own inbox for future supplier-reply routing.
 
-Firecrawl, OpenAI, and AgentMail have each been tested with fictional local data.
+Firecrawl has been tested in the public deployment; OpenAI and AgentMail have
+been tested with fictional local data.
 OpenAI returns review-only requirement evidence; AgentMail provisions a distinct
 brief inbox. No supplier email has been sent. Listing a planned behavior is not
 evidence that it has shipped.

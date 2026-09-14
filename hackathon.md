@@ -67,6 +67,12 @@ minimum structured trip scope and submit their own price, proposal, and exact
 requirement evidence. Submissions atomically become owner-scoped offers in the
 live comparison (`convex/invites.ts`, `src/SupplierPortal.tsx`). Added three
 capability and authorization tests; all 17 tests, lint, TypeScript, and the
-production build pass. Production diagnostics also identified and removed an
-unsupported request-timeout signal that prevented Firecrawl searches from
-connecting in the deployed Convex runtime.
+production build pass.
+
+### 2026-09-13 - 670e596
+Completed a fictional production walkthrough across separate requester and
+supplier browser tabs. A supplier opened a no-login invitation, submitted its
+own proposal, and the requester received the offer and exact evidence through a
+live Convex update. Normalized the production Firecrawl credential before adding
+it to the outbound request; a follow-up public-app search returned five current
+partner results.
