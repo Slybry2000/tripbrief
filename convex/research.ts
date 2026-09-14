@@ -22,7 +22,7 @@ export const search = action({
     const query = args.query.trim();
     if (query.length < 3 || query.length > 300)
       throw new ConvexError("Use a search of 3–300 characters.");
-    const key = env.FIRECRAWL_API_KEY;
+    const key = env.FIRECRAWL_API_KEY?.trim();
     if (!key)
       throw new ConvexError("Partner research has not been configured.");
     await ctx.runMutation(internal.researchLimits.consume, {
