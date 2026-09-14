@@ -20,6 +20,11 @@ export const priceBasis = v.union(
 
 export default defineSchema({
   ...authTables,
+  supplierInvites: defineTable({
+    token: v.string(), tripId: v.id("trips"), owner: v.string(), supplierName: v.string(),
+    status: v.union(v.literal("open"), v.literal("submitted"), v.literal("revoked")),
+    offerId: v.optional(v.id("offers")), createdAt: v.number(), updatedAt: v.number(),
+  }).index("by_token", ["token"]).index("by_tripId", ["tripId"]),
   partners: defineTable({
     tripId: v.id("trips"),
     owner: v.string(),

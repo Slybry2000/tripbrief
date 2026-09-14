@@ -42,7 +42,6 @@ export const search = action({
           limit: 5,
           timeout: 30000,
         }),
-        signal: AbortSignal.timeout(35000),
       });
     } catch {
       throw new ConvexError(

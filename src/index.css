@@ -225,6 +225,137 @@ td p {
   padding-top: 20px;
   margin-top: 18px;
 }
+.invite-card {
+  border-left: 4px solid #254f40;
+}
+.invite-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+.invite-form label,
+.share-link label {
+  margin: 0;
+}
+.share-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 18px;
+  margin-top: 18px;
+  background: #edf1e7;
+  border: 1px solid #ced8c9;
+}
+.invite-list {
+  margin-top: 22px;
+}
+.invite-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 0;
+  border-top: 1px solid #e0e4db;
+}
+.invite-list > div > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.quiet-button {
+  padding: 8px 11px;
+  background: transparent;
+  color: #254f40;
+  border: 1px solid #aab8a7;
+  font-size: 12px;
+}
+.invite-actions {
+  display: flex;
+  gap: 8px;
+}
+.danger-button {
+  color: #8b322b;
+  border-color: #d5aaa6;
+}
+.invite-status {
+  padding: 5px 8px;
+  background: #edf0e9;
+  color: #59675b;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.invite-status.submitted {
+  background: #e1efdb;
+  color: #38672f;
+}
+.admin-import {
+  margin: 28px 0;
+  background: transparent;
+  border-style: dashed;
+}
+.supplier-shell {
+  min-height: 100vh;
+  padding: 48px 20px 80px;
+  background: #eef1e9;
+}
+.supplier-panel {
+  max-width: 900px;
+  margin: auto;
+}
+.supplier-panel.narrow {
+  max-width: 620px;
+  padding: 40px;
+  background: white;
+  border: 1px solid #d6dccf;
+}
+.portal-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 24px;
+  margin-bottom: 42px;
+  border-bottom: 1px solid #cbd4c7;
+}
+.portal-banner span {
+  font: 700 26px Georgia, serif;
+}
+.trip-meta {
+  color: #536758;
+  font-size: 16px;
+}
+.brief-card {
+  margin-top: 36px;
+}
+.requirement-list {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+}
+.requirement-list li {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid #e0e4db;
+}
+.requirement-list li span {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: #667767;
+}
+.supplier-form {
+  padding: 34px;
+}
+.supplier-form h2 {
+  margin-top: 10px;
+}
+.form-help {
+  color: #667767;
+  font-size: 14px;
+}
 .actions {
   display: flex;
   gap: 10px;
@@ -269,6 +400,16 @@ pre {
   }
   .grid {
     grid-template-columns: 1fr;
+  }
+  .invite-form,
+  .share-link {
+    grid-template-columns: 1fr;
+  }
+  .supplier-shell {
+    padding: 24px 12px 50px;
+  }
+  .supplier-form {
+    padding: 20px;
   }
   .welcome {
     margin: 40px 0;

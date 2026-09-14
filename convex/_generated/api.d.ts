@@ -13,6 +13,7 @@ import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as inboxes from "../inboxes.js";
 import type * as integrationLimits from "../integrationLimits.js";
+import type * as invites from "../invites.js";
 import type * as partners from "../partners.js";
 import type * as research from "../research.js";
 import type * as researchLimits from "../researchLimits.js";
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   inboxes: typeof inboxes;
   integrationLimits: typeof integrationLimits;
+  invites: typeof invites;
   partners: typeof partners;
   research: typeof research;
   researchLimits: typeof researchLimits;

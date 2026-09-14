@@ -4,11 +4,19 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { PartnerResearch } from "./PartnerResearch";
+import { SupplierPortal } from "./SupplierPortal";
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
 }
 export default function App() {
+  const supplierToken = getSupplierToken();
+  if (supplierToken) return <SupplierPortal token={supplierToken} />;
+
+  return <RequesterApp />;
+}
+
+function RequesterApp() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
   const [error, setError] = useState("");
@@ -17,7 +25,7 @@ export default function App() {
       <header>
         <a href="/">TripBrief</a>
         <span>THE ADVISOR'S DESK</span>
-        <small>Development preview</small>
+        <small>Requester workspace</small>
       </header>
       {isAuthenticated ? (
         <Desk />
@@ -197,12 +205,6 @@ function Trip({ id }: { id: Id<"trips"> }) {
       <p>
         {trip.startDate} — {trip.endDate} · {trip.travelers} travelers
       </p>
-      <button
-        disabled={trip.status === "selected"}
-        onClick={() => setAdding(!adding)}
-      >
-        {adding ? "Close form" : "+ Record an offer"}
-      </button>
       <div className="card">
         <h2>The shared brief</h2>
         <p>{trip.brief}</p>
@@ -245,14 +247,16 @@ function Trip({ id }: { id: Id<"trips"> }) {
           </>
         )}
       </div>
+      <SupplierInvites tripId={id} />
       <PartnerResearch key={id} tripId={id} />
-      {adding && (
-        <OfferForm
-          id={id}
-          requirements={trip.requirements}
-          done={() => setAdding(false)}
-        />
-      )}
+      <details className="admin-import">
+        <summary>Import an emailed supplier response (fallback)</summary>
+        <p><small>Use this only when a supplier replied outside their secure response link. You are transcribing their original words, not answering on their behalf.</small></p>
+        <button disabled={trip.status === "selected"} onClick={() => setAdding(!adding)}>
+          {adding ? "Close import form" : "Import response"}
+        </button>
+        {adding && <OfferForm id={id} requirements={trip.requirements} done={() => setAdding(false)} />}
+      </details>
       <h2>Compare the details · {offers.length} offers</h2>
       <div className="scroll">
         <table>
@@ -344,6 +348,140 @@ function Trip({ id }: { id: Id<"trips"> }) {
         </details>
       ))}
     </section>
+  );
+}
+
+function getSupplierToken(): string {
+  const url = new URL(window.location.href);
+  const hash = url.hash.startsWith("#respond=")
+    ? url.hash.slice("#respond=".length)
+    : "";
+  try {
+    return decodeURIComponent(hash);
+  } catch {
+    return "";
+  }
+}
+
+function newCapabilityToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  const encoded = btoa(String.fromCharCode(...bytes));
+  return encoded.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function supplierLink(token: string): string {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.hash = `respond=${encodeURIComponent(token)}`;
+  return url.toString();
+}
+
+function SupplierInvites({ tripId }: { tripId: Id<"trips"> }) {
+  const invites = useQuery(api.invites.list, { tripId });
+  const create = useMutation(api.invites.create);
+  const revoke = useMutation(api.invites.revoke);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [latestLink, setLatestLink] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <div className="card invite-card">
+      <p className="eyebrow">SUPPLIER RESPONSES</p>
+      <h2>Invite suppliers to answer</h2>
+      <p>Each supplier gets a private link to view the brief and submit their own proposal. Their answers flow directly into your comparison.</p>
+      <form
+        className="invite-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const data = new FormData(form);
+          const supplierName = formText(data, "inviteSupplier").trim();
+          const token = newCapabilityToken();
+          setBusy(true);
+          setError("");
+          setCopied(false);
+          void create({ tripId, supplierName, token })
+            .then(() => {
+              setLatestLink(supplierLink(token));
+              form.reset();
+            })
+            .catch((cause: unknown) =>
+              setError(cause instanceof Error ? cause.message : "Could not create the supplier invitation."),
+            )
+            .finally(() => setBusy(false));
+        }}
+      >
+        <label>
+          Supplier name
+          <input name="inviteSupplier" required maxLength={160} placeholder="Example: Harbor House Hotel" />
+        </label>
+        <button disabled={busy}>{busy ? "Creating link…" : "Create response link"}</button>
+      </form>
+      {latestLink && (
+        <div className="share-link">
+          <label>
+            Share this secure link with the supplier
+            <input value={latestLink} readOnly onFocus={(event) => event.currentTarget.select()} />
+          </label>
+          <button
+            type="button"
+            onClick={() => {
+              void navigator.clipboard.writeText(latestLink).then(() => setCopied(true));
+            }}
+          >
+            {copied ? "Copied" : "Copy link"}
+          </button>
+        </div>
+      )}
+      {error && <p role="alert">{error}</p>}
+      <div className="invite-list">
+        {invites?.map((invite) => (
+          <div key={invite._id}>
+            <span>
+              <strong>{invite.supplierName}</strong>
+              <span className={`invite-status ${invite.status}`}>{invite.status}</span>
+            </span>
+            {invite.status === "open" && (
+              <span className="invite-actions">
+                <button
+                  type="button"
+                  className="quiet-button"
+                  onClick={() => {
+                    setError("");
+                    void navigator.clipboard
+                      .writeText(supplierLink(invite.token))
+                      .then(() => setCopied(true))
+                      .catch(() => setError("Copy failed. Create a fresh link and select it manually."));
+                  }}
+                >
+                  Copy response link
+                </button>
+                <button
+                  type="button"
+                  className="quiet-button danger-button"
+                  disabled={busy}
+                  onClick={() => {
+                    setBusy(true);
+                    setError("");
+                    void revoke({ inviteId: invite._id })
+                      .catch((cause: unknown) =>
+                        setError(cause instanceof Error ? cause.message : "Could not revoke this link."),
+                      )
+                      .finally(() => setBusy(false));
+                  }}
+                >
+                  Revoke
+                </button>
+              </span>
+            )}
+          </div>
+        ))}
+        {invites?.length === 0 && <small>No suppliers invited yet.</small>}
+      </div>
+    </div>
   );
 }
 function OfferForm({
