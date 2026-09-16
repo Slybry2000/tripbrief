@@ -1,22 +1,21 @@
-import {
-  env,
-  internalAction,
-  internalMutation,
-  query,
-} from "./_generated/server";
+import { env, internalAction, internalMutation, query } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import type { Doc } from "./_generated/dataModel";
 
 const clean = (value: unknown, limit: number) =>
   typeof value === "string" ? value.slice(0, limit) : "";
 
-// The advisor sees every reply that arrived for their own brief, newest first.
+// What the advisor sees for one brief. A reply is only listed here once it has
+// been placed on a brief; anything that could not be placed is on the workspace
+// list below rather than quietly binned.
 export const list = query({
   args: { briefId: v.id("briefs") },
   returns: v.array(
     v.object({
       _id: v.id("inboxMessages"),
       operatorSlug: v.optional(v.string()),
+      matchedBy: v.optional(v.union(v.literal("thread"), v.literal("address"))),
       fromEmail: v.string(),
       subject: v.string(),
       text: v.string(),
@@ -36,6 +35,7 @@ export const list = query({
     return messages.map((message) => ({
       _id: message._id,
       operatorSlug: message.operatorSlug,
+      matchedBy: message.matchedBy,
       fromEmail: message.fromEmail,
       subject: message.subject,
       text: message.text,
@@ -44,14 +44,61 @@ export const list = query({
   },
 });
 
-// Called by the HTTP route, never by a browser. A reply is matched to a brief by
-// the inbox it landed in and to an operator by the address the request was sent
-// to — never by trusting anything written in the message.
+// Mail the workspace received that belongs to no request on file. It is shown
+// rather than dropped: an operator answering from a different address is a normal
+// thing for a person to resolve, and a machine cannot.
+export const unfiled = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("inboxMessages"),
+      fromEmail: v.string(),
+      fromName: v.optional(v.string()),
+      subject: v.string(),
+      text: v.string(),
+      receivedAt: v.number(),
+    }),
+  ),
+  handler: async (ctx) => {
+    const owner = await getAuthUserId(ctx);
+    if (!owner) return [];
+    const messages = await ctx.db
+      .query("inboxMessages")
+      .withIndex("by_owner", (q) => q.eq("owner", owner))
+      .order("desc")
+      .take(50);
+    return messages
+      .filter((message) => message.briefId === null)
+      .map((message) => ({
+        _id: message._id,
+        fromEmail: message.fromEmail,
+        fromName: message.fromName,
+        subject: message.subject,
+        text: message.text,
+        receivedAt: message.receivedAt,
+      }));
+  },
+});
+
+// Called by the HTTP route, never by a browser.
+//
+// The mailbox only says which workspace the mail belongs to. Which *request* it
+// answers is decided by the thread it is part of: the send recorded the thread it
+// started, and a reply carries it back. That is what lets three mailboxes serve
+// any number of briefs without guessing.
+//
+// If there is no thread (the operator wrote a fresh message instead of replying),
+// the sender's address is used, and the only honest answer there is "probably":
+// the reply is placed on the most recent request sent to that address and marked
+// as matched by address rather than exactly, so a person can check it. Nothing is
+// placed when no request has ever gone to that address.
 export const record = internalMutation({
   args: {
     inboxId: v.string(),
+    threadId: v.optional(v.string()),
     fromEmail: v.string(),
     fromName: v.optional(v.string()),
+    to: v.optional(v.string()),
     subject: v.string(),
     text: v.string(),
     messageId: v.string(),
@@ -59,6 +106,7 @@ export const record = internalMutation({
   },
   returns: v.union(
     v.literal("recorded"),
+    v.literal("filed"),
     v.literal("duplicate"),
     v.literal("unmatched"),
   ),
@@ -70,25 +118,51 @@ export const record = internalMutation({
         .unique();
       if (existing) return "duplicate";
     }
-    const brief = await ctx.db
-      .query("briefs")
-      .withIndex("by_agentMailInboxId", (q) =>
-        q.eq("agentMailInboxId", args.inboxId),
-      )
+    const mailbox = await ctx.db
+      .query("mailboxes")
+      .withIndex("by_inboxId", (q) => q.eq("inboxId", args.inboxId))
       .unique();
-    if (!brief) return "unmatched";
-    const rows = await ctx.db
-      .query("briefOperators")
-      .withIndex("by_briefId", (q) => q.eq("briefId", brief._id))
-      .take(20);
+    if (!mailbox) return "unmatched";
+
+    let row: Doc<"briefOperators"> | null = null;
+    let matchedBy: "thread" | "address" | undefined;
+    if (args.threadId) {
+      const byThread = await ctx.db
+        .query("briefOperators")
+        .withIndex("by_providerThreadId", (q) =>
+          q.eq("providerThreadId", args.threadId),
+        )
+        .first();
+      if (byThread && byThread.owner === mailbox.owner) {
+        row = byThread;
+        matchedBy = "thread";
+      }
+    }
     const from = args.fromEmail.trim().toLowerCase();
-    const row = rows.find((item) => item.email?.trim().toLowerCase() === from);
+    if (!row && from) {
+      const candidates = await ctx.db
+        .query("briefOperators")
+        .withIndex("by_email", (q) => q.eq("email", from))
+        .take(20);
+      const mine = candidates.filter(
+        (candidate) => candidate.owner === mailbox.owner && candidate.sentAt,
+      );
+      if (mine.length) {
+        row = mine.sort((a, b) => (b.sentAt ?? 0) - (a.sentAt ?? 0))[0];
+        matchedBy = "address";
+      }
+    }
+
+    const now = Date.now();
     await ctx.db.insert("inboxMessages", {
-      briefId: brief._id,
-      owner: brief.owner,
+      briefId: row?.briefId ?? null,
+      owner: mailbox.owner,
       briefOperatorId: row?._id,
       operatorSlug: row?.operatorSlug,
+      mailboxId: mailbox._id,
       inboxId: args.inboxId,
+      threadId: args.threadId,
+      matchedBy,
       fromEmail: args.fromEmail.slice(0, 320),
       fromName: args.fromName?.slice(0, 200),
       subject: args.subject.slice(0, 300),
@@ -96,14 +170,14 @@ export const record = internalMutation({
       messageId: args.messageId.slice(0, 300),
       receivedAt: args.receivedAt,
     });
-    await ctx.db.patch("briefs", brief._id, { updatedAt: Date.now() });
-    return "recorded";
+    if (row) await ctx.db.patch("briefs", row.briefId, { updatedAt: now });
+    return row ? "filed" : "recorded";
   },
 });
 
-// One account-level webhook covers every brief's inbox, so a new brief needs no
+// One account-level webhook covers every mailbox, so a new workspace needs no
 // setup. Run once per deployment:
-//   npx convex run --prod replies:registerWebhook
+//   npx convex run replies:registerWebhook
 export const registerWebhook = internalAction({
   args: {},
   returns: v.object({ registered: v.boolean(), detail: v.string() }),
@@ -148,7 +222,7 @@ export const registerWebhook = internalAction({
     if (!response)
       return {
         registered: false,
-        detail: "The email provider could not be reached.",
+        detail: "The mail provider could not be reached.",
       };
     if (!response.ok)
       return {
@@ -176,6 +250,8 @@ export function readInboundEvent(body: unknown) {
         : "";
   return {
     inboxId,
+    // The thread is the whole basis of attribution, so it is read carefully.
+    threadId: clean(message.thread_id, 300) || undefined,
     fromEmail: clean(from, 320),
     fromName:
       typeof message.from_name === "string" ? message.from_name : undefined,

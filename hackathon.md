@@ -535,3 +535,49 @@ one-per-week to a bounded daily rate, because one inbox per brief is the design 
 the plan has to allow it.
 
 The suite is 39 tests across 8 files.
+
+### 2026-09-16 - three inboxes, any number of briefs
+
+The mail design did not fit the plan. One inbox per brief meant the fourth brief
+could never send, and the free plan gives three inboxes for the whole account.
+Bryan's constraint, and it turned out to be the right one: the design was lazy
+rather than wrong-headed.
+
+**The fix is attribution by thread, not by mailbox.** The provider's send response
+carries `message_id` and `thread_id`, and a received message carries `thread_id`
+back. So sending now records the thread it started, and a reply is filed on the
+exact request it answers. The mailbox only says which workspace the mail belongs
+to. Two briefs can invite the same operator from the same inbox and both answers
+still land in the right place — which is the case that used to make sharing
+impossible, and it is now a test.
+
+**A pool, not a fan-out.** A workspace opens one mailbox the first time it sends
+and reuses the quietest one it has afterwards. It never opens a second one it does
+not need: an account slot is worth more than tidiness, and reuse is what makes a
+three-inbox plan sufficient for any number of briefs. The interface says how many
+are in use and what happens at the ceiling, and a refusal from the provider is
+shown verbatim instead of being hidden behind "service unavailable".
+
+**Nothing is guessed and nothing is dropped.** A reply with no thread (a fresh
+message rather than a reply) is placed on the most recent request sent to that
+address and marked *matched by address* so a person can check it. A reply from an
+address no request ever went to is kept, with no brief attached, and shown on the
+home view as mail that could not be filed. A sender address is trivially forgeable,
+which is exactly why the thread decides and the address only suggests.
+
+**The migration was done as a migration.** Removing the per-brief inbox columns
+from the schema was refused by Convex while documents still carried them, so the
+columns were widened back to optional, the existing inboxes were adopted into the
+new pool and the fields cleared, and only then were the columns removed. That is
+the same path a populated deployment needs; the one-off adoption helper was
+deleted once it had run.
+
+**What was verified.** 40 tests, including a workspace with one mailbox and two
+briefs inviting the same operator: a reply threaded to the second brief files on
+the second brief and leaves the first empty; a reply with no thread files by
+address and says so; a reply from a stranger is kept unfiled; a duplicate delivery
+is dropped; an unknown mailbox is not guessed at. Against the live local
+deployment, the inbound route answered **403 without its secret, 200 `recorded`
+with it, and 200 `duplicate` on a repeat delivery**, and the stored row landed with
+no brief attached — mail kept rather than binned. The migration ran against real
+data: one legacy inbox adopted, one brief cleared, none remaining.

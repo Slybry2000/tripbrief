@@ -7,6 +7,7 @@ import { readInboundEvent } from "./replies";
 
 const modules = import.meta.glob("./**/*.ts");
 const token = (letter: string) => letter.repeat(43);
+const INBOX = "workspace@mail.example";
 
 const brief = {
   name: "Wellness Escape",
@@ -34,110 +35,153 @@ const brief = {
   notes: "",
 };
 
-async function withInbox(inboxId = "inbox-1") {
+// One mailbox, two briefs, and the same operator invited on both. This is the
+// arrangement the whole design has to survive: a free mail plan gives three
+// inboxes and an agency has more briefs than that.
+async function threeInboxWorld() {
   const t = convexTest(schema, modules).withIdentity({ subject: "advisor" });
-  const { briefId } = await t.mutation(api.briefs.create, {
+  await t.mutation(api.network.ensureWorkspace, {});
+  const owner = (await t.query(api.network.list, {}))[0].operator.owner;
+  await t.mutation(internal.mailboxes.record, {
+    owner,
+    inboxId: "inbox-1",
+    address: INBOX,
+    displayName: "TripBrief - advisor",
+  });
+  const first = await t.mutation(api.briefs.create, {
     brief,
     selectedDestinationSlugs: ["bali"],
   });
+  const second = await t.mutation(api.briefs.create, {
+    brief: { ...brief, name: "Second brief" },
+    selectedDestinationSlugs: ["bali"],
+  });
   await t.mutation(api.briefs.setShortlist, {
-    briefId,
+    briefId: first.briefId,
     operators: [
-      {
-        operatorSlug: "p1",
-        operatorName: "Island Wellbeing Indonesia",
-        capabilityToken: token("a"),
-      },
+      { operatorSlug: "p1", operatorName: "Island Wellbeing Indonesia", capabilityToken: token("a") },
     ],
   });
-  const owner = (await t.query(api.briefs.one, { briefId }))!.owner;
-  await t.mutation(internal.inboxes.attach, {
-    briefId,
-    owner,
-    inboxId,
-    email: "requests@inbox.example",
+  await t.mutation(api.briefs.setShortlist, {
+    briefId: second.briefId,
+    operators: [
+      { operatorSlug: "p2", operatorName: "Pura Vida Retreats", capabilityToken: token("b") },
+    ],
   });
-  // The request has to have been sent for the reply to be matched to an operator.
+  const rows = await t.run(async (ctx) => ctx.db.query("briefOperators").take(10));
   await t.run(async (ctx) => {
-    const row = (await ctx.db.query("briefOperators").take(1))[0];
-    await ctx.db.patch("briefOperators", row._id, {
-      email: "hello@operator.example",
-      sentAt: Date.now(),
-      status: "sent",
-    });
+    for (const row of rows) {
+      await ctx.db.patch("briefOperators", row._id, {
+        email: "hello@operator.example",
+        sentAt: Date.now(),
+        status: "sent",
+        providerThreadId: row.operatorSlug === "p1" ? "thread-one" : "thread-two",
+      });
+    }
   });
-  return { t, briefId };
+  return { t, owner, first: first.briefId, second: second.briefId };
 }
 
-test("a reply is matched by the inbox it landed in and the address it came from", async () => {
-  const { t, briefId } = await withInbox();
+test("a reply lands on the request it answers, not on whichever brief shares the inbox", async () => {
+  const { t, first, second } = await threeInboxWorld();
   const outcome = await t.mutation(internal.replies.record, {
     inboxId: "inbox-1",
-    fromEmail: "HELLO@operator.example",
+    threadId: "thread-two",
+    fromEmail: "hello@operator.example",
     subject: "Re: Trip request",
-    text: "We can operate 15-22 October.",
+    text: "We can operate those dates.",
     messageId: "m1",
     receivedAt: Date.now(),
   });
-  expect(outcome).toBe("recorded");
-  const replies = await t.query(api.replies.list, { briefId });
-  expect(replies).toHaveLength(1);
-  expect(replies[0].operatorSlug).toBe("p1");
-  expect(replies[0].text).toContain("15-22 October");
+  expect(outcome).toBe("filed");
+  const onSecond = await t.query(api.replies.list, { briefId: second });
+  expect(onSecond).toHaveLength(1);
+  expect(onSecond[0]).toMatchObject({
+    operatorSlug: "p2",
+    matchedBy: "thread",
+  });
+  // The other brief, which invited the very same address, stays empty.
+  expect(await t.query(api.replies.list, { briefId: first })).toHaveLength(0);
 });
 
-test("an uninvited sender is kept without being attributed to an operator", async () => {
-  const { t, briefId } = await withInbox();
-  await t.mutation(internal.replies.record, {
+test("without a thread the reply is placed by address, and says so", async () => {
+  const { t, first, second } = await threeInboxWorld();
+  const outcome = await t.mutation(internal.replies.record, {
+    inboxId: "inbox-1",
+    fromEmail: "HELLO@operator.example",
+    subject: "A new message",
+    text: "Quoting you separately.",
+    messageId: "m2",
+    receivedAt: Date.now(),
+  });
+  expect(outcome).toBe("filed");
+  const filed = [
+    ...(await t.query(api.replies.list, { briefId: first })),
+    ...(await t.query(api.replies.list, { briefId: second })),
+  ];
+  expect(filed).toHaveLength(1);
+  // "address" is the honest answer: a person should check it.
+  expect(filed[0].matchedBy).toBe("address");
+});
+
+test("mail from an address no request went to is kept on the workspace, not filed", async () => {
+  const { t, first, second } = await threeInboxWorld();
+  const outcome = await t.mutation(internal.replies.record, {
     inboxId: "inbox-1",
     fromEmail: "stranger@elsewhere.example",
     subject: "Interested",
     text: "We would like to quote.",
-    messageId: "m2",
-    receivedAt: Date.now(),
-  });
-  const replies = await t.query(api.replies.list, { briefId });
-  expect(replies).toHaveLength(1);
-  expect(replies[0].operatorSlug).toBeUndefined();
-});
-
-test("a duplicate delivery is dropped and an unknown inbox is not guessed at", async () => {
-  const { t } = await withInbox();
-  const event = {
-    inboxId: "inbox-1",
-    fromEmail: "hello@operator.example",
-    subject: "Re: Trip request",
-    text: "Yes.",
     messageId: "m3",
     receivedAt: Date.now(),
+  });
+  expect(outcome).toBe("recorded");
+  expect(await t.query(api.replies.list, { briefId: first })).toHaveLength(0);
+  expect(await t.query(api.replies.list, { briefId: second })).toHaveLength(0);
+  const unfiled = await t.query(api.replies.unfiled, {});
+  expect(unfiled).toHaveLength(1);
+  expect(unfiled[0].fromEmail).toBe("stranger@elsewhere.example");
+});
+
+test("a duplicate delivery is dropped and an unknown mailbox is not guessed at", async () => {
+  const { t } = await threeInboxWorld();
+  const event = {
+    inboxId: "inbox-1",
+    threadId: "thread-one",
+    fromEmail: "hello@operator.example",
+    subject: "Re",
+    text: "Yes.",
+    messageId: "m4",
+    receivedAt: Date.now(),
   };
-  expect(await t.mutation(internal.replies.record, event)).toBe("recorded");
+  expect(await t.mutation(internal.replies.record, event)).toBe("filed");
   expect(await t.mutation(internal.replies.record, event)).toBe("duplicate");
   expect(
     await t.mutation(internal.replies.record, {
       ...event,
       inboxId: "inbox-nobody-owns",
-      messageId: "m4",
+      messageId: "m5",
     }),
   ).toBe("unmatched");
 });
 
-test("only a received message is read, and the body is never trusted for matching", () => {
+test("only a received message is read, and the thread is what carries attribution", () => {
   expect(readInboundEvent({ event_type: "message.sent" })).toBeNull();
   const event = readInboundEvent({
     event_type: "message.received",
     message: {
       inbox_id: "inbox-1",
+      thread_id: "thread-two",
       from: "hello@operator.example",
       subject: "Re: Trip request",
       text: "We can operate those dates.",
-      message_id: "m5",
+      message_id: "m6",
     },
   });
   expect(event).toMatchObject({
     inboxId: "inbox-1",
+    threadId: "thread-two",
     fromEmail: "hello@operator.example",
-    messageId: "m5",
+    messageId: "m6",
   });
   expect(Object.keys(event!)).not.toContain("briefId");
   expect(() => readInboundEvent({ event_type: "message.received" })).toThrow();

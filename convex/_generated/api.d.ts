@@ -11,8 +11,8 @@
 import type * as auth from "../auth.js";
 import type * as briefs from "../briefs.js";
 import type * as http from "../http.js";
-import type * as inboxes from "../inboxes.js";
 import type * as integrationLimits from "../integrationLimits.js";
+import type * as mailboxes from "../mailboxes.js";
 import type * as network from "../network.js";
 import type * as openai from "../openai.js";
 import type * as outbound from "../outbound.js";
@@ -31,8 +31,8 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   briefs: typeof briefs;
   http: typeof http;
-  inboxes: typeof inboxes;
   integrationLimits: typeof integrationLimits;
+  mailboxes: typeof mailboxes;
   network: typeof network;
   openai: typeof openai;
   outbound: typeof outbound;

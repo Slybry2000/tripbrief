@@ -242,12 +242,25 @@ export default defineSchema({
     selectedDestinationSlugs: v.array(v.string()),
     selectedProposalId: v.optional(v.id("proposals")),
     selectionReason: v.optional(v.string()),
-    agentMailInboxId: v.optional(v.string()),
-    agentMailInboxEmail: v.optional(v.string()),
     updatedAt: v.number(),
   })
+    .index("by_owner", ["owner"]),
+
+  // A small pool of mailboxes per workspace, rather than one per brief: a free
+  // mail account gives three inboxes and an agency has more briefs than that. A
+  // reply is attributed to the exact request it answers by the thread it belongs
+  // to, so one shared mailbox loses nothing.
+  mailboxes: defineTable({
+    owner: v.string(),
+    inboxId: v.string(),
+    address: v.string(),
+    displayName: v.string(),
+    lastUsedAt: v.number(),
+    createdAt: v.number(),
+  })
     .index("by_owner", ["owner"])
-    .index("by_agentMailInboxId", ["agentMailInboxId"]),
+    .index("by_inboxId", ["inboxId"])
+    .index("by_address", ["address"]),
 
   // One row per operator the advisor chose to contact. The row owns that
   // operator's private response link, so a link can be re-issued or revoked
@@ -267,6 +280,10 @@ export default defineSchema({
     email: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     providerMessageId: v.optional(v.string()),
+    // The thread this request started. A reply carries it back, which is how a
+    // reply is attributed to one request even when a mailbox serves many briefs.
+    providerThreadId: v.optional(v.string()),
+    mailboxId: v.optional(v.id("mailboxes")),
     sendError: v.optional(v.string()),
     openedAt: v.optional(v.number()),
     proposalId: v.optional(v.id("proposals")),
@@ -275,6 +292,8 @@ export default defineSchema({
   })
     .index("by_briefId", ["briefId"])
     .index("by_capabilityToken", ["capabilityToken"])
+    .index("by_providerThreadId", ["providerThreadId"])
+    .index("by_email", ["email"])
     .index("by_operatorSlug", ["operatorSlug"]),
 
   proposals: defineTable({
@@ -304,11 +323,18 @@ export default defineSchema({
   // An emailed reply, stored exactly as it arrived. It is the raw material a
   // model draft is drawn from, and it is never overwritten by a proposal.
   inboxMessages: defineTable({
-    briefId: v.id("briefs"),
+    // Null when a reply arrives from an address no request on file was sent to.
+    // It is kept rather than dropped, and the advisor can see it.
+    briefId: v.union(v.null(), v.id("briefs")),
     owner: v.string(),
     briefOperatorId: v.optional(v.id("briefOperators")),
     operatorSlug: v.optional(v.string()),
+    mailboxId: v.optional(v.id("mailboxes")),
     inboxId: v.string(),
+    threadId: v.optional(v.string()),
+    // "thread" when the reply answered a request exactly; "address" when it could
+    // only be placed by who sent it.
+    matchedBy: v.optional(v.union(v.literal("thread"), v.literal("address"))),
     fromEmail: v.string(),
     fromName: v.optional(v.string()),
     subject: v.string(),
@@ -317,6 +343,7 @@ export default defineSchema({
     receivedAt: v.number(),
   })
     .index("by_briefId", ["briefId"])
+    .index("by_owner", ["owner"])
     .index("by_messageId", ["messageId"])
     .index("by_inboxId", ["inboxId"]),
 

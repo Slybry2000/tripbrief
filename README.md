@@ -76,6 +76,30 @@ is entered once, lands on every request, and stays correctable. A request is
 prefilled with it and is still sent one at a time, to one named operator, by a
 deliberate click.
 
+## Mail: three inboxes, any number of briefs
+
+A free mail plan allows three inboxes in total, for the whole account. One inbox
+per brief cannot survive that, so the workspace keeps a **small pool** instead:
+
+- A workspace opens one mailbox the first time it sends, and reuses the quietest
+  one it has ever after. It never opens a second one it does not need, because an
+  account slot is worth more than tidiness.
+- **A reply is attributed by the thread it belongs to.** Sending records the thread
+  the message started; a reply carries that thread back; the reply is filed on the
+  exact request it answers. This is what makes sharing a mailbox lossless — two
+  briefs can invite the same operator from one inbox and both answers still land in
+  the right place.
+- If a reply carries **no thread** (the operator wrote a fresh message rather than
+  replying), it is placed on the most recent request sent to that address and
+  marked *matched by address* rather than exactly, so a person can check it.
+- If it comes from an address **no request was ever sent to**, it is not guessed
+  onto anything: it is kept and shown on the home view as mail that could not be
+  filed. Silently dropping it would be worse than showing it.
+
+A message's sender address is trivially forgeable, which is why the thread — not
+the sender — decides where a reply belongs, and why the address fallback is
+labelled as a fallback in the interface.
+
 ## What each sponsor actually does
 
 Each one is a real surface in the product, not a line in this file, and the status
@@ -86,7 +110,7 @@ column says what has actually been run.
 | **Convex** | Schema, indexes, live queries, mutations, actions, HTTP routes, authentication, per-workspace ownership, rate-limiter quotas, and hosting of the built frontend | Running. 35 tests cover ownership isolation, link scope, the shortlist cap, the cascade delete, reply matching and the provider paths |
 | **Firecrawl** | *Grow the network*: searches published websites for operators serving one destination, stores each result with the query that surfaced it, and lets an advisor add one as an operator | Wired, and previously verified against the live provider. Quota-limited per workspace and app-wide |
 | **OpenAI** | Reads an operator's emailed reply and drafts the structured proposal. Every claim carries an exact contiguous quote from the reply, and a quote that is not in the reply voids the whole draft | Wired and unit-tested. Review-only: it returns a draft, never writes, and refuses to run without a key |
-| **AgentMail** | Each brief gets its own inbox. That inbox sends one named operator its own request link, and a reply to that address is matched back to the operator it came from | Wired, and the send path has been exercised. **No email has been sent to a real supplier** |
+| **AgentMail** | A small pool of mailboxes per workspace sends requests, and a reply is attributed to the exact request it answers by the thread it belongs to | Wired and exercised end to end, including the inbound route. **No email has been sent to a real supplier** (the one live send was to the project owner's own address) |
 
 ## What makes it safe to point at real suppliers
 
@@ -136,15 +160,13 @@ Which workspaces exist, and what the providers actually answer:
 
 ```text
 npx convex run network:workspaces        # owner ids, operator and brief counts
-npx convex run inboxes:checkProvider     # Mail: status and inbox count
+npx convex run mailboxes:checkProvider   # Mail: status and inbox count
 npx convex run research:checkProvider    # Firecrawl: status
 ```
 
-The mail plan matters: every brief gets its own inbox, because that is what makes a
-reply attributable to one brief without reading the message. Point the app at a
-plan that allows as many inboxes as you expect live briefs at once. When the
-provider refuses one, the refusal is shown verbatim rather than hidden behind
-"service unavailable".
+The mail plan matters only at the start: a workspace needs **one** inbox to work,
+and the pool never grows past what the account allows. When the provider refuses
+one, the refusal is shown verbatim rather than hidden behind "service unavailable".
 
 ```text
 npm test        # 35 tests: matching baselines, and the backend's actual behaviour

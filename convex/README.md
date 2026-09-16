@@ -12,9 +12,9 @@ the hosting of the built frontend.
 | `briefs.ts` | The client brief and its workflow: create, save, choose the customer-approved locations, shortlist operators (which mints each request link), record the decision, delete the brief and everything it produced. |
 | `proposals.ts` | Structured proposals: an operator submitting through its own link, an advisor recording one that arrived by email, and the OpenAI drafting action that returns a review draft and never writes. |
 | `research.ts` | Firecrawl searching published websites for operators, and the candidate records it produces. |
-| `inboxes.ts` | One AgentMail inbox per brief. |
+| `mailboxes.ts` | The workspace's small pool of mailboxes (a free mail plan allows three in total, so briefs share them), the display-name and inbox parsing, and the provider probe. |
 | `outbound.ts` | The only thing in the app that sends: one named operator, one address a human typed, one link. |
-| `replies.ts` | Inbound mail, matched by inbox and invited address, plus the webhook registration probe. |
+| `replies.ts` | Inbound mail. The mailbox says which workspace it belongs to; the **thread** says which request it answers, with the sender's address as a labelled fallback. Mail that matches nothing is kept unfiled rather than dropped. Also the webhook registration probe. |
 | `integrationLimits.ts` | Per-workspace and app-wide quotas for AI drafting, research, sending and inboxes. |
 | `openai.ts` | The single place the Responses API is called; store-free and schema-constrained. |
 | `http.ts` | `/incoming/agentmail` (shared-secret-guarded) and the static hosting of the frontend. |

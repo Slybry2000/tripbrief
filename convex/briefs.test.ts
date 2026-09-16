@@ -227,12 +227,21 @@ test("deleting a brief removes its proposals, its operators and the mail it rece
     token: token("a"),
     proposal,
   });
+  // The request has to have gone out for a reply to be filed against it.
+  await t.run(async (ctx) => {
+    const row = (await ctx.db.query("briefOperators").take(1))[0];
+    await ctx.db.patch("briefOperators", row._id, {
+      email: "hello@operator.example",
+      sentAt: Date.now(),
+      status: "sent",
+    });
+  });
   const owner = (await t.query(api.briefs.one, { briefId }))!.owner;
-  await t.mutation(internal.inboxes.attach, {
-    briefId,
+  await t.mutation(internal.mailboxes.record, {
     owner,
     inboxId: "inbox-1",
-    email: "requests@inbox.example",
+    address: "requests@inbox.example",
+    displayName: "TripBrief - advisor",
   });
   await t.mutation(internal.replies.record, {
     inboxId: "inbox-1",

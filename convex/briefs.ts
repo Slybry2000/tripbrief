@@ -140,7 +140,6 @@ export const get = query({
         status: briefStatus,
         selectedDestinationSlugs: v.array(v.string()),
         selectedProposalId: v.union(v.null(), v.id("proposals")),
-        agentMailInboxEmail: v.optional(v.string()),
         updatedAt: v.number(),
       }),
       shortlist: v.array(
@@ -216,7 +215,6 @@ export const get = query({
         status: brief.status,
         selectedDestinationSlugs: brief.selectedDestinationSlugs,
         selectedProposalId: brief.selectedProposalId ?? null,
-        agentMailInboxEmail: brief.agentMailInboxEmail,
         updatedAt: brief.updatedAt,
       },
       shortlist: shortlist.map((row) => ({
