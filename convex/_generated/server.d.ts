@@ -34,7 +34,7 @@ type Env = {
   readonly AGENTMAIL_WEBHOOK_SECRET: string | undefined;
   readonly FIRECRAWL_API_KEY: string | undefined;
   readonly OPENAI_API_KEY: string | undefined;
-  readonly RESEARCH_TEST_USER_ID: string | undefined;
+  readonly SITE_URL: string | undefined;
 };
 
 /**

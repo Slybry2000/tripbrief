@@ -9,7 +9,10 @@ const app = defineApp({
     OPENAI_API_KEY: v.optional(v.string()),
     AGENTMAIL_API_KEY: v.optional(v.string()),
     AGENTMAIL_WEBHOOK_SECRET: v.optional(v.string()),
-    RESEARCH_TEST_USER_ID: v.optional(v.string()),
+    // The public address the app is served from. A response link has to point at
+    // wherever the operator can actually open it: the deployment's own site URL in
+    // production, and the local dev server when the backend is running locally.
+    SITE_URL: v.optional(v.string()),
   },
 });
 app.use(rateLimiter);

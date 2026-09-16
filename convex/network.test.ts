@@ -287,6 +287,87 @@ test("an operator that has never quoted can leave the network, and one that has 
   ).rejects.toThrow("has answered a brief");
 });
 
+test("how an operator is reached belongs to the network record", async () => {
+  const t = convexTest(schema, modules);
+  const advisor = t.withIdentity({ subject: "advisor" });
+  await advisor.mutation(api.network.ensureWorkspace, {});
+
+  // An address is stored as written to us, so the same operator is never two
+  // records because one brief typed a capital letter.
+  const added = await advisor.mutation(api.network.addOperator, {
+    name: "North Coast Travel",
+    country: "Portugal",
+    destinationSlugs: ["portugal"],
+    minGroupSize: 8,
+    maxGroupSize: 24,
+    contactEmail: "  Bookings@NorthCoast.Example  ",
+  });
+  let listed = await advisor.query(api.network.list, {});
+  expect(
+    listed.find((row) => row.operator.slug === added.slug)!.operator.contactEmail,
+  ).toBe("bookings@northcoast.example");
+
+  // A typo is refused before anything is written, because this is the address a
+  // real request would be sent to.
+  await expect(
+    advisor.mutation(api.network.addOperator, {
+      name: "Typo Travel",
+      country: "Portugal",
+      destinationSlugs: ["portugal"],
+      minGroupSize: 8,
+      maxGroupSize: 24,
+      contactEmail: "not-an-address",
+    }),
+  ).rejects.toThrow("email address");
+  listed = await advisor.query(api.network.list, {});
+  expect(listed.some((row) => row.operator.name === "Typo Travel")).toBe(false);
+
+  // An operator with no address is still a valid network member: its link works.
+  const noEmail = await advisor.mutation(api.network.addOperator, {
+    name: "Link Only Travel",
+    country: "Bali",
+    destinationSlugs: ["bali"],
+    minGroupSize: 8,
+    maxGroupSize: 20,
+  });
+  listed = await advisor.query(api.network.list, {});
+  expect(
+    listed.find((row) => row.operator.slug === noEmail.slug)!.operator
+      .contactEmail,
+  ).toBeUndefined();
+
+  // It can be corrected later, and it can be cleared.
+  const corrected = await advisor.mutation(api.network.setContactEmail, {
+    operatorSlug: added.slug,
+    contactEmail: "BOOKINGS@northcoast.example",
+  });
+  expect(corrected.contactEmail).toBe("bookings@northcoast.example");
+  expect(
+    (
+      await advisor.mutation(api.network.setContactEmail, {
+        operatorSlug: added.slug,
+        contactEmail: "",
+      })
+    ).contactEmail,
+  ).toBe("");
+  await expect(
+    advisor.mutation(api.network.setContactEmail, {
+      operatorSlug: added.slug,
+      contactEmail: "nope",
+    }),
+  ).rejects.toThrow("email address");
+
+  // Another workspace cannot change it.
+  const other = t.withIdentity({ subject: "other" });
+  await other.mutation(api.network.ensureWorkspace, {});
+  await expect(
+    other.mutation(api.network.setContactEmail, {
+      operatorSlug: "does-not-exist",
+      contactEmail: "someone@example.com",
+    }),
+  ).rejects.toThrow("Operator not found");
+});
+
 test("the CLI seed writes into a named workspace without touching another", async () => {
   const t = convexTest(schema, modules);
   const result = await t.mutation(internal.network.seed, { owner: "ops" });

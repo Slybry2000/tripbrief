@@ -52,6 +52,8 @@ export type Partner = {
   typicalNetPriceMin: number;
   typicalNetPriceMax: number;
   approvalStatus: string;
+  // TripBrief's own addition: how the agency reaches this operator.
+  contactEmail?: string;
 };
 
 export type ServiceArea = {

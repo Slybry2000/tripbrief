@@ -1,4 +1,4 @@
-import { RateLimiter, HOUR, DAY, WEEK } from "@convex-dev/rate-limiter";
+import { RateLimiter, HOUR, DAY } from "@convex-dev/rate-limiter";
 import { components } from "./_generated/api";
 import { internalMutation, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -14,10 +14,13 @@ const limiter = new RateLimiter(components.rateLimiter, {
   researchGlobal: { kind: "fixed window", rate: 40, period: DAY },
   sendUser: { kind: "fixed window", rate: 10, period: HOUR },
   sendGlobal: { kind: "fixed window", rate: 60, period: DAY },
-  inboxUser: { kind: "fixed window", rate: 1, period: WEEK },
-  // AgentMail's free plan holds three inboxes. One is retained for local demo
-  // work, leaving at most two production creations during the judging window.
-  inboxGlobal: { kind: "fixed window", rate: 2, period: WEEK },
+  // A brief gets its own inbox, because that is what makes a reply
+  // attributable to one brief without reading the message. Inboxes are therefore
+  // the most expensive thing here and the limit has to match the mail plan: the
+  // numbers below suit a paid plan, and they exist to stop a runaway loop rather
+  // than to ration normal use.
+  inboxUser: { kind: "fixed window", rate: 8, period: DAY },
+  inboxGlobal: { kind: "fixed window", rate: 40, period: DAY },
 });
 
 async function requireOwnedBrief(ctx: MutationCtx, briefId: Id<"briefs">) {

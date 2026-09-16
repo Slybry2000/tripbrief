@@ -1,4 +1,5 @@
 import {
+  internalQuery,
   internalMutation,
   mutation,
   query,
@@ -32,6 +33,17 @@ const months = (values: number[]) =>
     .slice(0, 12);
 const isoDate = (value: string) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "";
+
+// An address an operator can be reached at. Empty is allowed — an operator can sit
+// in the network with only its own link — but a non-empty value has to be one we
+// could actually send to.
+export function cleanEmail(value: string | undefined) {
+  const email = (value ?? "").trim().toLowerCase();
+  if (!email) return "";
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new ConvexError("That does not look like an email address.");
+  return email;
+}
 
 export type CapabilityInput = Omit<
   Infer<typeof operatorCapability>,
@@ -489,15 +501,40 @@ export const addOperator = mutation({
     destinationSlugs: v.array(v.string()),
     minGroupSize: v.number(),
     maxGroupSize: v.number(),
+    contactEmail: v.optional(v.string()),
     website: v.optional(v.string()),
     candidateId: v.optional(v.id("candidates")),
   },
   returns: v.object({ slug: v.string(), created: v.boolean() }),
   handler: async (ctx, args) => {
     const owner = await requireUser(ctx);
+    return await insertOperator(ctx, owner, args);
+  },
+});
+
+type OperatorInput = {
+  name: string;
+  country: string;
+  destinationSlugs: string[];
+  minGroupSize: number;
+  maxGroupSize: number;
+  contactEmail?: string;
+  website?: string;
+  candidateId?: Doc<"candidates">["_id"];
+};
+
+// One creation path, used by the advisor's form and by the ops command below, so
+// an operator created either way is identical.
+async function insertOperator(
+  ctx: MutationCtx,
+  owner: string,
+  args: OperatorInput,
+) {
     const name = text(args.name);
     if (name.length < 3) throw new ConvexError("Give the operator a name.");
     const destinations = cleanList(args.destinationSlugs, 12);
+    // Validated before anything is written, so a typo cannot reach a send.
+    const contactEmail = cleanEmail(args.contactEmail);
     const slug = await uniqueSlug(ctx, owner, name);
     const now = Date.now();
     const min = Math.max(1, Math.round(args.minGroupSize));
@@ -527,7 +564,8 @@ export const addOperator = mutation({
       typicalNetPriceMax: 0,
       approvalStatus: "capability_intake_pending",
       source: args.candidateId ? "researched" : "manual",
-      website,
+      ...(website ? { website } : {}),
+      ...(contactEmail ? { contactEmail } : {}),
       updatedAt: now,
     });
     await ctx.db.insert("operatorCapability", {
@@ -593,11 +631,106 @@ export const addOperator = mutation({
         addedOperatorSlug: slug,
       });
     return { slug, created: true };
+}
+
+// Ops: which workspaces exist and how big each one's network and brief list is.
+// Internal, so it is reachable from the CLI only, never from a browser.
+export const workspaces = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      owner: v.string(),
+      operators: v.number(),
+      briefs: v.number(),
+      lastUpdated: v.number(),
+    }),
+  ),
+  handler: async (ctx) => {
+    const operators = await ctx.db.query("operators").take(1_000);
+    const briefs = await ctx.db.query("briefs").take(1_000);
+    const rows = new Map<
+      string,
+      { operators: number; briefs: number; lastUpdated: number }
+    >();
+    const bump = (owner: string, field: "operators" | "briefs", at: number) => {
+      const row = rows.get(owner) ?? { operators: 0, briefs: 0, lastUpdated: 0 };
+      row[field] += 1;
+      row.lastUpdated = Math.max(row.lastUpdated, at);
+      rows.set(owner, row);
+    };
+    for (const operator of operators)
+      bump(operator.owner, "operators", operator.updatedAt);
+    for (const brief of briefs) bump(brief.owner, "briefs", brief.updatedAt);
+    return [...rows]
+      .map(([owner, row]) => ({ owner, ...row }))
+      .sort((a, b) => b.lastUpdated - a.lastUpdated);
+  },
+});
+
+// Ops: onboard an operator into a named workspace from the CLI
+//
+//   npx convex run network:addOperatorForOwner '{"owner":"…","name":"…", …}'
+//
+// A roster that arrives by email should not have to be retyped one operator at a
+// time through the browser. This is the same creation path the form uses, and it
+// hands back the operator's own intake link so it can be sent straight away.
+export const addOperatorForOwner = internalMutation({
+  args: {
+    owner: v.string(),
+    name: v.string(),
+    country: v.string(),
+    destinationSlugs: v.array(v.string()),
+    minGroupSize: v.number(),
+    maxGroupSize: v.number(),
+    contactEmail: v.optional(v.string()),
+    website: v.optional(v.string()),
+    // The link is a capability the caller mints, exactly as the browser does.
+    capabilityToken: v.optional(v.string()),
+  },
+  returns: v.object({ slug: v.string(), capabilityToken: v.union(v.null(), v.string()) }),
+  handler: async (ctx, args) => {
+    const { owner, capabilityToken, ...input } = args;
+    const result = await insertOperator(ctx, owner, input);
+    if (!capabilityToken) return { slug: result.slug, capabilityToken: null };
+    if (!TOKEN.test(capabilityToken))
+      throw new ConvexError("That link could not be generated. Please retry.");
+    const existing = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_owner_and_operatorSlug", (q) =>
+        q.eq("owner", owner).eq("operatorSlug", result.slug),
+      )
+      .unique();
+    const now = Date.now();
+    if (existing) return { slug: result.slug, capabilityToken: existing.token };
+    await ctx.db.insert("operatorLinks", {
+      owner,
+      operatorSlug: result.slug,
+      token: capabilityToken,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { slug: result.slug, capabilityToken };
   },
 });
 
 // An operator leaves the network only when it has never quoted: once there is a
 // proposal, the record is part of a decision and stays.
+export const setContactEmail = mutation({
+  args: { operatorSlug: v.string(), contactEmail: v.string() },
+  returns: v.object({ contactEmail: v.string() }),
+  handler: async (ctx, args) => {
+    const owner = await requireUser(ctx);
+    const operator = await operatorFor(ctx, owner, args.operatorSlug);
+    if (!operator) throw new ConvexError("Operator not found.");
+    const contactEmail = cleanEmail(args.contactEmail);
+    await ctx.db.patch("operators", operator._id, {
+      contactEmail,
+      updatedAt: Date.now(),
+    });
+    return { contactEmail };
+  },
+});
+
 export const removeOperator = mutation({
   args: { operatorSlug: v.string() },
   returns: v.null(),

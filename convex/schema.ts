@@ -24,6 +24,10 @@ export const operatorRecord = v.object({
   typicalNetPriceMin: v.number(),
   typicalNetPriceMax: v.number(),
   approvalStatus: v.string(),
+  // How the agency reaches this operator. It belongs to the network record, not
+  // to one brief: an operator is contacted many times, and retyping the address
+  // for every request is how a wrong one gets sent.
+  contactEmail: v.optional(v.string()),
   // "seed" for the shipped fictional network, "researched" for an operator an
   // advisor added from a real published website.
   source: v.union(

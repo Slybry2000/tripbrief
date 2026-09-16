@@ -1,10 +1,22 @@
-import { action, env, internalMutation } from "./_generated/server";
+import { action, env, internalAction, internalMutation } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
 
 const inboxResult = v.object({ email: v.string(), inboxId: v.string() });
+
+// The mail provider accepts only a limited character set in an inbox's display
+// name, and this one is built from a brief's name. A brief called "Wellness week
+// (October)" would otherwise make sending impossible, so anything outside the
+// accepted set is folded away rather than passed on.
+export function displayName(briefName: string) {
+  const safe = briefName
+    .replace(/[^A-Za-z0-9 ._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `Operator requests - ${safe || "Untitled brief"}`.slice(0, 120);
+}
 
 // Every brief gets its own inbox. That is what lets a reply be matched to a
 // brief without reading anything in the message, and it is why a new brief needs
@@ -34,7 +46,7 @@ export const provision = action({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        display_name: `Operator requests · ${brief.name}`.slice(0, 120),
+        display_name: displayName(brief.name),
         metadata: { brief_id: brief._id },
       }),
       signal: AbortSignal.timeout(30_000),
@@ -44,8 +56,11 @@ export const provision = action({
       );
     });
     if (!response.ok)
+      // The provider's own words are safe to surface: no credential is echoed, and
+      // "the service is unavailable" is useless when the real answer is a plan
+      // limit or a rejected parameter.
       throw new ConvexError(
-        "The inbox service is unavailable. Please try again later.",
+        `The inbox service refused a new inbox (status ${response.status}): ${(await response.text().catch(() => "")).slice(0, 200)}`,
       );
     const inbox = parseInbox(await response.json());
     await ctx.runMutation(internal.inboxes.attach, {
@@ -55,6 +70,61 @@ export const provision = action({
       email: inbox.email,
     });
     return { email: inbox.email, inboxId: inbox.inboxId };
+  },
+});
+
+// An ops probe: what the mail provider actually answers, without echoing the
+// credential and without creating anything.
+//
+//   npx convex run inboxes:checkProvider
+export const checkProvider = internalAction({
+  args: {},
+  returns: v.object({
+    configured: v.boolean(),
+    status: v.number(),
+    inboxCount: v.union(v.null(), v.number()),
+    detail: v.string(),
+  }),
+  handler: async () => {
+    const key = env.AGENTMAIL_API_KEY?.trim();
+    if (!key)
+      return {
+        configured: false,
+        status: 0,
+        inboxCount: null,
+        detail: "AGENTMAIL_API_KEY is not set on this deployment.",
+      };
+    try {
+      const response = await fetch("https://api.agentmail.to/v0/inboxes", {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+      const text = await response.text().catch(() => "");
+      let inboxCount: number | null = null;
+      try {
+        const body: unknown = JSON.parse(text);
+        const list =
+          body && typeof body === "object" && "inboxes" in body
+            ? body.inboxes
+            : null;
+        if (Array.isArray(list)) inboxCount = list.length;
+      } catch {
+        // A non-JSON body is reported as-is below; it is still useful.
+      }
+      return {
+        configured: true,
+        status: response.status,
+        inboxCount,
+        detail: text.slice(0, 300),
+      };
+    } catch (cause) {
+      return {
+        configured: true,
+        status: 0,
+        inboxCount: null,
+        detail: `fetch failed: ${String(cause).slice(0, 200)}`,
+      };
+    }
   },
 });
 

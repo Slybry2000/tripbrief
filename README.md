@@ -58,6 +58,10 @@ Either link can update the operator's capability record. Neither can read anothe
 operator's record, price or proposal. The owner and the operator slug are taken
 from the link server-side, never from the browser.
 
+A token identifies exactly one row. Two rows sharing one token would mean a link
+could open someone else's request, so shortlisting refuses a token that is already
+spoken for and asks for a retry.
+
 ## The operator network is a workspace's own
 
 A workspace starts with the fictional network this repository ships, and from
@@ -66,6 +70,11 @@ read or change anything in this one. Operators can be added by hand or from a
 researched page, kept current by the operator itself, and removed while they have
 never quoted — once an operator has answered a brief, its record is part of a
 recorded decision and stays.
+
+An operator's **contact email lives on its network record**, not on a brief, so it
+is entered once, lands on every request, and stays correctable. A request is
+prefilled with it and is still sent one at a time, to one named operator, by a
+deliberate click.
 
 ## What each sponsor actually does
 
@@ -105,6 +114,37 @@ npx vite                      # the app on http://localhost:5173
 The first sign-in seeds that workspace's operator network, so there is no separate
 seed step for development. To seed a named workspace from the CLI instead:
 `npx convex run network:seed '{"owner":"<the account id>"}'`.
+
+To bring an operator in without opening the browser — a roster usually arrives as
+a list — use the same creation path the form uses, and ask for the operator's
+intake link in the same call:
+
+```text
+npx convex run network:addOperatorForOwner '{
+  "owner": "<the account id>",
+  "name": "Coast & Valley Travel",
+  "country": "Portugal",
+  "destinationSlugs": ["portugal"],
+  "minGroupSize": 8,
+  "maxGroupSize": 30,
+  "contactEmail": "bookings@example.com",
+  "capabilityToken": "<32 random bytes, base64url>"
+}'
+```
+
+Which workspaces exist, and what the providers actually answer:
+
+```text
+npx convex run network:workspaces        # owner ids, operator and brief counts
+npx convex run inboxes:checkProvider     # Mail: status and inbox count
+npx convex run research:checkProvider    # Firecrawl: status
+```
+
+The mail plan matters: every brief gets its own inbox, because that is what makes a
+reply attributable to one brief without reading the message. Point the app at a
+plan that allows as many inboxes as you expect live briefs at once. When the
+provider refuses one, the refusal is shown verbatim rather than hidden behind
+"service unavailable".
 
 ```text
 npm test        # 35 tests: matching baselines, and the backend's actual behaviour

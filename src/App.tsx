@@ -53,6 +53,7 @@ type StoredOperator = {
   typicalNetPriceMax: number;
   approvalStatus: string;
   source: "seed" | "researched" | "manual";
+  contactEmail?: string;
   website?: string;
 };
 // What the network query returns for one operator's capability record. It names
@@ -101,6 +102,7 @@ function cacheNetwork(rows: NetworkRow[]) {
     typicalNetPriceMin: operator.typicalNetPriceMin,
     typicalNetPriceMax: operator.typicalNetPriceMax,
     approvalStatus: operator.approvalStatus,
+    contactEmail: operator.contactEmail,
   }));
   operatorProfiles = rows.map(({ capability }) => ({
     ...toProfile(capability),
@@ -111,6 +113,8 @@ function cacheNetwork(rows: NetworkRow[]) {
 }
 
 const operatorWebsite = (slug: string) => networkBySlug.get(slug)?.website ?? "";
+const operatorContactEmail = (slug: string) =>
+  networkBySlug.get(slug)?.contactEmail ?? "";
 
 // The stored record and the engine's record differ by one field name and one
 // added key, so the conversion lives in exactly two functions.
@@ -381,6 +385,7 @@ function OperatorDirectory({ request, briefId }: { request: TripRequest; briefId
       const pending = partner.approvalStatus === "capability_intake_pending";
       return <article key={partner.id}><span className={`status-badge ${pending ? "pending" : ""}`}>{pending ? "Capability intake pending" : "Capability on file"}</span><h2>{partner.name}</h2><p>{capability?.serviceAreas.flatMap((area) => [area.country, ...area.regions]).join(" · ") || capability?.locations.map(destinationName).join(" · ")}</p><div className="mini-facts"><span>{capability?.minGroupSize}–{capability?.maxGroupSize} travellers</span><span>{capability?.timing.minimumLeadTimeDays ?? 0}-day minimum lead time</span><span>{capability?.services.length ?? 0} experiences</span></div><TagList title="Experiences" values={(capability?.services ?? []).slice(0, 7)} tone="neutral" />{operatorWebsite(partner.id) && <a className="source-link" href={operatorWebsite(partner.id)} target="_blank" rel="noreferrer">Source website</a>}
         <div className="operator-actions">{link ? <><a className="primary" href={responseLink(link.token)} target="_blank" rel="noreferrer">Open its intake link →</a><button className="secondary" onClick={() => void navigator.clipboard?.writeText(responseLink(link.token)).then(() => setNotice(`Link for ${partner.name} copied.`))}>Copy link</button></> : <button className="primary" disabled={busySlug === partner.id} onClick={() => void openIntake(partner.id)}>{busySlug === partner.id ? "Creating…" : "Create its intake link"}</button>}<button className="secondary" onClick={() => void remove(partner.id, partner.name)}>Remove</button></div>
+        <OperatorContact slug={partner.id} contactEmail={partner.contactEmail} />
         {link?.lastOpenedAt && <small className="quiet">Last opened {new Date(link.lastOpenedAt).toLocaleDateString()}</small>}
       </article>;
     })}</div>
@@ -397,6 +402,7 @@ function AddOperator() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [country, setCountry] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [destinationSlugs, setDestinationSlugs] = useState<string[]>([]);
   const [minGroupSize, setMinGroupSize] = useState(8);
   const [maxGroupSize, setMaxGroupSize] = useState(30);
@@ -405,16 +411,16 @@ function AddOperator() {
   const save = async () => {
     setError(""); setNotice("");
     try {
-      const result = await addOperator({ name, country, destinationSlugs, minGroupSize, maxGroupSize });
+      const result = await addOperator({ name, country, destinationSlugs, minGroupSize, maxGroupSize, contactEmail });
       setNotice(`${name} was added. Create its intake link below and send it, and it can fill in what it can actually deliver.`);
-      setName(""); setCountry(""); setDestinationSlugs([]); setOpen(false);
+      setName(""); setCountry(""); setContactEmail(""); setDestinationSlugs([]); setOpen(false);
       void result;
     } catch (cause) { setError(errorText(cause, "Could not add that operator.")); }
   };
   return <div className="network-research"><div className="section-heading split-heading"><div><p className="eyebrow">ADD BY HAND</p><h2>Bring in an operator you already work with</h2><p>A name and a footprint are enough. Capability, commercial terms and timing all arrive from the operator's own intake, not from here.</p></div><button className="secondary" onClick={() => setOpen(!open)}>{open ? "Close" : "Add an operator"}</button></div>
     {error && <div className="inline-warning"><strong>Add</strong><span>{error}</span></div>}
     {notice && <div className="inline-success"><strong>Added</strong><span>{notice}</span></div>}
-    {open && <div className="form-card"><div className="form-grid three"><label className="wide">Operator name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Coast & Valley Travel" /></label><label>Country<input value={country} onChange={(event) => setCountry(event.target.value)} /></label><label>Minimum group<input type="number" value={minGroupSize} onChange={(event) => setMinGroupSize(Number(event.target.value))} /></label><label>Maximum group<input type="number" value={maxGroupSize} onChange={(event) => setMaxGroupSize(Number(event.target.value))} /></label></div><fieldset><legend>Destinations it operates</legend><div className="choice-grid compact">{destinations.map((item) => <Choice key={item.id} item={item.id} checked={destinationSlugs.includes(item.id)} onChange={() => setDestinationSlugs(destinationSlugs.includes(item.id) ? destinationSlugs.filter((slug) => slug !== item.id) : [...destinationSlugs, item.id])} />)}</div></fieldset><div className="sticky-action"><span>It starts with an empty capability record, so it matches nothing until it fills one in.</span><button className="primary" disabled={name.trim().length < 3} onClick={() => void save()}>Add to the network</button></div></div>}
+    {open && <div className="form-card"><div className="form-grid three"><label className="wide">Operator name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Coast & Valley Travel" /></label><label>Country<input value={country} onChange={(event) => setCountry(event.target.value)} /></label><label className="wide">Contact email<input type="email" inputMode="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} placeholder="name@operator.example" /></label><label>Minimum group<input type="number" value={minGroupSize} onChange={(event) => setMinGroupSize(Number(event.target.value))} /></label><label>Maximum group<input type="number" value={maxGroupSize} onChange={(event) => setMaxGroupSize(Number(event.target.value))} /></label></div><fieldset><legend>Destinations it operates</legend><div className="choice-grid compact">{destinations.map((item) => <Choice key={item.id} item={item.id} checked={destinationSlugs.includes(item.id)} onChange={() => setDestinationSlugs(destinationSlugs.includes(item.id) ? destinationSlugs.filter((slug) => slug !== item.id) : [...destinationSlugs, item.id])} />)}</div></fieldset><div className="sticky-action"><span>It starts with an empty capability record, so it only matches what it confirms itself.</span><button className="primary" disabled={name.trim().length < 3} onClick={() => void save()}>Add to the network</button></div></div>}
   </div>;
 }
 
@@ -637,7 +643,7 @@ function Workspace() {
     let sent = 0;
     try {
       for (const row of shortlist) {
-        const email = (emails[row._id] ?? row.email ?? "").trim();
+        const email = (emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug) ?? "").trim();
         if (!email || row.sentAt) continue;
         await sendRequest({ briefOperatorId: row._id, email });
         sent += 1;
@@ -741,7 +747,29 @@ function OperatorLinks({ shortlist, briefName, createDemoLink, resume, onDelete,
 // supplier: the demo runs on the private links instead.
 function SendPanel({ shortlist, emails, setEmails }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void }) {
   if (!shortlist.length) return null;
-  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the brief's own inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div><div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? ""} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
+  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the brief's own inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div><div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug)} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
+}
+
+// The address the agency reaches this operator at. It lives on the network record
+// so it is entered once and lands on every request, and it stays editable because
+// an operator changes address.
+function OperatorContact({ slug, contactEmail }: { slug: string; contactEmail?: string }) {
+  const setContactEmail = useMutation(api.network.setContactEmail);
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(contactEmail ?? "");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setError(""); setBusy(true);
+    try {
+      await setContactEmail({ operatorSlug: slug, contactEmail: value });
+      setEditing(false);
+    } catch (cause) { setError(errorText(cause, "That address was not saved.")); }
+    finally { setBusy(false); }
+  };
+  if (!editing)
+    return <div className="contact-row"><span className="contact-label">Contact</span>{contactEmail ? <><a href={`mailto:${contactEmail}`}>{contactEmail}</a><button className="link-button" onClick={() => { setValue(contactEmail); setEditing(true); }}>Change</button></> : <><em>No address yet</em><button className="link-button" onClick={() => { setValue(""); setEditing(true); }}>Add one</button></>}</div>;
+  return <div className="contact-row"><label>Contact email<input type="email" inputMode="email" value={value} onChange={(event) => setValue(event.target.value)} placeholder="name@operator.example" /></label><button className="secondary" onClick={() => setEditing(false)}>Cancel</button><button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "Saving…" : "Save"}</button>{error && <small className="contact-error">{error}</small>}</div>;
 }
 
 // Not every operator answers through a link. Some reply by email, in their own

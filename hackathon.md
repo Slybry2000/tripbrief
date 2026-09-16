@@ -490,3 +490,48 @@ The suite grew from 32 to 35 tests, the new ones covering workspace isolation (t
 workspaces, identical seeded slugs, changes on one provably invisible to the other),
 both link kinds and their scope, adding by hand and from research, removing an
 operator that has never quoted, and refusing to remove one that has.
+
+### 2026-09-16 - a real operator, and two bugs a real send found
+
+Bryan asked for a working operator he could test against, at his own address. That
+request exposed a hole and then found two bugs, which is the useful part.
+
+**The hole: the network did not remember how to reach anyone.** An address was
+typed per brief and forgotten, so the same operator had to be re-entered for every
+request, which is exactly how a wrong address gets sent. `operators` now carries a
+contact email: validated before it is stored, editable later, cleared just as
+easily, and prefilled into every request for that operator. Sending is still one
+click on one named operator.
+
+**The first bug, found by sending.** The inbox display name was built straight from
+the brief's name, and the mail provider rejects brackets. A brief called
+"Wellness week (October)" could therefore never send anything, and the failure
+surfaced as "the service is unavailable" — which is what the code said instead of
+what the provider said. Both are fixed: the display name is reduced to the
+accepted character set, and a refusal now reports the provider's own reason.
+
+**The second bug, found by clicking the link that arrived.** A capability token is
+generated per row, but nothing enforced that two rows could not share one, and two
+of my own test rows did. A duplicated token made the lookup throw rather than
+resolve, so the link in the email was dead. Shortlisting now refuses a token that
+is already in use, and the development rows written before that rule were removed.
+
+**What was actually run, and how.** With the local deployment's real Firecrawl,
+OpenAI and AgentMail credentials, a script drove the app's own public API exactly
+as a browser does — anonymous sign-in, seed the workspace, add the operator, create
+a brief, choose Portugal, shortlist the operator, send the request — and the
+request was delivered from a brief's own inbox (`happyspeed982@agentmail.to`) to
+`bryan@perseidechocreations.com`. The link inside it was then read back through
+`network:forToken` and `briefs:forOperatorToken` to confirm it resolves to that
+operator and that brief. That is the first real message this project has sent.
+
+Three ops commands came out of it, because a roster arrives as a list rather than
+as clicks: `network:workspaces`, `network:addOperatorForOwner` (same creation path
+as the form, and it hands back the operator's intake link), and
+`inboxes:checkProvider`, alongside the Firecrawl probe that already existed. A
+dead `RESEARCH_TEST_USER_ID` switch from the pre-pivot build was removed from the
+local deployment, and the inbox quota was corrected from a hackathon-era
+one-per-week to a bounded daily rate, because one inbox per brief is the design and
+the plan has to allow it.
+
+The suite is 39 tests across 8 files.

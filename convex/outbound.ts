@@ -154,7 +154,9 @@ export const sendRequest = action({
       api.inboxes.provision,
       { briefId: row.briefId },
     );
-    const link = `${env.CONVEX_SITE_URL}/#respond=${encodeURIComponent(row.capabilityToken)}`;
+    // The link has to resolve for the operator, not for the backend: a local
+    // backend serves no frontend, so the site URL is what the app is served from.
+    const link = `${env.SITE_URL?.trim() || env.CONVEX_SITE_URL}/#respond=${encodeURIComponent(row.capabilityToken)}`;
     const { subject, text, html } = requestMessage(
       brief,
       row.operatorName,

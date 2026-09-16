@@ -442,6 +442,19 @@ export const setShortlist = mutation({
         throw new ConvexError("That response link is malformed.");
       keep.add(operator.operatorSlug);
       const existing = bySlug.get(operator.operatorSlug);
+      // A token is a capability: it has to identify exactly one row, or a link
+      // could resolve to someone else's request. Tokens are 32 random bytes, so a
+      // clash means a retry, not a decision to make here.
+      const clash = await ctx.db
+        .query("briefOperators")
+        .withIndex("by_capabilityToken", (q) =>
+          q.eq("capabilityToken", operator.capabilityToken),
+        )
+        .unique();
+      if (clash && clash._id !== existing?._id)
+        throw new ConvexError(
+          "That response link is already in use. Please try again.",
+        );
       if (!existing) {
         await ctx.db.insert("briefOperators", {
           briefId: brief._id,
