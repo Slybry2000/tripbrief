@@ -15,6 +15,7 @@ dist-ssr
 .env.*
 !.env.example
 .firecrawl/
+.herenow/
 .agents/skills/convex-hackathon-skill/
 
 # Editor directories and files

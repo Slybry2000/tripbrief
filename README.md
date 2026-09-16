@@ -19,11 +19,16 @@ The intended sponsor roles are:
 - OpenAI: structure proposal text and identify comparable facts with citations.
 - AgentMail: give each brief its own inbox for future supplier-reply routing.
 
-Firecrawl has been tested in the public deployment; OpenAI and AgentMail have
-been tested with fictional local data.
-OpenAI returns review-only requirement evidence; AgentMail provisions a distinct
-brief inbox. No supplier email has been sent. Listing a planned behavior is not
-evidence that it has shipped.
+Firecrawl has been tested in the deployed backend; OpenAI and AgentMail have been
+tested with fictional local data. OpenAI returns review-only requirement
+evidence. AgentMail provisions a distinct brief inbox and currently neither sends
+nor receives mail — there is no send path and no inbound route yet. No supplier
+email has been sent or received. Listing a planned behavior is not evidence that
+it has shipped.
+
+As of 2026-09-16 the deployed frontend is not publicly viewable: an
+unauthenticated request to the URL above returns HTTP 401, "Sign in required".
+Making it publicly reachable is a submission gate, not a finished step.
 
 ## Safety rules
 

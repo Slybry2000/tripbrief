@@ -12,7 +12,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
-- **Last updated:** 2026-09-13T17:19:35-07:00
+- **Last updated:** 2026-09-16
 
 ## Log
 
@@ -57,7 +57,9 @@ functions, auth, and rate-limiter component to production. Replaced the private
 test-user gate with transactional per-user and global quotas for OpenAI and
 AgentMail while retaining Firecrawl quotas (`convex/integrationLimits.ts`). All
 fourteen tests, lint, and the production build pass. Published the source on
-GitHub and deployed the production frontend to a public `chatgpt.site` URL.
+GitHub and deployed the production frontend to a `chatgpt.site` URL. (Corrected
+2026-09-16: an unauthenticated request to that URL returns HTTP 401, "Sign in
+required", so the frontend is deployed but not yet publicly viewable.)
 
 ### 2026-09-13 - fe06fec
 Replaced the requester-entered proposal as the primary workflow with a true
@@ -76,3 +78,29 @@ own proposal, and the requester received the offer and exact evidence through a
 live Convex update. Normalized the production Firecrawl credential before adding
 it to the outbound request; a follow-up public-app search returned five current
 partner results.
+
+### 2026-09-16 - fe12430
+Recorded a verified statement of what actually runs, with a source for every
+line, before any further work: `.local/ceo-review/REALITY-BRIEF.md` (private,
+with the independent re-check in `verification-notes.md`). The load-bearing
+findings are corrections to this log's earlier claims, not new features:
+
+- The deployed frontend is **not publicly viewable**. An unauthenticated request
+  to `https://tripbrief.perseidechocreations.chatgpt.site/` returns HTTP 401
+  ("Sign in required"); `https://hip-minnow-543.convex.site/` returns 404. Every
+  browser walkthrough recorded here was performed in a session already signed in
+  as the owner, which is why this went unnoticed.
+- **AgentMail neither sends nor receives.** `convex/inboxes.ts` provisions an
+  inbox per brief and `convex/http.ts` registers only auth routes; there is no
+  send path, no inbound webhook and no message handling. Firecrawl performs a
+  real search and OpenAI performs a real review-only analysis.
+- The schema has **no deadline, no batch grading and no client role**, so the
+  two-sided supplier-reply workflow described in this log is the built one, and
+  the any-format reply workflow is not built.
+- The test suite was re-run from a clean checkout of `fe12430`: 8 files, 17
+  tests, 0 failures; typecheck and the production build pass.
+
+The current commit is preserved before further work on three paths: tag
+`backup/2026-09-16-pre-ceo-review`, branch `codex/backup-pre-ceo-review`, and a
+full working-tree copy outside the repository. No demo video, social post or
+submission exists yet.
