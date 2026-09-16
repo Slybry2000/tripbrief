@@ -3,12 +3,14 @@
 - **Project:** TripBrief — Incoming Operator Finder
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Turns a group-travel request into a capability-ranked shortlist of incoming tour operators, sends each one its own private request, and compares the trips they would actually operate — with a human choosing the shortlist and the winner.
-- **Live app:** https://hip-minnow-543.convex.site
+- **Live app:** https://hip-minnow-543.convex.site — public, no invitation.
+  **Note:** as of this entry that address still serves the build before the
+  pivot. Deploying this one is a single `npm run deploy`, and it has not been run.
 - **Repo:** https://github.com/Slybry2000/tripbrief
 - **Frontend:** https://hip-minnow-543.convex.site
 - **Convex deployment:** https://hip-minnow-543.convex.cloud
 - **Components:** @convex-dev/rate-limiter, @convex-dev/static-hosting
-- **Convex features:** schema, indexes, queries, mutations, realtime queries, auth HTTP routes
+- **Convex features:** schema, indexes, queries, mutations, actions, realtime queries, auth HTTP routes, per-workspace ownership, rate-limiter quotas, static hosting of the frontend
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
@@ -359,10 +361,12 @@ deadline; the advisor puts one recommendation in front of the client, who
 approves it or asks for a change; and no client, supplier or advisor is named
 publicly. The submission is anonymous, and the repository keeps this name.
 
-Still open at the end of 2026-09-16: the deadline and the batch standardisation
-are not built, the client's approve-or-change view is not built, the brief's inbox
-sends but does not yet receive, and there is no demo video, no social post and no
-submitted entry.
+Open at that point in the day, and **superseded by the pivot below**: the deadline
+and the batch standardisation were not built, the client's approve-or-change view
+was not built, the brief's inbox sent but did not yet receive, and there was no
+demo video, no social post and no submitted entry. The pivot replaced the whole
+domain, so the first two items no longer describe this product; the inbox now both
+sends and receives, and the video, the post and the submission are still open.
 
 ### 2026-09-16 - the pivot: the operator finder becomes the product
 

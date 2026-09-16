@@ -5,7 +5,9 @@ incoming tour operators**, gives each shortlisted operator its own private
 request, and compares the trips those operators say they would actually operate.
 A person always chooses the shortlist and the winner.
 
-Live app: **https://hip-minnow-543.convex.site** — public, no invitation.
+Live app: **https://hip-minnow-543.convex.site** — public, no invitation. As of
+this commit that address still serves the build from before the rebuild; deploying
+this one is a single `npm run deploy`, and it has not been run.
 
 Everything in the shipped operator network is fictional. No real supplier, price,
 quote or message is included, and no message has been sent to a real supplier.
