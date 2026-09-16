@@ -10,17 +10,16 @@ const http = httpRouter();
 // Exact routes are registered first so they win over the static catch-all.
 auth.addHttpRoutes(http);
 
-// Inbound supplier mail. AgentMail posts here when a supplier replies to the
-// address a brief sent its invitation from. The shared secret is the only
-// credential in the request; nothing in the body is trusted for matching.
+// Inbound operator mail. AgentMail posts here when an operator replies to the
+// address a brief sent its request from. The shared secret is the only credential
+// in the request; nothing in the body is trusted for matching.
 http.route({
   path: "/incoming/agentmail",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
     const secret = env.AGENTMAIL_WEBHOOK_SECRET?.trim();
-    if (!secret)
-      return new Response("Not configured", { status: 503 });
-    if (request.headers.get("x-tripbrief-secret") !== secret)
+    if (!secret) return new Response("Not configured", { status: 503 });
+    if (request.headers.get("x-operator-inbox-secret") !== secret)
       return new Response("Forbidden", { status: 403 });
     let body: unknown;
     try {

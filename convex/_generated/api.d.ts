@@ -8,20 +8,18 @@
  * @module
  */
 
-import type * as analysis from "../analysis.js";
 import type * as auth from "../auth.js";
+import type * as briefs from "../briefs.js";
 import type * as http from "../http.js";
 import type * as inboxes from "../inboxes.js";
 import type * as integrationLimits from "../integrationLimits.js";
-import type * as invites from "../invites.js";
-import type * as offerRules from "../offerRules.js";
+import type * as network from "../network.js";
+import type * as openai from "../openai.js";
 import type * as outbound from "../outbound.js";
-import type * as partners from "../partners.js";
+import type * as proposals from "../proposals.js";
 import type * as replies from "../replies.js";
 import type * as research from "../research.js";
-import type * as researchLimits from "../researchLimits.js";
-import type * as searchQueries from "../searchQueries.js";
-import type * as trips from "../trips.js";
+import type * as seedData from "../seedData.js";
 
 import type {
   ApiFromModules,
@@ -30,20 +28,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  analysis: typeof analysis;
   auth: typeof auth;
+  briefs: typeof briefs;
   http: typeof http;
   inboxes: typeof inboxes;
   integrationLimits: typeof integrationLimits;
-  invites: typeof invites;
-  offerRules: typeof offerRules;
+  network: typeof network;
+  openai: typeof openai;
   outbound: typeof outbound;
-  partners: typeof partners;
+  proposals: typeof proposals;
   replies: typeof replies;
   research: typeof research;
-  researchLimits: typeof researchLimits;
-  searchQueries: typeof searchQueries;
-  trips: typeof trips;
+  seedData: typeof seedData;
 }>;
 
 /**

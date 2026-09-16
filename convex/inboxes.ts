@@ -6,20 +6,26 @@ import type { Doc } from "./_generated/dataModel";
 
 const inboxResult = v.object({ email: v.string(), inboxId: v.string() });
 
+// Every brief gets its own inbox. That is what lets a reply be matched to a
+// brief without reading anything in the message, and it is why a new brief needs
+// no setup: the inbox is created the first time the brief sends something.
 export const provision = action({
-  args: { tripId: v.id("trips") },
+  args: { briefId: v.id("briefs") },
   returns: inboxResult,
   handler: async (ctx, args): Promise<{ email: string; inboxId: string }> => {
     const owner = await getAuthUserId(ctx);
     if (!owner) throw new ConvexError("Please sign in.");
-    const { trip }: { trip: Doc<"trips">; offers: Doc<"offers">[] } =
-      await ctx.runQuery(api.trips.get, { tripId: args.tripId });
-    if (trip.agentMailInboxEmail && trip.agentMailInboxId)
-      return { email: trip.agentMailInboxEmail, inboxId: trip.agentMailInboxId };
+    const brief: Doc<"briefs"> | null = await ctx.runQuery(api.briefs.one, {
+      briefId: args.briefId,
+    });
+    if (!brief || brief.owner !== owner) throw new ConvexError("Brief not found.");
+    if (brief.agentMailInboxId && brief.agentMailInboxEmail)
+      return { email: brief.agentMailInboxEmail, inboxId: brief.agentMailInboxId };
     if (!env.AGENTMAIL_API_KEY)
-      throw new ConvexError("Trip inboxes have not been configured.");
+      throw new ConvexError("Brief inboxes have not been configured.");
     await ctx.runMutation(internal.integrationLimits.consumeInbox, {
-      tripId: args.tripId,
+      briefId: args.briefId,
+      owner,
     });
     const response = await fetch("https://api.agentmail.to/v0/inboxes", {
       method: "POST",
@@ -28,22 +34,22 @@ export const provision = action({
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        display_name: `TripBrief · ${trip.title}`.slice(0, 120),
-        metadata: { tripbrief_trip_id: trip._id },
+        display_name: `Operator requests · ${brief.name}`.slice(0, 120),
+        metadata: { brief_id: brief._id },
       }),
       signal: AbortSignal.timeout(30_000),
     }).catch(() => {
       throw new ConvexError(
-        "Inbox service could not connect. Please try again later.",
+        "The inbox service could not connect. Please try again later.",
       );
     });
     if (!response.ok)
       throw new ConvexError(
-        "Inbox service is unavailable. Please try again later.",
+        "The inbox service is unavailable. Please try again later.",
       );
     const inbox = parseInbox(await response.json());
     await ctx.runMutation(internal.inboxes.attach, {
-      tripId: args.tripId,
+      briefId: args.briefId,
       owner,
       inboxId: inbox.inboxId,
       email: inbox.email,
@@ -54,19 +60,19 @@ export const provision = action({
 
 export const attach = internalMutation({
   args: {
-    tripId: v.id("trips"),
+    briefId: v.id("briefs"),
     owner: v.string(),
     inboxId: v.string(),
     email: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const trip = await ctx.db.get("trips", args.tripId);
-    if (!trip || trip.owner !== args.owner)
-      throw new ConvexError("Trip not found.");
+    const brief = await ctx.db.get("briefs", args.briefId);
+    if (!brief || brief.owner !== args.owner)
+      throw new ConvexError("Brief not found.");
     // A repeat action never overwrites an inbox already attached to the brief.
-    if (!trip.agentMailInboxId)
-      await ctx.db.patch("trips", trip._id, {
+    if (!brief.agentMailInboxId)
+      await ctx.db.patch("briefs", brief._id, {
         agentMailInboxId: args.inboxId,
         agentMailInboxEmail: args.email,
         updatedAt: Date.now(),
@@ -77,7 +83,7 @@ export const attach = internalMutation({
 
 export function parseInbox(body: unknown): { inboxId: string; email: string } {
   if (!body || typeof body !== "object")
-    throw new ConvexError("Inbox service returned an unexpected response.");
+    throw new ConvexError("The inbox service returned an unexpected response.");
   const inboxId =
     "inbox_id" in body && typeof body.inbox_id === "string"
       ? body.inbox_id
@@ -86,11 +92,7 @@ export function parseInbox(body: unknown): { inboxId: string; email: string } {
         : "";
   const email =
     "email" in body && typeof body.email === "string" ? body.email : "";
-  if (
-    !inboxId ||
-    inboxId.length > 200 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  )
-    throw new ConvexError("Inbox service returned an invalid inbox.");
+  if (!inboxId || inboxId.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new ConvexError("The inbox service returned an invalid inbox.");
   return { inboxId, email };
 }

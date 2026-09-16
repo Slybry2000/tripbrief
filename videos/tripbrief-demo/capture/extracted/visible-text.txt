@@ -1,0 +1,9 @@
+[a] TripBrief
+[span] THE ADVISOR'S DESK
+[small] Development preview
+[p] LESS BACK-AND-FORTH. BETTER TRIPS.
+[h1] One brief.
+[h1] Every offer, in perspective.
+[p] Compare what each travel partner actually offers, with their words beside every answer.
+[button] Open a private trial workspace →
+[small] Your trial belongs to this browser session. Use fictional information during this preview.

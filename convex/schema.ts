@@ -2,98 +2,284 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 
-export const assessment = v.object({
-  requirementNumber: v.number(),
-  status: v.union(
-    v.literal("yes"),
-    v.literal("partial"),
-    v.literal("no"),
-    v.literal("unknown"),
-  ),
-  evidence: v.string(),
+// ---------------------------------------------------------------------------
+// The operator network
+//
+// Dream Travel sells the trip; the incoming tour operator runs it. The network
+// is what the advisor matches a client brief against, so it is stored rather
+// than hard-coded: an operator maintains its own capability record, and every
+// match run reads the current version of it.
+// ---------------------------------------------------------------------------
+
+export const operatorRecord = v.object({
+  slug: v.string(),
+  name: v.string(),
+  country: v.string(),
+  destinations: v.array(v.string()),
+  specialties: v.array(v.string()),
+  minGroupSize: v.number(),
+  maxGroupSize: v.number(),
+  experienceLevels: v.array(v.number()),
+  typicalNetPriceMin: v.number(),
+  typicalNetPriceMax: v.number(),
+  approvalStatus: v.string(),
+  // "seed" for the shipped fictional network, "researched" for an operator an
+  // advisor added from a real published website.
+  source: v.union(v.literal("seed"), v.literal("researched")),
+  website: v.optional(v.string()),
+  updatedAt: v.number(),
 });
-export const priceBasis = v.union(
-  v.literal("total"),
-  v.literal("per_person"),
-  v.literal("per_night"),
+
+export const serviceArea = v.object({
+  destinationSlug: v.string(),
+  country: v.string(),
+  regions: v.array(v.string()),
+  cities: v.array(v.string()),
+  areas: v.array(v.string()),
+  coverage: v.union(
+    v.literal("nationwide"),
+    v.literal("regional"),
+    v.literal("local"),
+  ),
+  operatingMonths: v.array(v.number()),
+});
+
+export const operatingTiming = v.object({
+  yearRound: v.boolean(),
+  operatingMonths: v.array(v.number()),
+  seasonalNotes: v.string(),
+  blackoutPeriods: v.array(
+    v.object({ start: v.string(), end: v.string(), label: v.string() }),
+  ),
+  shortestLeadTimeDays: v.number(),
+  minimumLeadTimeDays: v.number(),
+  idealLeadTimeDays: v.number(),
+  averageProposalTurnaroundDays: v.number(),
+  maximumProposalTurnaroundDays: v.number(),
+  spaceHoldDays: v.number(),
+  depositDueDaysBefore: v.number(),
+  finalPaymentDaysBefore: v.number(),
+  finalHeadcountDaysBefore: v.number(),
+  travelerNamesDaysBefore: v.number(),
+  latestGroupChangeDaysBefore: v.number(),
+  roomReleaseDaysBefore: v.number(),
+  cancellationDeadlines: v.array(
+    v.object({ daysBefore: v.number(), penalty: v.string() }),
+  ),
+});
+
+export const commercialTerms = v.object({
+  typicalNetMin: v.number(),
+  typicalNetMax: v.number(),
+  minimumTripValue: v.number(),
+  typicalTripValue: v.number(),
+  preferredGroupValue: v.number(),
+  pricingModels: v.array(v.string()),
+  currency: v.string(),
+  pricingVariesByGroupSize: v.boolean(),
+});
+
+// What an operator can actually deliver. Every list here is drawn from a fixed
+// vocabulary (experiences, operations, requirement names, hotel levels), so the
+// arrays are bounded by construction and never grow with use.
+export const operatorCapability = v.object({
+  operatorSlug: v.string(),
+  locations: v.array(v.string()),
+  serviceAreas: v.array(serviceArea),
+  minGroupSize: v.number(),
+  maxGroupSize: v.number(),
+  idealGroupSize: v.number(),
+  supportsFIT: v.boolean(),
+  groupTypes: v.array(v.string()),
+  travelerTypes: v.array(v.string()),
+  hotelTypes: v.array(v.string()),
+  services: v.array(v.string()),
+  features: v.array(v.string()),
+  operations: v.array(v.string()),
+  canBuildBespoke: v.boolean(),
+  customizationLevel: v.union(
+    v.literal("limited"),
+    v.literal("moderate"),
+    v.literal("high"),
+    v.literal("fully_bespoke"),
+  ),
+  quoteTurnaroundDays: v.number(),
+  languages: v.array(v.string()),
+  commercial: commercialTerms,
+  timing: operatingTiming,
+  updatedAt: v.number(),
+});
+
+// ---------------------------------------------------------------------------
+// The client brief
+// ---------------------------------------------------------------------------
+
+export const briefStatus = v.union(
+  v.literal("draft"),
+  v.literal("sent"),
+  v.literal("comparing"),
+  v.literal("selected"),
 );
 
-// A supplier may attach the documents they already work with — a quote PDF, a
-// past itinerary, a completed trip — instead of retyping everything.
-export const attachment = v.object({
-  storageId: v.id("_storage"),
+// Everything the advisor knows before any operator is contacted. The destination
+// is deliberately absent from this list: a brief is written before the
+// destination is chosen, and the chosen locations are stored separately below.
+export const briefFields = v.object({
   name: v.string(),
-  size: v.number(),
-  contentType: v.optional(v.string()),
+  evaluationDate: v.string(),
+  travelMonth: v.string(),
+  travelerCount: v.number(),
+  minimumViableTravelers: v.number(),
+  confirmedTravelers: v.number(),
+  nights: v.number(),
+  earliestDepartureDate: v.string(),
+  preferredDepartureDate: v.string(),
+  latestDepartureDate: v.string(),
+  flexibleDates: v.boolean(),
+  proposalDecisionDate: v.string(),
+  targetRetailPricePerPerson: v.number(),
+  flightsIncluded: v.boolean(),
+  experienceLevel: v.number(),
+  pace: v.string(),
+  climates: v.array(v.string()),
+  desiredExperiences: v.array(v.string()),
+  importantRequirements: v.array(v.string()),
+  travelerTypes: v.array(v.string()),
+  transportationNeeds: v.array(v.string()),
+  accessibilityNeeds: v.array(v.string()),
+  notes: v.string(),
 });
 
-// The parts of a supplier's answer that are not per-requirement. All optional:
-// a supplier who only writes prose and attaches a quote is a valid response.
-export const offerDetails = v.object({
-  inclusions: v.optional(v.array(v.string())),
-  exclusions: v.optional(v.string()),
-  itinerary: v.optional(v.string()),
-  rooms: v.optional(v.string()),
-  meals: v.optional(v.array(v.string())),
-  transfers: v.optional(v.array(v.string())),
-  terms: v.optional(v.string()),
-});
+export const availability = v.union(
+  v.literal("Confirmation Required"),
+  v.literal("Available"),
+  v.literal("On Request"),
+  v.literal("Held"),
+  v.literal("Unavailable"),
+);
 
-// What the advisor gathers before any supplier is contacted. Every field is
-// optional so a brief can still be created quickly; the arrays are bounded in
-// trips.create. Budget stays with the advisor and is never shown to a supplier.
-export const tripProfile = v.object({
-  lane: v.optional(v.string()),
-  groupStory: v.optional(v.string()),
-  goodDay: v.optional(v.string()),
-  boundaries: v.optional(v.string()),
-  guardrails: v.optional(v.array(v.string())),
-  groupType: v.optional(v.string()),
-  ages: v.optional(v.string()),
-  rooms: v.optional(v.string()),
-  needs: v.optional(v.array(v.string())),
-  interests: v.optional(v.array(v.string())),
-  pace: v.optional(v.string()),
-  setting: v.optional(v.string()),
-  styles: v.optional(v.array(v.string())),
-  mustDo: v.optional(v.string()),
-  dateFlexibility: v.optional(v.string()),
-  budgetBand: v.optional(v.string()),
-  budgetCurrency: v.optional(v.string()),
-  budgetCovers: v.optional(v.array(v.string())),
-  // The assumptions the advisor accepted, recorded with the brief so the basis
-  // of a later quote is not a matter of memory.
-  assumptions: v.optional(v.array(v.string())),
-  assumptionsAccepted: v.optional(v.boolean()),
+// The structured proposal an operator returns. This is the object the advisor
+// compares, and after selection it is the source of every operational deadline.
+export const proposalRecord = v.object({
+  programName: v.string(),
+  basedOnExistingProgram: v.boolean(),
+  basedOnProgramSlug: v.optional(v.string()),
+  destinationSlug: v.string(),
+  startDate: v.string(),
+  endDate: v.string(),
+  nights: v.number(),
+  availability,
+  groupSizeAccepted: v.number(),
+  hotelLevel: v.string(),
+  hotelNotes: v.string(),
+  transportation: v.array(v.string()),
+  experiencesIncluded: v.array(v.string()),
+  requirementsMet: v.array(v.string()),
+  changesOrAdditions: v.array(v.string()),
+  cannotProvide: v.array(v.string()),
+  finalFit: v.number(),
+  netPricePerPerson: v.number(),
+  currency: v.string(),
+  pricingAssumptions: v.string(),
+  depositPercent: v.number(),
+  depositDueDaysBefore: v.number(),
+  finalHeadcountDaysBefore: v.number(),
+  finalPaymentDaysBefore: v.number(),
+  travelerNamesDaysBefore: v.number(),
+  roomReleaseDaysBefore: v.number(),
+  cancellationTerms: v.array(
+    v.object({ daysBefore: v.number(), penalty: v.string() }),
+  ),
+  operatorNotes: v.string(),
 });
 
 export default defineSchema({
   ...authTables,
-  supplierInvites: defineTable({
-    token: v.string(), tripId: v.id("trips"), owner: v.string(), supplierName: v.string(),
-    status: v.union(v.literal("open"), v.literal("submitted"), v.literal("revoked")),
-    // A supplier on the roster either comes from the researched shortlist or is
-    // added by hand; the email is what the trip inbox sends the link to.
-    partnerId: v.optional(v.id("partners")),
+
+  operators: defineTable(operatorRecord)
+    .index("by_slug", ["slug"])
+    .index("by_source", ["source"]),
+
+  operatorCapability: defineTable(operatorCapability).index(
+    "by_operatorSlug",
+    ["operatorSlug"],
+  ),
+
+  briefs: defineTable({
+    owner: v.string(),
+    ...briefFields.fields,
+    status: briefStatus,
+    // The customer-approved locations. Only operators serving one of these is
+    // considered, which is why this is stored on the brief rather than derived.
+    selectedDestinationSlugs: v.array(v.string()),
+    selectedProposalId: v.optional(v.id("proposals")),
+    selectionReason: v.optional(v.string()),
+    agentMailInboxId: v.optional(v.string()),
+    agentMailInboxEmail: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["owner"])
+    .index("by_agentMailInboxId", ["agentMailInboxId"]),
+
+  // One row per operator the advisor chose to contact. The row owns that
+  // operator's private response link, so a link can be re-issued or revoked
+  // without touching the brief itself.
+  briefOperators: defineTable({
+    briefId: v.id("briefs"),
+    owner: v.string(),
+    operatorSlug: v.string(),
+    operatorName: v.string(),
+    capabilityToken: v.string(),
+    status: v.union(
+      v.literal("open"),
+      v.literal("sent"),
+      v.literal("submitted"),
+      v.literal("declined"),
+    ),
     email: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     providerMessageId: v.optional(v.string()),
     sendError: v.optional(v.string()),
-    offerId: v.optional(v.id("offers")), createdAt: v.number(), updatedAt: v.number(),
-  }).index("by_token", ["token"]).index("by_tripId", ["tripId"]),
-  partners: defineTable({
-    tripId: v.id("trips"),
+    openedAt: v.optional(v.number()),
+    proposalId: v.optional(v.id("proposals")),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_briefId", ["briefId"])
+    .index("by_capabilityToken", ["capabilityToken"])
+    .index("by_operatorSlug", ["operatorSlug"]),
+
+  proposals: defineTable({
+    briefId: v.id("briefs"),
     owner: v.string(),
-    title: v.string(),
-    url: v.string(),
-    description: v.string(),
-  }).index("by_tripId", ["tripId"]),
-  // A supplier's emailed reply, stored as it arrived. It is the raw material the
-  // engine standardises, and it is never overwritten by an offer.
-  supplierReplies: defineTable({
-    tripId: v.id("trips"),
+    operatorSlug: v.string(),
+    ...proposalRecord.fields,
+    // How it arrived. A portal submission is the operator's own words; an
+    // emailed reply is recorded by the advisor, and a model draft is only ever a
+    // review draft until a human accepts it.
+    submittedVia: v.union(
+      v.literal("portal"),
+      v.literal("advisor_import"),
+      v.literal("email_import"),
+    ),
+    submittedAt: v.number(),
+    standardisedAt: v.optional(v.number()),
+    standardisedBy: v.optional(v.string()),
+    // The operator's own words, kept when a proposal arrived as an emailed reply
+    // rather than through its response link. A model draft is checked against
+    // this text, never against a paraphrase of it.
+    sourceText: v.optional(v.string()),
+  })
+    .index("by_briefId", ["briefId"])
+    .index("by_briefId_and_operatorSlug", ["briefId", "operatorSlug"]),
+
+  // An emailed reply, stored exactly as it arrived. It is the raw material a
+  // model draft is drawn from, and it is never overwritten by a proposal.
+  inboxMessages: defineTable({
+    briefId: v.id("briefs"),
     owner: v.string(),
-    inviteId: v.optional(v.id("supplierInvites")),
+    briefOperatorId: v.optional(v.id("briefOperators")),
+    operatorSlug: v.optional(v.string()),
     inboxId: v.string(),
     fromEmail: v.string(),
     fromName: v.optional(v.string()),
@@ -102,47 +288,24 @@ export default defineSchema({
     messageId: v.string(),
     receivedAt: v.number(),
   })
-    .index("by_tripId", ["tripId"])
+    .index("by_briefId", ["briefId"])
     .index("by_messageId", ["messageId"])
     .index("by_inboxId", ["inboxId"]),
-  trips: defineTable({
+
+  // Published websites an advisor found while looking for new operators. A
+  // candidate is evidence, not a network member: it becomes an operator only
+  // when a human adds it.
+  candidates: defineTable({
     owner: v.string(),
+    query: v.string(),
     title: v.string(),
-    destination: v.string(),
-    startDate: v.string(),
-    endDate: v.string(),
-    travelers: v.number(),
-    brief: v.string(),
-    profile: v.optional(tripProfile),
-    // Bounded at 30 in create; requirement numbers never change after offers arrive.
-    requirements: v.array(v.object({ number: v.number(), text: v.string() })),
-    status: v.union(
-      v.literal("draft"),
-      v.literal("comparing"),
-      v.literal("selected"),
-    ),
-    selectedOfferId: v.optional(v.id("offers")),
-    selectionReason: v.optional(v.string()),
-    agentMailInboxId: v.optional(v.string()),
-    agentMailInboxEmail: v.optional(v.string()),
-    updatedAt: v.number(),
+    url: v.string(),
+    description: v.string(),
+    destinationSlug: v.string(),
+    foundAt: v.number(),
+    addedOperatorSlug: v.optional(v.string()),
+    dismissedAt: v.optional(v.number()),
   })
     .index("by_owner", ["owner"])
-    // Inbound mail is matched to its brief by the inbox it arrived in.
-    .index("by_agentMailInboxId", ["agentMailInboxId"]),
-  offers: defineTable({
-    owner: v.string(),
-    tripId: v.id("trips"),
-    supplierName: v.string(),
-    sourceText: v.string(),
-    amount: v.number(),
-    currency: v.string(),
-    priceBasis,
-    assessments: v.array(assessment),
-    details: v.optional(offerDetails),
-    attachments: v.optional(v.array(attachment)),
-    // Set when the engine has read this response against the requirements.
-    standardisedAt: v.optional(v.number()),
-    standardisedBy: v.optional(v.string()),
-  }).index("by_tripId", ["tripId"]),
+    .index("by_url", ["url"]),
 });

@@ -1,8 +1,8 @@
 # Hackathon log
 
-- **Project:** TripBrief
+- **Project:** TripBrief → **Dream Travel — Incoming Operator Finder** (the repository name is unchanged; the product inside it is described below)
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Turns group-travel requirements and supplier replies into a live, evidence-backed comparison while keeping supplier selection human-controlled.
+- **What it does:** Turns a group-travel request into a capability-ranked shortlist of incoming tour operators, sends each one its own private request, and compares the trips they would actually operate — with a human choosing the shortlist and the winner.
 - **Live app:** https://hip-minnow-543.convex.site
 - **Repo:** https://github.com/Slybry2000/tripbrief
 - **Frontend:** https://hip-minnow-543.convex.site
@@ -363,3 +363,77 @@ Still open at the end of 2026-09-16: the deadline and the batch standardisation
 are not built, the client's approve-or-change view is not built, the brief's inbox
 sends but does not yet receive, and there is no demo video, no social post and no
 submitted entry.
+
+### 2026-09-16 - the pivot: the operator finder becomes the product
+
+The site the hackathon had was a competent generic comparer, and it was the wrong
+product. The operator answered a question nobody had asked: it compared supplier
+proposals against a numbered requirement list, when the work actually starts one
+step earlier, with a client who wants something and an agency that has neither the
+destination nor the operator. The demo built from the 14-file build pack
+(`Dream Travel Trip Matcher — Demo v0.2`) is what this product was supposed to
+look like, so the app was rebuilt around it.
+
+**What the app is now.** Eight steps: client needs, destination discovery,
+capability-ranked operator matches, choose partners, one bespoke trip request per
+operator, operator responses, a comparison of proposed *trips*, and selection with
+a workback schedule. The group's own words, a target retail price, a minimum
+viable traveller count and an explicit go/no-go checkpoint all survive the whole
+way through, which is the part the old app could not express.
+
+**Two sides, one live record.** An operator opens a private link (32 random bytes
+in the URL fragment, generated in the advisor's browser) and gets exactly three
+things: its own capability record, the request it was sent, and its own proposal.
+It maintains its capability record through that same link, and saving it changes
+what the matcher sees on the next run. A proposal submitted in a second tab
+appears in the advisor's comparison without a refresh. Verified in the browser on
+2026-09-16: brief → Bali+Thailand → four ranked operators → three shortlisted →
+three links → the operator portal in a second tab → a structured proposal → live
+"Proposal received" in the first tab → comparison (92% final fit, $2,150 net,
+38.6% margin) → selection and a workback schedule built from that proposal's own
+deadlines.
+
+**Every sponsor still does real work, on the new shape.**
+
+- **Firecrawl** now grows the *network* rather than a shortlist: it searches
+  published websites for operators serving one destination, keeps the query that
+  surfaced each result, and stores each one as a candidate. A candidate becomes an
+  operator only when a human adds it, and it starts with an empty capability
+  record — so it matches nothing until it fills the intake in.
+- **OpenAI** reads an operator's emailed reply and drafts the structured proposal,
+  with an exact contiguous quote from the reply behind every claim. A quote that is
+  not in the reply voids the entire draft. It returns a review draft and never
+  writes; the advisor records the result. It refuses to run without a key.
+- **AgentMail** keeps the per-brief inbox and the single-address send path, now
+  carrying the trip request and the operator's own link. A reply is matched to a
+  brief by the inbox it landed in and to an operator by the address the request was
+  sent to, never by anything written in the message. No email has been sent to a
+  real supplier.
+
+**Reused, not thrown away.** The Convex ownership model, the capability-token
+shape, the per-workspace and app-wide quotas, the inbound-mail webhook with its
+shared secret, the exact-source evidence discipline and the static-hosting
+arrangement all carried over. What was replaced is the domain: `trips`/`offers`
+became `briefs`/`briefOperators`/`proposals`, and the operator network became a
+stored, editable set of capability records instead of a hard-coded list.
+
+**Where the numbers come from.** The matching engine is a pure module with the
+published baselines pinned by tests: Bali 100, Thailand 98, Costa Rica 90,
+Portugal 90, Greece 88, Tuscany 65, and Bali Reset at 92 for the default brief.
+The suite is 32 tests — 9 against those baselines and the rest against the
+backend's actual behaviour: ownership isolation, a capability link writing only
+its own record, the five-operator cap, an already-answered operator not being
+droppable, a decision that cannot name another brief's proposal, the cascade
+delete, reply matching, duplicate suppression, and the two quota-cheap provider
+paths failing closed when they are not configured.
+
+**Honest open items.** The vendor integrations have not all been exercised
+against their live providers on this deployment today: Firecrawl was verified
+earlier, and OpenAI and AgentMail are wired, unit-tested and configured through
+`convex env`, but no live OpenAI draft and no live AgentMail send has been
+performed since the pivot. The "add a researched operator, then have it fill in
+its intake" path has not been run end to end in the browser. Neither the
+deployed convex.site address nor the public repository has been updated to this
+build yet — that needs an explicit go-ahead, because the client's name now
+appears in a public app and repository, which the original hackathon boundary
+explicitly excluded.

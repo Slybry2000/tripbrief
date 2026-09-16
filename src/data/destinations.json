@@ -1,0 +1,193 @@
+[
+  {
+    "id": "bali",
+    "name": "Bali",
+    "country": "Indonesia",
+    "climates": [
+      "warm",
+      "tropical"
+    ],
+    "experienceStrengths": {
+      "yoga": 5,
+      "meditation": 5,
+      "spa": 5,
+      "healthy_food": 5,
+      "beach": 5,
+      "culture": 5,
+      "light_adventure": 4,
+      "hiking": 4,
+      "nature": 4,
+      "cooking": 4,
+      "wine": 1,
+      "fitness": 4,
+      "hot_springs": 2,
+      "wildlife": 3,
+      "luxury_resort": 5,
+      "private_group_experiences": 5
+    },
+    "description": "Strong all-around wellness destination with yoga, spa, culture, healthy food, and beach options.",
+    "watchOuts": [
+      "Long international travel time",
+      "Some areas require longer ground transfers"
+    ]
+  },
+  {
+    "id": "costa-rica",
+    "name": "Costa Rica",
+    "country": "Costa Rica",
+    "climates": [
+      "warm",
+      "tropical"
+    ],
+    "experienceStrengths": {
+      "yoga": 4,
+      "meditation": 4,
+      "spa": 4,
+      "healthy_food": 4,
+      "beach": 5,
+      "culture": 3,
+      "light_adventure": 5,
+      "hiking": 5,
+      "nature": 5,
+      "cooking": 3,
+      "wine": 1,
+      "fitness": 4,
+      "hot_springs": 5,
+      "wildlife": 5,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Excellent for nature-led wellness, beaches, hot springs, wildlife, and active experiences.",
+    "watchOuts": [
+      "Some itineraries can become more active than a relaxed group wants",
+      "Transfers between regions can be long"
+    ]
+  },
+  {
+    "id": "thailand",
+    "name": "Thailand",
+    "country": "Thailand",
+    "climates": [
+      "warm",
+      "tropical"
+    ],
+    "experienceStrengths": {
+      "yoga": 4,
+      "meditation": 5,
+      "spa": 5,
+      "healthy_food": 4,
+      "beach": 5,
+      "culture": 5,
+      "light_adventure": 4,
+      "hiking": 3,
+      "nature": 4,
+      "cooking": 5,
+      "wine": 1,
+      "fitness": 3,
+      "hot_springs": 2,
+      "wildlife": 3,
+      "luxury_resort": 5,
+      "private_group_experiences": 5
+    },
+    "description": "Strong for meditation, spa, food, culture, beaches, and luxury wellness.",
+    "watchOuts": [
+      "Best itinerary may require choosing between north and islands",
+      "Seasonality varies by region"
+    ]
+  },
+  {
+    "id": "portugal",
+    "name": "Portugal",
+    "country": "Portugal",
+    "climates": [
+      "mild",
+      "warm"
+    ],
+    "experienceStrengths": {
+      "yoga": 4,
+      "meditation": 3,
+      "spa": 4,
+      "healthy_food": 4,
+      "beach": 5,
+      "culture": 5,
+      "light_adventure": 4,
+      "hiking": 4,
+      "nature": 4,
+      "cooking": 5,
+      "wine": 5,
+      "fitness": 3,
+      "hot_springs": 2,
+      "wildlife": 2,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "A good mix of coastal wellness, food, wine, culture, and light adventure.",
+    "watchOuts": [
+      "October weather is milder than tropical destinations",
+      "Meditation-focused supply may be narrower"
+    ]
+  },
+  {
+    "id": "greece",
+    "name": "Greece",
+    "country": "Greece",
+    "climates": [
+      "warm",
+      "mild"
+    ],
+    "experienceStrengths": {
+      "yoga": 3,
+      "meditation": 3,
+      "spa": 4,
+      "healthy_food": 5,
+      "beach": 5,
+      "culture": 5,
+      "light_adventure": 3,
+      "hiking": 3,
+      "nature": 4,
+      "cooking": 5,
+      "wine": 4,
+      "fitness": 3,
+      "hot_springs": 2,
+      "wildlife": 2,
+      "luxury_resort": 5,
+      "private_group_experiences": 5
+    },
+    "description": "Strong for beach, food, culture, private groups, and upscale island experiences.",
+    "watchOuts": [
+      "Island transfers can add complexity",
+      "Some beach destinations become quieter in October"
+    ]
+  },
+  {
+    "id": "tuscany",
+    "name": "Tuscany",
+    "country": "Italy",
+    "climates": [
+      "mild"
+    ],
+    "experienceStrengths": {
+      "yoga": 3,
+      "meditation": 2,
+      "spa": 4,
+      "healthy_food": 4,
+      "beach": 1,
+      "culture": 5,
+      "light_adventure": 2,
+      "hiking": 3,
+      "nature": 4,
+      "cooking": 5,
+      "wine": 5,
+      "fitness": 2,
+      "hot_springs": 4,
+      "wildlife": 2,
+      "luxury_resort": 5,
+      "private_group_experiences": 5
+    },
+    "description": "Excellent for food, wine, spa, culture, countryside, and slow luxury travel.",
+    "watchOuts": [
+      "Weak fit for a beach-focused request",
+      "Less naturally wellness-led than Bali or Costa Rica"
+    ]
+  }
+]

@@ -1,0 +1,437 @@
+[
+  {
+    "id": "t1",
+    "name": "Bali Reset",
+    "nights": 7,
+    "minGroupSize": 12,
+    "maxGroupSize": 24,
+    "netPricePerPerson": 2150,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "yoga",
+      "meditation",
+      "spa",
+      "healthy_food",
+      "beach",
+      "culture",
+      "private_group_experiences"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival and private transfer",
+      "Morning yoga, spa, welcome dinner",
+      "Meditation and cultural visit",
+      "Healthy cooking experience",
+      "Beach and private wellness session",
+      "Free morning and group experience",
+      "Final yoga and farewell dinner",
+      "Departure"
+    ],
+    "operatorSlug": "p1",
+    "destinationSlug": "bali"
+  },
+  {
+    "id": "t2",
+    "name": "Bali Mind & Body",
+    "nights": 8,
+    "minGroupSize": 10,
+    "maxGroupSize": 20,
+    "netPricePerPerson": 2650,
+    "experienceLevel": 3,
+    "pace": "relaxed",
+    "experiences": [
+      "yoga",
+      "meditation",
+      "spa",
+      "healthy_food",
+      "culture",
+      "luxury_resort",
+      "cooking",
+      "private_group_experiences"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "mostly_private_experiences",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Wellness orientation",
+      "Yoga and spa",
+      "Culture day",
+      "Cooking and market visit",
+      "Private wellness sessions",
+      "Free day",
+      "Closing dinner",
+      "Departure"
+    ],
+    "operatorSlug": "p1",
+    "destinationSlug": "bali"
+  },
+  {
+    "id": "t3",
+    "name": "Bali Active Wellness",
+    "nights": 7,
+    "minGroupSize": 8,
+    "maxGroupSize": 20,
+    "netPricePerPerson": 1850,
+    "experienceLevel": 2,
+    "pace": "active",
+    "experiences": [
+      "yoga",
+      "hiking",
+      "fitness",
+      "culture",
+      "healthy_food",
+      "nature",
+      "beach",
+      "light_adventure"
+    ],
+    "requirementsSupported": [
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Yoga and cycling",
+      "Hiking",
+      "Culture day",
+      "Beach",
+      "Fitness and nature",
+      "Farewell",
+      "Departure"
+    ],
+    "operatorSlug": "p7",
+    "destinationSlug": "bali"
+  },
+  {
+    "id": "t4",
+    "name": "Costa Rica Recharge",
+    "nights": 7,
+    "minGroupSize": 10,
+    "maxGroupSize": 24,
+    "netPricePerPerson": 2400,
+    "experienceLevel": 2,
+    "pace": "balanced",
+    "experiences": [
+      "yoga",
+      "spa",
+      "healthy_food",
+      "hot_springs",
+      "hiking",
+      "nature",
+      "wildlife",
+      "beach",
+      "light_adventure"
+    ],
+    "requirementsSupported": [
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Yoga and nature",
+      "Hot springs",
+      "Wildlife",
+      "Hiking",
+      "Beach",
+      "Spa",
+      "Departure"
+    ],
+    "operatorSlug": "p2",
+    "destinationSlug": "costa-rica"
+  },
+  {
+    "id": "t5",
+    "name": "Costa Rica Gentle Wellness",
+    "nights": 7,
+    "minGroupSize": 12,
+    "maxGroupSize": 22,
+    "netPricePerPerson": 2550,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "yoga",
+      "meditation",
+      "spa",
+      "healthy_food",
+      "nature",
+      "hot_springs",
+      "beach"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Gentle yoga",
+      "Spa",
+      "Nature visit",
+      "Hot springs",
+      "Beach",
+      "Closing wellness day",
+      "Departure"
+    ],
+    "operatorSlug": "p2",
+    "destinationSlug": "costa-rica"
+  },
+  {
+    "id": "t6",
+    "name": "Costa Rica Luxury Reset",
+    "nights": 7,
+    "minGroupSize": 6,
+    "maxGroupSize": 18,
+    "netPricePerPerson": 3450,
+    "experienceLevel": 3,
+    "pace": "relaxed",
+    "experiences": [
+      "luxury_resort",
+      "spa",
+      "healthy_food",
+      "wildlife",
+      "nature",
+      "beach",
+      "private_group_experiences"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "mostly_private_experiences"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Private spa",
+      "Wildlife excursion",
+      "Private nature experience",
+      "Beach",
+      "Wellness day",
+      "Farewell",
+      "Departure"
+    ],
+    "operatorSlug": "p8",
+    "destinationSlug": "costa-rica"
+  },
+  {
+    "id": "t7",
+    "name": "Thailand Restore",
+    "nights": 7,
+    "minGroupSize": 10,
+    "maxGroupSize": 24,
+    "netPricePerPerson": 2050,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "meditation",
+      "spa",
+      "healthy_food",
+      "beach",
+      "culture",
+      "cooking"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Meditation",
+      "Spa",
+      "Culture",
+      "Cooking",
+      "Beach",
+      "Closing dinner",
+      "Departure"
+    ],
+    "operatorSlug": "p3",
+    "destinationSlug": "thailand"
+  },
+  {
+    "id": "t8",
+    "name": "Thailand Wellness & Temples",
+    "nights": 8,
+    "minGroupSize": 12,
+    "maxGroupSize": 26,
+    "netPricePerPerson": 2350,
+    "experienceLevel": 2,
+    "pace": "balanced",
+    "experiences": [
+      "yoga",
+      "meditation",
+      "spa",
+      "culture",
+      "healthy_food",
+      "cooking",
+      "light_adventure"
+    ],
+    "requirementsSupported": [
+      "private_transportation",
+      "strong_wellness_focus",
+      "strong_cultural_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Yoga",
+      "Temple visit",
+      "Spa",
+      "Cooking",
+      "Light adventure",
+      "Free time",
+      "Farewell",
+      "Departure"
+    ],
+    "operatorSlug": "p3",
+    "destinationSlug": "thailand"
+  },
+  {
+    "id": "t9",
+    "name": "Portugal Coastal Wellbeing",
+    "nights": 7,
+    "minGroupSize": 10,
+    "maxGroupSize": 22,
+    "netPricePerPerson": 2300,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "yoga",
+      "spa",
+      "beach",
+      "healthy_food",
+      "culture",
+      "wine",
+      "light_adventure"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "strong_wellness_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Yoga",
+      "Coastal day",
+      "Spa",
+      "Culture",
+      "Wine",
+      "Light adventure",
+      "Departure"
+    ],
+    "operatorSlug": "p4",
+    "destinationSlug": "portugal"
+  },
+  {
+    "id": "t10",
+    "name": "Greek Island Balance",
+    "nights": 7,
+    "minGroupSize": 12,
+    "maxGroupSize": 26,
+    "netPricePerPerson": 2250,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "yoga",
+      "meditation",
+      "spa",
+      "healthy_food",
+      "beach",
+      "culture",
+      "private_group_experiences"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "strong_wellness_focus",
+      "mostly_private_experiences"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Yoga",
+      "Beach",
+      "Meditation",
+      "Culture",
+      "Spa",
+      "Closing dinner",
+      "Departure"
+    ],
+    "operatorSlug": "p10",
+    "destinationSlug": "greece"
+  },
+  {
+    "id": "t11",
+    "name": "Crete Food & Wellness",
+    "nights": 7,
+    "minGroupSize": 10,
+    "maxGroupSize": 24,
+    "netPricePerPerson": 2650,
+    "experienceLevel": 2,
+    "pace": "balanced",
+    "experiences": [
+      "spa",
+      "healthy_food",
+      "beach",
+      "culture",
+      "cooking",
+      "light_adventure"
+    ],
+    "requirementsSupported": [
+      "private_transportation",
+      "strong_food_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Food tour",
+      "Spa",
+      "Beach",
+      "Cooking",
+      "Culture",
+      "Light adventure",
+      "Departure"
+    ],
+    "operatorSlug": "p5",
+    "destinationSlug": "greece"
+  },
+  {
+    "id": "t12",
+    "name": "Tuscan Slow Living",
+    "nights": 7,
+    "minGroupSize": 10,
+    "maxGroupSize": 20,
+    "netPricePerPerson": 2850,
+    "experienceLevel": 2,
+    "pace": "relaxed",
+    "experiences": [
+      "spa",
+      "healthy_food",
+      "cooking",
+      "wine",
+      "culture",
+      "nature",
+      "private_group_experiences"
+    ],
+    "requirementsSupported": [
+      "low_physical_difficulty",
+      "private_transportation",
+      "strong_food_focus",
+      "strong_cultural_focus"
+    ],
+    "itinerary": [
+      "Arrival",
+      "Spa",
+      "Cooking",
+      "Wine",
+      "Culture",
+      "Countryside",
+      "Farewell",
+      "Departure"
+    ],
+    "operatorSlug": "p6",
+    "destinationSlug": "tuscany"
+  }
+]

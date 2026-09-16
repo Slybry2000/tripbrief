@@ -1,113 +1,121 @@
-# TripBrief
+# Dream Travel — Incoming Operator Finder
 
-TripBrief turns a group-travel request into one consistent brief, researches
-prospective suppliers, and gives each supplier a secure response link. Supplier
-submissions flow into a live, evidence-backed comparison while a human advisor
-always chooses the suppliers and the winning proposal.
+This repository was created for the **Convex All Gas Hackathon** under the neutral
+working name **TripBrief**. It has since been pointed at the product the demo was
+built to show, and the app is now the **Dream Travel Incoming Operator Finder**.
+The repository name is unchanged; the product inside it is not.
 
-## Hackathon boundary
+The app turns a group-travel request into a **capability-ranked shortlist of
+incoming tour operators**, sends each one its own private request, and compares
+the trips they say they would actually operate. A human always chooses the
+shortlist and the winner.
 
-TripBrief is a new standalone application created for the Convex All Gas
-Hackathon. It contains no client branding, customer records, private supplier
-roster, credentials, or copied proprietary source code. Development and
-demonstrations use fictional people, trips, suppliers, inboxes, and proposals.
+Live app: **https://hip-minnow-543.convex.site** (public, no invitation)
 
-The intended sponsor roles are:
+## The experience
 
-- Convex: database, server functions, workflows, and live updates.
-- Firecrawl: research supplied partner websites and attach cited evidence.
-- OpenAI: structure proposal text and identify comparable facts with citations.
-- AgentMail: each brief gets its own inbox, and that inbox sends each supplier
-  their private response link.
+Dream Travel has a client and a group. It does not have a destination, an
+operator, or a program. The workflow starts there and ends with something it can
+sell.
 
-Firecrawl has been tested in the deployed backend; OpenAI and AgentMail have been
-tested with fictional local data. OpenAI returns review-only requirement
-evidence. AgentMail provisions a distinct brief inbox and currently neither sends
-nor receives mail — there is no send path and no inbound route yet. No supplier
-email has been sent or received. Listing a planned behavior is not evidence that
-it has shipped.
+| Step | What happens |
+|---|---|
+| 1. Client needs | The trip is described without choosing a destination: group size and minimum viable count, nights, hotel level, pace, target retail price, dates, decision deadline, experiences, operating needs, accessibility needs, and notes. |
+| 2. Destinations | Every destination is scored against the brief and the customer-approved locations are chosen. Only operators serving those locations are considered afterwards. |
+| 3. ITO matches | Operators are ranked by **Capability Match** — 35% experiences, 20% operations, 15% destination, 10% group, 10% accommodation, 10% commercial — with the reason for every score, what is missing, and what still needs confirming. |
+| 4. Choose partners | Up to five operators are shortlisted. Naming one creates its private response link. |
+| 5. Trip request | One core brief, plus the questions that operator specifically has to answer. Each operator can be emailed from the brief's own inbox, or handed its link. |
+| 6. Operator responses | Each operator opens its link, confirms the dates it can actually operate, and returns a structured proposal. |
+| 7. Compare trips | The proposals are compared as **trips**, not as suppliers: final fit, availability, price and margin, hotels, transport, remaining gaps, deposits and deadlines. |
+| 8. Selection & workback | Dream Travel selects the trip it will sell and the operator behind it, and gets a workback schedule built from that proposal's own deadlines. |
 
-The frontend is publicly hosted on Convex at
-**https://hip-minnow-543.convex.site** — no sign-in, no invitation. Verified on
-2026-09-16 from an unauthenticated client: the page and its assets return 200, a
-deep path falls back to the app, and the backend answers an unauthenticated
-query with its own "Please sign in to use your workspace." message rather than a
-connection error. The earlier `chatgpt.site` deployment still requires a
-ChatGPT sign-in and is no longer the address judges should use.
+Ready-made programs are supporting evidence, never an entry requirement. An
+operator with no program is matched on exactly the same terms and is labelled
+*Custom / À la carte*.
+
+## Two sides, one record
+
+- **Dream Travel's workspace** — everything in the table above, owned by the
+  signed-in account.
+- **The operator's private link** — 32 random bytes carried in the URL fragment.
+  It reads that operator's own capability record, the request it was sent, and
+  its own proposal, and it can write nothing else. No account, no invitation.
+
+The operator maintains its **capability record** (footprint, experiences,
+operations, groups and hotels, commercial terms, and timing) through the same
+link. Saving it changes what the matcher sees on the next run, and a second tab
+sees a submitted proposal without a refresh — both are live Convex queries.
+
+The matching engine itself is a pure module (`src/lib/matching.ts`) with the
+published baselines pinned by tests, so a ranking change is a visible, testable
+change rather than a drift.
+
+## What each sponsor actually does
+
+No sponsor sits in the README. Each is a real surface, and this list says which
+parts have actually been run.
+
+| Sponsor | Real work in the product | Status |
+|---|---|---|
+| **Convex** | Schema, indexes, live queries, mutations, actions, HTTP routes, per-workspace auth and ownership, rate-limiter quotas, static hosting of the frontend | Running; 32 tests cover ownership, the capability-link scope, quotas and the cascade delete |
+| **Firecrawl** | *Grow the network*: searches published websites for operators serving one destination, stores each result with the query that surfaced it, and lets an advisor add one as an operator record | Wired and previously verified against the live provider; the added operator starts with an empty capability record and matches nothing until it fills the intake in |
+| **OpenAI** | Reads an operator's emailed reply and drafts the structured proposal, with an exact quote from the reply for every claim; a quote that is not in the reply voids the whole draft | Wired and unit-tested; returns a review draft only and never writes. It does not run without `OPENAI_API_KEY` |
+| **AgentMail** | Each brief gets its own inbox. That inbox sends one named operator its own request link, and a reply to that address is matched back to the operator it came from | Wired, and the send path has been exercised end to end. **No email has been sent to a real supplier.** |
 
 ## Safety rules
 
 - Never send email to a real supplier during development or judging.
-- Never import private client, traveler, supplier, or inbox data.
-- Never let AI select a supplier or silently invent a missing fact.
-- Keep secrets only in ignored local or Convex environment storage.
-- Treat `hackathon.md`, source code, fixtures, screenshots, and videos as public.
+- Never import private client, traveller, operator, or inbox data.
+- Only an address a human typed into one row can receive a message, and no call
+  can reach more than one address.
+- A model draft is never applied without a person recording it.
 - Require explicit authorization before deployment, publication, social posting,
   submission, or any real external message.
+- `hackathon.md`, the source, the fixtures, the screenshots and the videos are
+  public. The demo data is fictional: every operator, program, price, blackout
+  period and deadline in `convex/seedData.ts` was invented for demonstration.
 
 ## Local development
 
 ```text
 npm install
-npm run dev
+npx convex dev          # pushes functions to the local deployment and watches
+npx convex run network:seed   # loads the fictional operator network
+npx vite                # the app
 ```
 
-Public app: https://hip-minnow-543.convex.site
+Open `http://localhost:5173`.
 
-Public source: https://github.com/Slybry2000/tripbrief
+```text
+npm test                # 32 tests: the matching baselines in convex/…/src
+npm run lint
+npm run build
+npm run deploy          # builds the frontend and publishes it with the backend
+```
 
-Local development still uses the configured local Convex deployment. Production
-uses a separate Convex deployment with server-side secrets and shared-use quotas.
+## Repository layout
 
-## Demo path
+- `convex/` — schema, the operator network, briefs, proposals, research inboxes,
+  inbound mail, quotas and HTTP routes
+- `convex/seedData.ts` — generated from `scripts/build-seed.mjs`; the fictional
+  network the demo runs on
+- `src/App.tsx` — both sides of the product
+- `src/lib/matching.ts` — the matching engine, kept pure so it can be tested
+- `src/data/` — destinations and ready-made programs (reference data)
+- `hackathon.md` — the build log, in order, with what actually ran
 
-1. Start a private trial workspace and answer the guided intake: the trip, the
-   group, what the trip is built around, timing and money, then the
-   requirements. The advisor edits suggested requirements built from those
-   answers, so the group's needs become questions a supplier can answer.
-   Travel dates are picked on a ticket-style calendar: click the arrival day,
-   then the day the trip ends.
-   The intake opens with a fit check (this is a group tool, and one or two
-   travellers are told so before anything is collected), and it turns whatever
-   the advisor leaves open into visible pricing assumptions to accept or change
-   rather than more questions.
-   The brief names itself from the finished answers (place, who it is for, and
-   the month), so no name is asked for up front.
-2. Find partners without typing a search: the brief decides the queries — where
-   the group is going, who is travelling, what they care about and what has to
-   be avoided — and Firecrawl returns the candidate websites. Shortlisting a
-   partner also creates that partner's own response link, one per supplier, with
-   no account for them.
-3. Open the Suppliers card: it lists who is quoting, the private link for each
-   one, and where each stands. Add a supplier's email address and send the
-   invitation from the brief's own inbox. When a supplier replies to that
-   address, the reply appears on the same card, matched to the supplier it came
-   from.
-4. Open a supplier's link in a separate browser tab and answer it the way a real
-   supplier would: their quote, how they would run the trip, their own words on
-   the requirements they want to answer, and any documents they already have —
-   a quote PDF, a sample itinerary, a completed trip. It appears in the
-   requester's live comparison with its attachments.
-5. Optionally use OpenAI to structure an emailed-response fallback.
-6. Compare offers and record a human decision with its reason.
+## Deployment
 
-Sending is always a deliberate click on one named supplier. Nothing is mailed
-automatically, and no message can go to more than one address.
+The frontend is served from the Convex deployment itself via
+`@convex-dev/static-hosting`, using app-owned root routing so Convex Auth keeps
+its exact `/api/auth` and `/.well-known` routes.
 
-Any brief can be deleted from its own page. That removes the brief, its
-requirements and group details, its shortlist, its suppliers and their response
-links, every response it received, and the files a supplier attached — the
-stored files are deleted from storage rather than orphaned. The brief's own
-email address is retired with it; mail already sitting in that address is not
-removed from the mail provider.
-
-## Submission gates
-
-- New app started after August 25, 2026 at 12:00 PM PT.
-- Convex is the substantive backend, including live queries and mutations.
-- OpenAI, Firecrawl, and AgentMail each perform real in-product work.
-- Public repository with `hackathon.md` at its root.
-- Public `convex.site` or `chatgpt.site` URL requiring no invitation.
-- Public build post tagging all four sponsors.
-- Working demo video under three minutes.
-- Submission completed before September 22, 2026 at 12:00 PM PT.
+```text
+npx convex env set FIRECRAWL_API_KEY …        #    Firecrawl
+npx convex env set OPENAI_API_KEY …           #    OpenAI
+npx convex env set AGENTMAIL_API_KEY …        #    AgentMail
+npx convex env set AGENTMAIL_WEBHOOK_SECRET … #    the inbound shared secret
+npx convex run --prod network:seed
+npx convex run --prod replies:registerWebhook
+npm run deploy
+```
