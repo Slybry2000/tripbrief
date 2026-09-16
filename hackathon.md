@@ -3,9 +3,8 @@
 - **Project:** TripBrief — Incoming Operator Finder
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Turns a group-travel request into a capability-ranked shortlist of incoming tour operators, sends each one its own private request, and compares the trips they would actually operate — with a human choosing the shortlist and the winner.
-- **Live app:** https://hip-minnow-543.convex.site — public, no invitation.
-  **Note:** as of this entry that address still serves the build before the
-  pivot. Deploying this one is a single `npm run deploy`, and it has not been run.
+- **Live app:** https://hip-minnow-543.convex.site — public, no invitation, serving
+  the build described in this log.
 - **Repo:** https://github.com/Slybry2000/tripbrief
 - **Frontend:** https://hip-minnow-543.convex.site
 - **Convex deployment:** https://hip-minnow-543.convex.cloud
@@ -695,3 +694,30 @@ The draft review names the dropped fields so the advisor knows exactly what to
 check by hand.
 
 57 tests across 12 files, lint, typecheck and the build pass.
+
+### 2026-09-16 - the public build, at last
+
+Everything above was built, tested and verified against the local deployment while
+the public address served the build from before the pivot. That gap is closed.
+
+- **The backend and schema are deployed** to `hip-minnow-543`. Deploying this
+  schema drops the tables the pre-pivot app used (`trips`, `offers`, `partners`,
+  `supplierInvites`, `supplierReplies`) — the new app does not use them, and their
+  contents were the old build's fictional demo data. That data is gone; it is worth
+  saying plainly rather than discovering it later.
+- **The frontend is uploaded** and the address serves it: `200`, and the title is
+  the new one.
+- **An unauthenticated client is answered properly**: a query returns an empty
+  result and the account query returns null, rather than a connection error or a
+  stack trace.
+- **Sending is switched on for one address**, `SEND_ALLOWED_EMAILS`, so a stranger
+  who opens the URL still cannot send mail from the deployment's account.
+- **The account-level webhook already pointed at this address**, so the inbound
+  half — an operator replying by email and the reply filing itself against the
+  right brief — is now live rather than merely wired.
+- **The source is published**: `origin/master` is at the commit that built this,
+  so the public repository, the build log and the running app finally agree.
+
+Remaining for submission: the demo video (the existing project brief still
+describes the pre-pivot product and has never been rendered), the public build post
+tagging the four sponsors, and the submission itself.
