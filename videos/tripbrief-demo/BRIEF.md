@@ -28,6 +28,6 @@ an abstract marketing reel.
 ## Notes
 
 - The final video must remain under three minutes; target 90 seconds.
-- No mention of Dream Travel or private client work.
+- No client names anywhere, and no private client work.
 - No real supplier email is sent.
 - Autonomous run requested: proceed without storyboard or preference pauses.

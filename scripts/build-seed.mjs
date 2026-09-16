@@ -1,21 +1,27 @@
-// Generates convex/seedData.ts from the fictional network data that the
-// Dream Travel operator-finder demo was built from.
+// Generates convex/seedData.ts from the fictional operator network this app
+// ships with.
 //
-// The demo shipped its network as JSON. Convex bundles TypeScript, not JSON, so
-// this turns those records into a typed module the seed mutation can read. It is
-// a build-time step: re-run it after changing the source data.
+// The network is authored as JSON, and Convex bundles TypeScript rather than
+// JSON, so this turns those records into a typed module the seed mutation reads.
+// It is a build-time step: re-run it after changing the source data.
 //
-//   node scripts/build-seed.mjs
+//   SEED_SOURCE=<folder holding data/*.json>  node scripts/build-seed.mjs
 //
-// Source: C:/Projects/Dream Travel ITO Finder Project/dream-travel-demo/data
+// The source folder is deliberately not in this repository and has no default,
+// so the script cannot silently read a path that only exists on one machine.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const demo = resolve(
-  process.env.DREAM_TRAVEL_DEMO ?? "C:/Projects/Dream Travel ITO Finder Project/dream-travel-demo",
-);
+const source = process.env.SEED_SOURCE?.trim();
+if (!source) {
+  console.error(
+    "Set SEED_SOURCE to the folder that holds the network's data/*.json before running this.",
+  );
+  process.exit(1);
+}
+const demo = resolve(source);
 
 const read = (name) => JSON.parse(readFileSync(resolve(demo, "data", name), "utf8"));
 const json = (value) => JSON.stringify(value);
