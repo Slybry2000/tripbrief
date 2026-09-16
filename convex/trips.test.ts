@@ -52,3 +52,48 @@ test("unknown answers remain unknown and selecting an offer from another trip fa
   expect((await t.query(api.trips.get, { tripId })).offers[0].assessments[0].status).toBe("unknown");
   await expect(t.mutation(api.trips.selectOffer, { tripId: secondId, offerId, reason: "Wrong trip" })).rejects.toThrow("not found");
 });
+
+test("deleting a brief removes its offers, suppliers, shortlist and attached files", async () => {
+  const t = convexTest(schema, modules);
+  const owner = t.withIdentity({ subject: "owner|session" });
+  const other = t.withIdentity({ subject: "other|session" });
+  const tripId = await owner.mutation(api.trips.create, brief);
+  const partnerId = await owner.mutation(api.partners.save, {
+    tripId,
+    title: "Fictional Harbor House",
+    url: "https://example.com/harbor-house",
+    description: "Fictional group hotel.",
+  });
+  await owner.mutation(api.invites.createFromPartner, {
+    tripId,
+    partnerId,
+    token: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
+  });
+  const storageId = await t.run(
+    async (ctx) => await ctx.storage.store(new Blob(["Fictional quote"])),
+  );
+  await owner.mutation(api.trips.addOffer, {
+    tripId,
+    ...proposal,
+    attachments: [{ storageId, name: "fictional-quote.pdf", size: 14 }],
+  });
+
+  await expect(other.mutation(api.trips.remove, { tripId })).rejects.toThrow(
+    "not found",
+  );
+
+  const result = await owner.mutation(api.trips.remove, { tripId });
+  expect(result).toMatchObject({
+    offers: 1,
+    suppliers: 1,
+    partners: 1,
+    attachments: 1,
+  });
+  expect(await owner.query(api.trips.list, {})).toHaveLength(0);
+  await expect(owner.query(api.trips.get, { tripId })).rejects.toThrow("not found");
+  await expect(owner.query(api.partners.list, { tripId })).rejects.toThrow("not found");
+  const leftover = await t.run(
+    async (ctx) => (await ctx.db.system.get("_storage", storageId)) === null,
+  );
+  expect(leftover).toBe(true);
+});

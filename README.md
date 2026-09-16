@@ -82,6 +82,13 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
 Sending is always a deliberate click on one named supplier. Nothing is mailed
 automatically, and no message can go to more than one address.
 
+Any brief can be deleted from its own page. That removes the brief, its
+requirements and group details, its shortlist, its suppliers and their response
+links, every response it received, and the files a supplier attached — the
+stored files are deleted from storage rather than orphaned. The brief's own
+email address is retired with it; mail already sitting in that address is not
+removed from the mail provider.
+
 ## Submission gates
 
 - New app started after August 25, 2026 at 12:00 PM PT.

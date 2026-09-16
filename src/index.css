@@ -279,6 +279,18 @@ td p {
   color: #8b322b;
   border-color: #d5aaa6;
 }
+.danger-solid {
+  background: #8b322b;
+  color: #fff;
+  border: 1px solid #8b322b;
+}
+.danger-solid:hover {
+  background: #a03a32;
+}
+.danger-zone {
+  margin-top: 34px;
+  border-left: 4px solid #d5aaa6;
+}
 .invite-status {
   padding: 5px 8px;
   background: #edf0e9;

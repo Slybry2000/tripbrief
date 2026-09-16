@@ -216,6 +216,27 @@ Two further tests cover a prose-and-attachment response with no requirement grid
 and the attachment rules (real upload, five-file cap, open invitation required).
 28 tests, lint and the production build pass.
 
+### 2026-09-16 - deleting a brief, and importing an emailed response with a file
+Added `trips.remove` and a two-step delete on the brief's own page
+(`convex/trips.ts`, `src/App.tsx`, `src/index.css`). One transaction removes the
+brief, its offers, its suppliers and their response links, its researched
+shortlist, and the files those suppliers attached — calling
+`ctx.storage.delete` on each attachment rather than orphaning it. A brief is
+always deletable, including one whose decision is already recorded, and the
+delete is confined to the signed-in owner: a second account is refused. The
+confirmation states what goes and that it cannot be undone, and the data note on
+the landing page was corrected, since it previously said there was no delete
+control.
+
+The advisor's own import path (`trips.addOffer`) now accepts the same structured
+details and attachments as the supplier portal, because an emailed response
+usually arrives with the supplier's own document. Its own rules are unchanged:
+every requirement answered, each with an exact excerpt from the response.
+
+One new test proves the cascade — offers, suppliers, shortlist and the stored
+file are all gone afterwards, and a stranger cannot delete another account's
+brief. 29 tests, lint and the production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the

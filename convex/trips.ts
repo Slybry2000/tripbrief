@@ -2,7 +2,8 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import schema, { assessment, priceBasis, tripProfile } from "./schema";
-import { checkAssessments } from "./offerRules";
+import { checkAssessments, checkAttachments, attachmentsValidator } from "./offerRules";
+import { offerDetails } from "./schema";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 async function identity(ctx: Pick<QueryCtx, "auth">) {
@@ -111,7 +112,18 @@ export const get = query({
   },
 });
 export const addOffer = mutation({
-  args: { tripId: v.id("trips"), supplierName: v.string(), sourceText: v.string(), amount: v.number(), currency: v.string(), priceBasis, assessments: v.array(assessment) },
+  args: {
+    tripId: v.id("trips"),
+    supplierName: v.string(),
+    sourceText: v.string(),
+    amount: v.number(),
+    currency: v.string(),
+    priceBasis,
+    assessments: v.array(assessment),
+    // An emailed response usually arrives with the supplier's own document.
+    details: v.optional(offerDetails),
+    attachments: v.optional(attachmentsValidator),
+  },
   returns: v.id("offers"),
   handler: async (ctx, args) => {
     const trip = await ownedTrip(ctx, args.tripId);
@@ -127,7 +139,19 @@ export const addOffer = mutation({
       requireEvidence: true,
       evidenceMustAppearInSource: true,
     });
-    const offerId = await ctx.db.insert("offers", { ...args, supplierName: text(args.supplierName, "Supplier"), sourceText, currency, assessments, owner: trip.owner });
+    await checkAttachments(ctx, args.attachments);
+    const offerId = await ctx.db.insert("offers", {
+      owner: trip.owner,
+      tripId: trip._id,
+      supplierName: text(args.supplierName, "Supplier"),
+      sourceText,
+      amount: args.amount,
+      currency,
+      priceBasis: args.priceBasis,
+      assessments,
+      details: args.details,
+      attachments: args.attachments,
+    });
     await ctx.db.patch("trips", trip._id, { status: "comparing", updatedAt: Date.now() });
     return offerId;
   },
@@ -153,5 +177,53 @@ export const attachmentUrl = query({
     if (!offer) throw new ConvexError("Offer not found.");
     await ownedTrip(ctx, offer.tripId);
     return await ctx.storage.getUrl(args.storageId);
+  },
+});
+
+// Deleting a brief removes everything that belongs to it, in one transaction:
+// the brief, its requirements and group details, its shortlist, its suppliers
+// and their response links, its offers, and the files suppliers attached.
+// A brief is always deletable, including one whose decision is recorded.
+export const remove = mutation({
+  args: { tripId: v.id("trips") },
+  returns: v.object({
+    offers: v.number(),
+    suppliers: v.number(),
+    partners: v.number(),
+    attachments: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const trip = await ownedTrip(ctx, args.tripId);
+    const offers = await ctx.db
+      .query("offers")
+      .withIndex("by_tripId", (q) => q.eq("tripId", trip._id))
+      .take(20);
+    const invites = await ctx.db
+      .query("supplierInvites")
+      .withIndex("by_tripId", (q) => q.eq("tripId", trip._id))
+      .take(50);
+    const partners = await ctx.db
+      .query("partners")
+      .withIndex("by_tripId", (q) => q.eq("tripId", trip._id))
+      .take(20);
+    let attachments = 0;
+    for (const offer of offers) {
+      for (const file of offer.attachments ?? []) {
+        // The stored file is the supplier's document: it goes with the brief and
+        // is not left orphaned in storage.
+        await ctx.storage.delete(file.storageId);
+        attachments += 1;
+      }
+      await ctx.db.delete("offers", offer._id);
+    }
+    for (const invite of invites) await ctx.db.delete("supplierInvites", invite._id);
+    for (const partner of partners) await ctx.db.delete("partners", partner._id);
+    await ctx.db.delete("trips", trip._id);
+    return {
+      offers: offers.length,
+      suppliers: invites.length,
+      partners: partners.length,
+      attachments,
+    };
   },
 });

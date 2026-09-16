@@ -93,8 +93,12 @@ function DataNote() {
         from the session rather than from anything the page sends.
       </p>
       <p>
-        <strong>Deleting it:</strong> this preview has no delete button yet —
-        ask the operator and the workspace and its briefs are removed.
+        <strong>Deleting it:</strong> any brief can be deleted from its own
+        page. That removes the brief, its requirements and group details, its
+        shortlist, its suppliers and their response links, every response it
+        received, and the files a supplier attached. The brief's own email
+        address is retired with it; mail already sitting in that address is not
+        removed from the mail provider.
       </p>
       <p>
         <small>
@@ -139,7 +143,7 @@ function Desk() {
             }}
           />
         ) : id ? (
-          <Trip key={id} id={id} />
+          <Trip key={id} id={id} onDeleted={() => setId(null)} />
         ) : (
           <section>
             <h1>A great trip starts here.</h1>
@@ -153,14 +157,16 @@ function Desk() {
     </div>
   );
 }
-function Trip({ id }: { id: Id<"trips"> }) {
+function Trip({ id, onDeleted }: { id: Id<"trips">; onDeleted: () => void }) {
   const data = useQuery(api.trips.get, { tripId: id });
   const select = useMutation(api.trips.selectOffer);
+  const removeTrip = useMutation(api.trips.remove);
   const provisionInbox = useAction(api.inboxes.provision);
   const [adding, setAdding] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   if (!data) return <p>Loading brief…</p>;
   const { trip, offers } = data;
   return (
@@ -332,6 +338,58 @@ function Trip({ id }: { id: Id<"trips"> }) {
           <pre>{o.sourceText}</pre>
         </details>
       ))}
+      <div className="card danger-zone">
+        <h2>Delete this brief</h2>
+        <p>
+          <small>
+            This removes the brief and everything attached to it: its
+            requirements and group details, its shortlist, its suppliers and
+            their links, {offers.length} recorded{" "}
+            {offers.length === 1 ? "response" : "responses"} and any files a
+            supplier sent. It cannot be undone.
+          </small>
+        </p>
+        {confirmingDelete ? (
+          <div className="actions">
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() => setConfirmingDelete(false)}
+            >
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="danger-button danger-solid"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError("");
+                void removeTrip({ tripId: id })
+                  .then(() => onDeleted())
+                  .catch((cause: unknown) =>
+                    setError(
+                      cause instanceof Error
+                        ? cause.message
+                        : "The brief could not be deleted.",
+                    ),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {busy ? "Deleting…" : "Delete permanently"}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="quiet-button danger-button"
+            onClick={() => setConfirmingDelete(true)}
+          >
+            Delete this brief
+          </button>
+        )}
+      </div>
     </section>
   );
 }
