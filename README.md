@@ -26,9 +26,13 @@ nor receives mail — there is no send path and no inbound route yet. No supplie
 email has been sent or received. Listing a planned behavior is not evidence that
 it has shipped.
 
-As of 2026-09-16 the deployed frontend is not publicly viewable: an
-unauthenticated request to the URL above returns HTTP 401, "Sign in required".
-Making it publicly reachable is a submission gate, not a finished step.
+The frontend is publicly hosted on Convex at
+**https://hip-minnow-543.convex.site** — no sign-in, no invitation. Verified on
+2026-09-16 from an unauthenticated client: the page and its assets return 200, a
+deep path falls back to the app, and the backend answers an unauthenticated
+query with its own "Please sign in to use your workspace." message rather than a
+connection error. The earlier `chatgpt.site` deployment still requires a
+ChatGPT sign-in and is no longer the address judges should use.
 
 ## Safety rules
 
@@ -47,7 +51,7 @@ npm install
 npm run dev
 ```
 
-Public app: https://tripbrief.perseidechocreations.chatgpt.site
+Public app: https://hip-minnow-543.convex.site
 
 Public source: https://github.com/Slybry2000/tripbrief
 

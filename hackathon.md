@@ -3,11 +3,11 @@
 - **Project:** TripBrief
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Turns group-travel requirements and supplier replies into a live, evidence-backed comparison while keeping supplier selection human-controlled.
-- **Live app:** https://tripbrief.perseidechocreations.chatgpt.site
+- **Live app:** https://hip-minnow-543.convex.site
 - **Repo:** https://github.com/Slybry2000/tripbrief
-- **Frontend:** https://tripbrief.perseidechocreations.chatgpt.site
+- **Frontend:** https://hip-minnow-543.convex.site
 - **Convex deployment:** https://hip-minnow-543.convex.cloud
-- **Components:** @convex-dev/rate-limiter
+- **Components:** @convex-dev/rate-limiter, @convex-dev/static-hosting
 - **Convex features:** schema, indexes, queries, mutations, realtime queries, auth HTTP routes
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
@@ -104,3 +104,20 @@ The current commit is preserved before further work on three paths: tag
 `backup/2026-09-16-pre-ceo-review`, branch `codex/backup-pre-ceo-review`, and a
 full working-tree copy outside the repository. No demo video, social post or
 submission exists yet.
+
+### 2026-09-16 - public frontend on convex.site
+Replaced the sign-in-gated frontend address with a public one. The app now
+serves its built frontend from the Convex deployment itself via
+`@convex-dev/static-hosting`, mounted with app-owned root routing so Convex
+Auth's exact `/api/auth` and `/.well-known` routes keep working and the static
+files take the root. `npm run deploy` builds the frontend with the production
+`VITE_CONVEX_URL`, deploys the backend and uploads the assets in one step
+(`convex/convex.config.ts`, `convex/http.ts`, `package.json`).
+
+Verified from an unauthenticated client: `https://hip-minnow-543.convex.site/`
+and `/index.html` return 200, a hashed asset returns 200, an unknown deep path
+falls back to the app, `/api/auth` routes still resolve, and
+`/.well-known/openid-configuration` returns the auth discovery document. A query
+against the backend from an unauthenticated caller returns the app's own
+"Please sign in to use your workspace." message. All 17 tests, lint and the
+production build pass on this change.
