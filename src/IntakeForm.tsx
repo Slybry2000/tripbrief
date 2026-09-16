@@ -5,6 +5,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import { DateRangePicker } from "./DateRangePicker";
 import { formatDay, rangeLabel } from "./dateRange";
 import {
+  autoTripName,
   bookingOpenItems,
   emptyProfile,
   GUARDRAILS,
@@ -159,6 +160,14 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
 
   const assumptions = pricingAssumptions(draft.profile, draft.travellers);
   const openItems = bookingOpenItems(draft.profile);
+  // The name is generated from the finished answers; the advisor only sees it at
+  // the end, and can still change it there.
+  const generatedName = autoTripName({
+    destination: draft.destination,
+    startDate: draft.startDate,
+    endDate: draft.endDate,
+    lane: draft.profile.lane,
+  });
   const requirements = draft.requirements
     .split("\n")
     .map((line) => line.trim())
@@ -274,15 +283,6 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
           <>
             <h1>Where and when?</h1>
             <div className="grid">
-              <label>
-                Trip name
-                <input
-                  value={draft.title}
-                  onChange={(event) => set("title", event.target.value)}
-                  maxLength={160}
-                  placeholder="Autumn walking week"
-                />
-              </label>
               <label>
                 Destination or region
                 <input
@@ -577,7 +577,14 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
           <>
             <h1>Ready to send out</h1>
             <div className="card">
-              <h2>{draft.title || draft.destination || "Untitled trip"}</h2>
+              <label className="generated-name">
+                Trip name — named from your answers
+                <input
+                  value={draft.title || generatedName}
+                  maxLength={160}
+                  onChange={(event) => set("title", event.target.value)}
+                />
+              </label>
               <p>
                 {draft.destination} ·{" "}
                 {draft.startDate ? formatDay(draft.startDate) : "No arrival"} to{" "}
@@ -684,7 +691,7 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
                 setBusy(true);
                 setError("");
                 void create({
-                  title: draft.title || draft.destination,
+                  title: (draft.title || generatedName).slice(0, 160),
                   destination: draft.destination,
                   startDate: draft.startDate,
                   endDate: draft.endDate,

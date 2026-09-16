@@ -720,6 +720,24 @@ pre {
   max-width: 560px;
   margin: 60px auto;
 }
+.generated-name {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #6b7a70;
+}
+.generated-name input {
+  font: 700 26px Georgia, serif;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #19372f;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid #d8ded4;
+  background: transparent;
+}
 @media (max-width: 860px) {
   .intake {
     grid-template-columns: 1fr;

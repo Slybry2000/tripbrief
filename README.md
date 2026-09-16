@@ -71,6 +71,8 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
    travellers are told so before anything is collected), and it turns whatever
    the advisor leaves open into visible pricing assumptions to accept or change
    rather than more questions.
+   The brief names itself from the finished answers (place, who it is for, and
+   the month), so no name is asked for up front.
 2. Search public supplier websites with Firecrawl and add prospects to the
    shortlist. Shortlisting a partner also creates that partner's own response
    link — one per supplier, no account for them.

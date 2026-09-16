@@ -8,6 +8,8 @@
 //   - editing any source answer invalidates the accepted assumptions.
 // Kept out of the component so all of it can be tested on its own.
 
+import { fromIso } from "./dateRange";
+
 export const WHO_TRAVELS = [
   { value: "community", label: "A community or club group", help: "Members who travel together and someone who leads them." },
   { value: "organization", label: "A company, school or organization", help: "A team, a class, an alumni or staff group." },
@@ -55,6 +57,53 @@ export type Profile = {
 
 export function emptyProfile(): Profile {
   return { guardrails: [], needs: [], interests: [], styles: [], budgetCovers: [] };
+}
+
+const LANE_LABELS: Record<string, string> = {
+  community: "community group",
+  organization: "company group",
+  family: "family group",
+};
+
+const shortMonth = (iso: string) =>
+  fromIso(iso).toLocaleDateString("en-US", {
+    month: "short",
+    timeZone: "UTC",
+  });
+
+// "Nov 2026", or the span when a trip crosses a month or a year.
+function monthYearLabel(start: string, end: string) {
+  if (!start) return "";
+  const from = fromIso(start);
+  const year = from.getUTCFullYear();
+  if (!end) return `${shortMonth(start)} ${year}`;
+  const to = fromIso(end);
+  const sameMonth = from.getUTCMonth() === to.getUTCMonth();
+  const sameYear = year === to.getUTCFullYear();
+  if (sameMonth && sameYear) return `${shortMonth(start)} ${year}`;
+  if (sameYear) return `${shortMonth(start)}-${shortMonth(end)} ${year}`;
+  return `${shortMonth(start)} ${year}-${shortMonth(end)} ${to.getUTCFullYear()}`;
+}
+
+// The trip names itself once the answers are complete: where it goes, who it is
+// for, and when. Nothing asks the advisor for a name up front.
+export function autoTripName({
+  destination,
+  startDate,
+  endDate,
+  lane,
+}: {
+  destination: string;
+  startDate: string;
+  endDate: string;
+  lane?: Lane;
+}) {
+  const parts = [destination.trim() || "Open destination"];
+  const label = lane ? LANE_LABELS[lane] : undefined;
+  if (label) parts.push(label);
+  const when = monthYearLabel(startDate, endDate);
+  if (when) parts.push(when);
+  return parts.join(" · ");
 }
 
 // Answers arrive as prose in some places and as chosen chips in others, so the

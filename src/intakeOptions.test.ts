@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import {
+  autoTripName,
   bookingOpenItems,
   emptyProfile,
   isIndividualLane,
@@ -9,6 +10,47 @@ import {
   validateIntake,
   type Profile,
 } from "./intakeOptions";
+
+test("the trip names itself from the finished answers", () => {
+  expect(
+    autoTripName({
+      destination: "Northern Portugal",
+      startDate: "2026-11-10",
+      endDate: "2026-11-16",
+      lane: "community",
+    }),
+  ).toBe("Northern Portugal · community group · Nov 2026");
+  expect(
+    autoTripName({
+      destination: "Lisbon",
+      startDate: "2026-11-28",
+      endDate: "2026-12-02",
+      lane: "organization",
+    }),
+  ).toBe("Lisbon · company group · Nov-Dec 2026");
+  expect(
+    autoTripName({
+      destination: "  Kyoto  ",
+      startDate: "2026-12-28",
+      endDate: "2027-01-04",
+      lane: "family",
+    }),
+  ).toBe("Kyoto · family group · Dec 2026-Jan 2027");
+});
+
+test("an unnamed trip still gets a usable name, and never an empty one", () => {
+  expect(
+    autoTripName({
+      destination: "",
+      startDate: "2026-11-10",
+      endDate: "2026-11-12",
+    }),
+  ).toBe("Open destination · Nov 2026");
+  // Before any dates are chosen the name is still something, not a blank.
+  expect(
+    autoTripName({ destination: "Lisbon", startDate: "", endDate: "" }),
+  ).toBe("Lisbon");
+});
 
 const filled: Profile = {
   ...emptyProfile(),

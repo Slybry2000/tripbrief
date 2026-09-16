@@ -287,6 +287,20 @@ eleven tests, including that an assumption is never phrased as a question and
 that the budget never leaks into a requirement. 46 tests, lint and the
 production build pass.
 
+### 2026-09-16 - the trip names itself
+The intake no longer asks for a trip name. Nothing in the question flow asks for
+one; the name is generated from the finished answers at the review step, and the
+advisor sees it only once everything else is done
+(`src/intakeOptions.ts`, `src/IntakeForm.tsx`).
+
+The name is where it goes, who it is for and when: "Northern Portugal ·
+community group · Nov 2026", "Kyoto · family group · Dec 2026-Jan 2027". A trip
+with no destination yet still names itself ("Open destination · Nov 2026") rather
+than saving blank, and at the review step the name is an editable field pre-filled
+with the generated one, so accepting it costs nothing and changing it is one
+click. Two new tests cover the month and year spans, the lane labels and the
+fallbacks. 48 tests, lint and the production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the
