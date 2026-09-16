@@ -193,6 +193,58 @@ export function isIndividualLane(lane: Lane) {
   return lane === "individual";
 }
 
+// Which answers sit behind the accepted assumptions. Changing any of them
+// withdraws the approval, so a supplier can never price an assumption the
+// advisor has since replaced. The acceptance itself, and the trip's own name,
+// are not answers behind it — treating them as such is what made the box
+// impossible to tick.
+const NOT_A_SOURCE = new Set(["assumptions", "assumptionsAccepted", "title"]);
+
+export function invalidatesAssumptions(key: string) {
+  return !NOT_A_SOURCE.has(key);
+}
+
+export type IntakeDraft = {
+  title: string;
+  destination: string;
+  startDate: string;
+  endDate: string;
+  travellers: number;
+  brief: string;
+  requirements: string;
+  profile: Profile;
+};
+
+function withdrawApproval(draft: IntakeDraft): IntakeDraft {
+  if (!draft.profile.assumptionsAccepted) return draft;
+  return {
+    ...draft,
+    profile: { ...draft.profile, assumptionsAccepted: false },
+  };
+}
+
+// The two setters the form uses for every answer. They live here, rather than in
+// the component, because the bug that made the accept box impossible to tick was
+// in exactly this wiring: the acceptance was treated as an answer that withdraws
+// the acceptance.
+export function setAnswer<K extends keyof IntakeDraft>(
+  draft: IntakeDraft,
+  key: K,
+  value: IntakeDraft[K],
+): IntakeDraft {
+  const next = { ...draft, [key]: value };
+  return invalidatesAssumptions(String(key)) ? withdrawApproval(next) : next;
+}
+
+export function setProfileAnswer<K extends keyof Profile>(
+  draft: IntakeDraft,
+  key: K,
+  value: Profile[K],
+): IntakeDraft {
+  const next = { ...draft, profile: { ...draft.profile, [key]: value } };
+  return invalidatesAssumptions(String(key)) ? withdrawApproval(next) : next;
+}
+
 export function laneProblem(profile: Profile) {
   if (!profile.lane) return "Choose who is travelling.";
   if (isIndividualLane(profile.lane))

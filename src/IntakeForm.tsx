@@ -11,6 +11,8 @@ import {
   GUARDRAILS,
   isIndividualLane,
   pricingAssumptions,
+  setAnswer,
+  setProfileAnswer,
   suggestRequirements,
   supplierMustReturn,
   validateIntake,
@@ -141,22 +143,12 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
 
   // Editing any source answer invalidates a previously accepted assumption set,
   // so an accepted basis can never outlive the answers behind it.
-  const edit = (change: (current: typeof draft) => typeof draft) =>
-    setDraft((current) => {
-      const next = change(current);
-      return next.profile.assumptionsAccepted
-        ? { ...next, profile: { ...next.profile, assumptionsAccepted: false } }
-        : next;
-    });
   const set = <K extends keyof typeof draft>(
     key: K,
     value: (typeof draft)[K],
-  ) => edit((current) => ({ ...current, [key]: value }));
+  ) => setDraft((current) => setAnswer(current, key, value));
   const setProfile = <K extends keyof Profile>(key: K, value: Profile[K]) =>
-    edit((current) => ({
-      ...current,
-      profile: { ...current.profile, [key]: value },
-    }));
+    setDraft((current) => setProfileAnswer(current, key, value));
 
   const assumptions = pricingAssumptions(draft.profile, draft.travellers);
   const openItems = bookingOpenItems(draft.profile);
@@ -314,11 +306,14 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
                 start={draft.startDate || null}
                 end={draft.endDate || null}
                 onChange={(range) =>
-                  edit((current) => ({
-                    ...current,
-                    startDate: range.start ?? "",
-                    endDate: range.end ?? "",
-                  }))
+                  setDraft((current) => {
+                    const withStart = setAnswer(
+                      current,
+                      "startDate",
+                      range.start ?? "",
+                    );
+                    return setAnswer(withStart, "endDate", range.end ?? "");
+                  })
                 }
               />
             </fieldset>

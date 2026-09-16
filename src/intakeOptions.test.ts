@@ -3,13 +3,83 @@ import {
   autoTripName,
   bookingOpenItems,
   emptyProfile,
+  invalidatesAssumptions,
+  setAnswer,
+  setProfileAnswer,
   isIndividualLane,
   pricingAssumptions,
   suggestRequirements,
   supplierMustReturn,
   validateIntake,
   type Profile,
-} from "./intakeOptions";
+  } from "./intakeOptions";
+
+test("accepting the assumptions is not itself an answer that withdraws them", () => {
+  expect(invalidatesAssumptions("assumptionsAccepted")).toBe(false);
+  expect(invalidatesAssumptions("assumptions")).toBe(false);
+  expect(invalidatesAssumptions("title")).toBe(false);
+  for (const source of [
+    "destination",
+    "startDate",
+    "endDate",
+    "travellers",
+    "groupStory",
+    "goodDay",
+    "needs",
+    "budgetBand",
+    "budgetCovers",
+    "guardrails",
+    "dateFlexibility",
+  ])
+    expect(invalidatesAssumptions(source)).toBe(true);
+});
+
+test("the accept box can be ticked and stays ticked", () => {
+  const base = {
+    title: "",
+    destination: "Northern Portugal",
+    startDate: "2026-11-10",
+    endDate: "2026-11-16",
+    travellers: 16,
+    brief: "A walking club.",
+    requirements: "Step-free rooms",
+    profile: { ...filled, assumptionsAccepted: false },
+  };
+  // Ticking the box.
+  const accepted = setProfileAnswer(base, "assumptionsAccepted", true);
+  expect(accepted.profile.assumptionsAccepted).toBe(true);
+  // Continuing past the step records the assumptions and must not withdraw it.
+  const withAssumptions = setProfileAnswer(accepted, "assumptions", [
+    "Price the group twice.",
+  ]);
+  expect(withAssumptions.profile.assumptionsAccepted).toBe(true);
+  expect(withAssumptions.profile.assumptions).toEqual(["Price the group twice."]);
+  // Naming the trip at the review step is not an answer behind the assumptions.
+  expect(setAnswer(withAssumptions, "title", "Lisbon 2026").profile.assumptionsAccepted).toBe(
+    true,
+  );
+});
+
+test("changing a real answer withdraws the approval so nothing stale is priced", () => {
+  const accepted = setProfileAnswer(
+    {
+      title: "",
+      destination: "Northern Portugal",
+      startDate: "2026-11-10",
+      endDate: "2026-11-16",
+      travellers: 16,
+      brief: "A walking club.",
+      requirements: "Step-free rooms",
+      profile: { ...filled, assumptionsAccepted: true },
+    },
+    "budgetBand",
+    "Under 1,500 per person",
+  );
+  expect(accepted.profile.assumptionsAccepted).toBe(false);
+  expect(
+    setAnswer(accepted, "destination", "Kyoto").profile.assumptionsAccepted,
+  ).toBe(false);
+});
 
 test("the trip names itself from the finished answers", () => {
   expect(
