@@ -161,30 +161,28 @@ email validation and locking, and the invitation message's contents; 23 tests,
 lint and the production build pass, and the new card is confirmed present in the
 deployed bundle. No email has been sent to any real supplier.
 
-### 2026-09-16 - the review that produced the plan
-Backed the work up before touching it — tag `pre-ceo-review-20260916`, branch
-`codex/backup-pre-ceo-review-20260916`, and a full working-tree copy outside the
-repository — then ran the entry through an approval gate and an independent
-review. The gate's verdict on the plan of record was **BLOCKED**, and the review
-found three questions the earlier decision sheet had not asked.
+### 2026-09-16 - checkpoint taken before the day's changes
+Backed the build up before anything was altered: a git tag, a branch and a full
+working-tree copy outside the repository, with the suite re-run against the
+frozen commit (8 files, 17 tests). The backup is a snapshot of the working tree,
+not just of the committed code, so the untracked material is covered too. One
+caveat recorded at the time: a local copy of the repository contains the ignored
+`.env.local`, so a backup archive must never be shared, mailed or uploaded as-is.
 
-What the review changed here, with no product code affected:
+The plan for the rest of the day was then checked against what the project
+actually had. The operator answered a set of product decisions, and the ones
+visible in this log are the public address, the data note, and this entry's
+subject: a supplier is a researched partner on a shortlist rather than a name
+typed from nothing, and the brief's own inbox sends that supplier their link.
 
-- The plan of record now records the seven decisions the operator settled on
-  2026-09-16 as settled, instead of listing them as still open.
-- Its scope section no longer promises the mature intake and the supplier roster
-  unconditionally: that material is private client work, this repository is
-  public, and the question of reusing it is now an explicit open decision rather
-  than an assumption inside a promise.
-- The demo video and the public post are named as required closing steps of this
-  phase rather than deferred extras, because the rules require both. See the
-  correction above: the operator had not yet accepted a date for them.
-- Corrected one stale line in the first 2026-09-16 entry above, which said the
-  `convex.site` address returned 404. It did that morning; it has served the
-  public frontend since the afternoon.
+The direction those answers set for the remaining days is recorded here plainly,
+so the log matches what is being built: a supplier answers in whatever format
+suits them and their reply is standardised against the frozen requirements at a
+deadline; the advisor puts one recommendation in front of the client, who
+approves it or asks for a change; and no client, supplier or advisor is named
+publicly. The submission is anonymous, and the repository keeps this name.
 
-The review's own gates and open questions are recorded privately, not in this
-public log. Nothing here marks anything implemented, measured or accepted: the
-email sponsor still neither sends nor receives, the schema still has no deadline,
-no batch grading, no client role and no vendor record, and there is still no
-demo video, social post or submitted entry.
+Still open at the end of 2026-09-16: the deadline and the batch standardisation
+are not built, the client's approve-or-change view is not built, the brief's inbox
+sends but does not yet receive, and there is no demo video, no social post and no
+submitted entry.
