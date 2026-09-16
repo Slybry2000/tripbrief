@@ -57,10 +57,50 @@ function RequesterApp() {
               information during this preview.
             </small>
           </p>
+          <DataNote />
           {error && <p role="alert">{error}</p>}
         </main>
       )}
     </>
+  );
+}
+// Plain-language data note (decision GATE-04 A). Not legal advice, and it says so.
+function DataNote() {
+  return (
+    <details className="data-note">
+      <summary>What this stores, and what it does not</summary>
+      <p>
+        <strong>This preview uses fictional information only.</strong> Please
+        do not enter a real traveller's, client's or supplier's details yet.
+      </p>
+      <p>
+        <strong>Stored:</strong> the trip brief and its numbered requirements;
+        each supplier's name, their response text, the price and the quote from
+        their own words for every requirement; and the decision you record.
+      </p>
+      <p>
+        <strong>Not stored:</strong> payment details, passport or government
+        identifiers, health information, or anything about a traveller beyond
+        what you type into the brief yourself.
+      </p>
+      <p>
+        <strong>Who can see it:</strong> only the signed-in workspace that
+        created it. A supplier sees one trip's requirements through their own
+        single-use link and never sees another supplier's price. Every request
+        is scoped to the signed-in account, and the server takes the identity
+        from the session rather than from anything the page sends.
+      </p>
+      <p>
+        <strong>Deleting it:</strong> this preview has no delete button yet —
+        ask the operator and the workspace and its briefs are removed.
+      </p>
+      <p>
+        <small>
+          This note is a plain-language summary written by the product's
+          operator, not a lawyer, and it is not legal advice.
+        </small>
+      </p>
+    </details>
   );
 }
 function Desk() {

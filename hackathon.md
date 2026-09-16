@@ -121,3 +121,13 @@ falls back to the app, `/api/auth` routes still resolve, and
 against the backend from an unauthenticated caller returns the app's own
 "Please sign in to use your workspace." message. All 17 tests, lint and the
 production build pass on this change.
+
+### 2026-09-16 - data note
+Added a plain-language data note to the public landing page
+(`src/App.tsx`, `src/index.css`): fictional information only in this preview;
+what is stored (brief, requirements, supplier response text and price, quoted
+evidence, the recorded decision); what is not (payment details, identifiers,
+health information); who can see it; and that deletion is by request because the
+preview has no delete control yet. The note states in its own text that it was
+written by the operator, not a lawyer, and is not legal advice. Tests, lint and
+the production build pass; the note is confirmed present in the deployed bundle.
