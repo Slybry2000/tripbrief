@@ -237,6 +237,22 @@ One new test proves the cascade — offers, suppliers, shortlist and the stored
 file are all gone afterwards, and a stranger cannot delete another account's
 brief. 29 tests, lint and the production build pass.
 
+### 2026-09-16 - ticket-style travel dates
+The intake's two date fields are replaced by an airline-style calendar
+(`src/DateRangePicker.tsx`, `src/dateRange.ts`). One click sets the arrival day,
+a second click sets the day the trip ends, hovering previews the range before
+the second click, and a click before the arrival moves the arrival rather than
+producing an impossible range. Days before today cannot be picked, the month
+pages forwards and backwards across a year boundary, and the selection reads
+back as both dates and a duration ("7 days, 6 nights").
+
+The rules live in a pure module rather than the component: the two-click rule,
+the day and night counts computed on the calendar rather than in milliseconds so
+a daylight-saving change cannot shift them, and the month grid's padding so the
+first of the month lands under the right weekday. Nine new tests cover those,
+including a Sunday-start month, a leap-length February and a range that spans a
+clock change. 38 tests, lint and the production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the

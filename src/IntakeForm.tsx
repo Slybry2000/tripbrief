@@ -3,6 +3,8 @@ import { useMutation } from "convex/react";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { suggestRequirements, type Profile } from "./intakeOptions";
+import { DateRangePicker } from "./DateRangePicker";
+import { formatDay, rangeLabel } from "./dateRange";
 
 // The intake gathers what a supplier actually needs to quote well, and what the
 // advisor would otherwise chase by email: who the group is, what the trip is
@@ -223,22 +225,6 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
                 />
               </label>
               <label>
-                Arrival
-                <input
-                  type="date"
-                  value={draft.startDate}
-                  onChange={(event) => set("startDate", event.target.value)}
-                />
-              </label>
-              <label>
-                Departure
-                <input
-                  type="date"
-                  value={draft.endDate}
-                  onChange={(event) => set("endDate", event.target.value)}
-                />
-              </label>
-              <label>
                 How many people
                 <input
                   type="number"
@@ -251,6 +237,25 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
                 />
               </label>
             </div>
+            <fieldset>
+              <legend>When is the group travelling?</legend>
+              <p>
+                <small>
+                  Click the arrival day, then the day the trip ends.
+                </small>
+              </p>
+              <DateRangePicker
+                start={draft.startDate || null}
+                end={draft.endDate || null}
+                onChange={(range) =>
+                  setDraft((current) => ({
+                    ...current,
+                    startDate: range.start ?? "",
+                    endDate: range.end ?? "",
+                  }))
+                }
+              />
+            </fieldset>
           </>
         )}
         {step === 1 && (
@@ -439,8 +444,14 @@ export function IntakeForm({ done }: { done: (id: Id<"trips">) => void }) {
             <div className="card">
               <h2>{draft.title || "Untitled trip"}</h2>
               <p>
-                {draft.destination || "No destination"} · {draft.startDate} to{" "}
-                {draft.endDate} · {draft.travelers} travellers
+                {draft.destination || "No destination"} ·{" "}
+                {draft.startDate ? formatDay(draft.startDate) : "No arrival"} to{" "}
+                {draft.endDate ? formatDay(draft.endDate) : "no departure"} ·{" "}
+                {draft.travelers} travellers ·{" "}
+                {rangeLabel({
+                  start: draft.startDate || null,
+                  end: draft.endDate || null,
+                })}
               </p>
               <dl className="summary">
                 {[

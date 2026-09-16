@@ -65,6 +65,8 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
    group, what the trip is built around, timing and money, then the
    requirements. The advisor edits suggested requirements built from those
    answers, so the group's needs become questions a supplier can answer.
+   Travel dates are picked on a ticket-style calendar: click the arrival day,
+   then the day the trip ends.
 2. Search public supplier websites with Firecrawl and add prospects to the
    shortlist. Shortlisting a partner also creates that partner's own response
    link — one per supplier, no account for them.
