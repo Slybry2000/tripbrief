@@ -153,18 +153,42 @@ export const checkProvider = internalAction({
     configured: v.boolean(),
     status: v.number(),
     inboxCount: v.union(v.null(), v.number()),
+    // Inbound only works if the account has a webhook pointing at this
+    // deployment's own URL, so the probe reports that too rather than leaving
+    // "is receiving wired?" to be discovered the hard way.
+    webhookUrls: v.array(v.string()),
     detail: v.string(),
   }),
   handler: async () => {
+    const expected = `${env.CONVEX_SITE_URL}/incoming/agentmail`;
     const key = env.AGENTMAIL_API_KEY?.trim();
     if (!key)
       return {
         configured: false,
         status: 0,
         inboxCount: null,
+        webhookUrls: [],
         detail: "AGENTMAIL_API_KEY is not set on this deployment.",
       };
     try {
+      const hooks: string[] = [];
+      const webhookResponse = await fetch("https://api.agentmail.to/v0/webhooks", {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(20_000),
+      }).catch(() => null);
+      if (webhookResponse?.ok) {
+        const body: unknown = await webhookResponse.json().catch(() => null);
+        const list =
+          body && typeof body === "object" && "webhooks" in body
+            ? body.webhooks
+            : null;
+        if (Array.isArray(list))
+          for (const hook of list)
+            if (hook && typeof hook === "object" && "url" in hook) {
+              const url = (hook as { url: unknown }).url;
+              if (typeof url === "string") hooks.push(url);
+            }
+      }
       const response = await fetch("https://api.agentmail.to/v0/inboxes", {
         headers: { Authorization: `Bearer ${key}` },
         signal: AbortSignal.timeout(20_000),
@@ -185,13 +209,17 @@ export const checkProvider = internalAction({
         configured: true,
         status: response.status,
         inboxCount,
-        detail: text.slice(0, 300),
+        webhookUrls: hooks,
+        detail: hooks.includes(expected)
+          ? `Inbound is wired to ${expected}. ${text.slice(0, 160)}`
+          : `No webhook points at ${expected}, so replies would not reach this deployment. ${text.slice(0, 120)}`,
       };
     } catch (cause) {
       return {
         configured: true,
         status: 0,
         inboxCount: null,
+        webhookUrls: [],
         detail: `fetch failed: ${String(cause).slice(0, 200)}`,
       };
     }
