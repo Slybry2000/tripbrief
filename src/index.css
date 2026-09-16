@@ -97,6 +97,13 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .contact-row label { flex: 1 1 260px; display: grid; gap: 6px; font-size: .8rem; color: var(--muted); }
 .link-button { border: 0; background: transparent; color: var(--green); text-decoration: underline; padding: 0; font-size: .85rem; }
 .contact-error { flex-basis: 100%; color: var(--red); }
+.who { color: var(--muted); font-size: .82rem; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-login-card label { display: grid; gap: 6px; margin-top: 12px; text-align: left; font-size: .85rem; color: var(--muted); }
+.portal-login-card input { width: 100%; }
+.login-switch { border: 0; background: transparent; color: var(--green); text-decoration: underline; margin-top: 6px; font-size: .9rem; }
+.login-error { color: var(--red); margin: 10px 0 0; }
+.login-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; color: var(--muted); font-size: .8rem; }
+.login-divider::before, .login-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
 .dashboard-hero h1 { max-width: 800px; font-size: clamp(2.8rem, 5vw, 4.6rem); line-height: 1.03; margin: 0 0 22px; }
 .hero-copy { max-width: 650px; font-size: 1.14rem; color: var(--muted); line-height: 1.65; }
 .hero-actions { display: flex; gap: 12px; margin-top: 32px; }

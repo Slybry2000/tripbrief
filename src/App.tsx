@@ -219,12 +219,14 @@ function operatorRanking(request: TripRequest, profileOverride?: OperatorProfile
   }).filter((item) => !selectedLocationsOnly || servesSelectedDestinations(request, item.profile)).sort((a, b) => b.match.score - a.match.score || a.partner.name.localeCompare(b.partner.name));
 }
 
-function BrandHeader({ activeView, setActiveView, reset, signOut }: { activeView: AppView; setActiveView: (value: AppView) => void; reset: () => void; signOut: () => void }) {
+type Account = { email: string; isTrial: boolean; canSend: boolean; reason: string };
+
+function BrandHeader({ activeView, setActiveView, reset, signOut, account }: { activeView: AppView; setActiveView: (value: AppView) => void; reset: () => void; signOut: () => void; account: Account | null | undefined }) {
   return <header className="topbar operator-topbar">
     <button className="brand-home" onClick={() => setActiveView("dashboard")} aria-label="TripBrief operator finder dashboard"><span className="brand-mark">TB</span><span><strong>TripBrief</strong><small>Incoming Operator Finder</small></span></button>
     <div className="side-switch" aria-label="Choose workspace"><button className={activeView !== "portal" ? "active" : ""} onClick={() => setActiveView("dashboard")}>TripBrief</button><button className={activeView === "portal" ? "active" : ""} onClick={() => setActiveView("portal")}>Operator Links</button></div>
     <nav aria-label="TripBrief navigation"><button className={activeView === "dashboard" ? "nav-active" : ""} onClick={() => setActiveView("dashboard")}>Dashboard</button><button className={activeView === "brief" ? "nav-active" : ""} onClick={() => setActiveView("brief")}>New Client Brief</button><button className={activeView === "directory" ? "nav-active" : ""} onClick={() => setActiveView("directory")}>ITO Network</button></nav>
-    <div className="topbar-actions"><button className="reset-button" onClick={reset}>Home</button><button className="reset-button" onClick={signOut}>Sign out</button></div>
+    <div className="topbar-actions">{account && <span className="who">{account.isTrial ? "Trial workspace" : account.email}</span>}<button className="reset-button" onClick={reset}>Home</button><button className="reset-button" onClick={signOut}>Sign out</button></div>
   </header>;
 }
 
@@ -533,10 +535,46 @@ function errorText(cause: unknown, fallback: string) {
 function AdvisorApp() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
+  const [mode, setMode] = useState<"signUp" | "signIn">("signUp");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // A failed sign-in should say what to do about it, not repeat the provider's
+  // internal name for the failure.
+  const submit = async () => {
+    setError(""); setBusy(true);
+    try {
+      await signIn("password", { email: email.trim().toLowerCase(), password, flow: mode });
+    } catch (cause) {
+      const raw = cause instanceof Error ? cause.message : "";
+      setError(
+        /InvalidSecret|invalid secret/i.test(raw)
+          ? "That password does not match. Try again, or create an account."
+          : /InvalidAccountId|not found/i.test(raw)
+            ? "There is no account with that email yet."
+            : /TooManyFailedAttempts/i.test(raw)
+              ? "Too many attempts. Wait a minute and try again."
+              : /already exists|already registered/i.test(raw)
+                ? "That email already has an account — sign in instead."
+                : "That did not work. Check the email and password, and mind the 8-character minimum.",
+      );
+    } finally { setBusy(false); }
+  };
+
   if (isLoading) return <Splash label="Opening the workspace…" />;
   if (!isAuthenticated)
-    return <main className="app-shell"><section className="portal-login"><div className="portal-login-card"><span className="portal-logo">TB</span><p className="eyebrow">TRIPBRIEF · ITO SOURCING</p><h1>Incoming operator finder</h1><p>Start with what the client wants. Discover the destinations that fit, qualify incoming operators by their own capability records, and ask the shortlist to confirm what they would actually operate.</p><button className="primary full" onClick={() => { void signIn("anonymous").catch(() => setError("Could not open the workspace. Please try again.")); }}>Open a private trial workspace →</button><small>This preview belongs to this browser session. Fictional data only: no real operator, traveller, message or booking is involved.</small>{error && <p role="alert">{error}</p>}</div></section></main>;
+    return <main className="app-shell"><section className="portal-login"><div className="portal-login-card"><span className="portal-logo">TB</span><p className="eyebrow">TRIPBRIEF · ITO SOURCING</p><h1>Incoming operator finder</h1><p>Start with what the client wants. Discover the destinations that fit, qualify incoming operators by their own capability records, and ask the shortlist to confirm what they would actually operate.</p>
+      <label>Email<input type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@agency.example" /></label>
+      <label>Password<input type="password" autoComplete={mode === "signUp" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} /></label>
+      {error && <p role="alert" className="login-error">{error}</p>}
+      <button className="primary full" disabled={busy || !email.includes("@") || password.length < 8} onClick={() => void submit()}>{busy ? "Working…" : mode === "signUp" ? "Create account →" : "Sign in →"}</button>
+      <button className="login-switch" onClick={() => { setMode(mode === "signUp" ? "signIn" : "signUp"); setError(""); }}>{mode === "signUp" ? "I already have an account" : "Create an account instead"}</button>
+      <div className="login-divider"><span>or</span></div>
+      <button className="secondary full" onClick={() => { void signIn("anonymous").catch(() => setError("Could not open the workspace. Please try again.")); }}>Explore with a trial workspace</button>
+      <small>A trial workspace belongs to this browser and keeps everything except sending: it can build a brief, rank operators, hand out links and compare proposals. Creating an account keeps your work and is what lets TripBrief send a request on your behalf.</small>
+    </div></section></main>;
   return <Workspace />;
 }
 
@@ -546,6 +584,7 @@ type DraftReply = FunctionReturnType<typeof api.proposals.draftFromReply>;
 
 function Workspace() {
   const network = useQuery(api.network.list);
+  const account = useQuery(api.accounts.me);
   const briefList = useQuery(api.briefs.list);
   // `null` means "open the newest brief"; "none" means the advisor explicitly
   // asked for a new one and nothing has been stored yet.
@@ -648,6 +687,14 @@ function Workspace() {
   // typed. A row with no address keeps its private link as the other way in.
   const sendRequests = async () => {
     setError(""); setNotice(""); setSending(true);
+    // The send path refuses this too; saying so here means the advisor is not left
+    // wondering why nothing arrived.
+    if (account && !account.canSend) {
+      setSending(false);
+      setNotice(account.reason);
+      goView("responses");
+      return;
+    }
     let sent = 0;
     try {
       for (const row of shortlist) {
@@ -733,14 +780,14 @@ function Workspace() {
     : activeView === "destinations" ? <DestinationDiscovery request={request} setRequest={setRequest} next={() => void chooseDestinations()} />
     : activeView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goView("choose")} />
     : activeView === "choose" ? <ChoosePartners request={request} profile={profile} setRequest={setRequest} next={() => void choosePartners()} />
-    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} /><TripRequestReview request={request} profile={profile} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from the brief's own inbox…</div>}</>
+    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} blocked={account && !account.canSend ? account.reason : ""} /><TripRequestReview request={request} profile={profile} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from the brief's own inbox…</div>}</>
     : activeView === "responses" ? <><OperatorResponses request={request} proposals={proposals} next={() => goView("compare")} />{briefId && <ReplyImport briefId={briefId} shortlist={shortlist} />}</>
     : activeView === "compare" ? <CompareProposals request={request} proposals={proposals} select={(id) => void selectProposal(id)} />
     : activeView === "selected" && selectedProposal ? <SelectedAndWorkback request={request} proposal={selectedProposal} reset={reset} />
     : activeView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} createDemoLink={() => void addDemoLink()} resume={() => goView(resumeView())} deleting={deleting} onDelete={() => void deleteBrief()} />
     : <OperatorDirectory request={request} briefId={briefId} />;
 
-  return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} reset={reset} signOut={() => { void signOut(); }} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
+  return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} reset={reset} signOut={() => { void signOut(); }} account={account} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
 }
 
 // The mail plan gives three inboxes and an agency has more briefs than that, so
@@ -763,9 +810,10 @@ function OperatorLinks({ shortlist, briefName, createDemoLink, resume, onDelete,
 
 // One address per operator, captured by hand. Nothing is prefilled with a real
 // supplier: the demo runs on the private links instead.
-function SendPanel({ shortlist, emails, setEmails }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void }) {
+function SendPanel({ shortlist, emails, setEmails, blocked }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void; blocked: string }) {
   if (!shortlist.length) return null;
-  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the workspace mail inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div><div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug)} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
+  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the workspace mail inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div>{blocked && <div className="inline-warning"><strong>Sending is off for this workspace</strong><span>{blocked}</span></div>}
+    <div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug)} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
 }
 
 // The address the agency reaches this operator at. It lives on the network record

@@ -100,6 +100,26 @@ A message's sender address is trivially forgeable, which is why the thread — n
 the sender — decides where a reply belongs, and why the address fallback is
 labelled as a fallback in the interface.
 
+## Accounts, and who is allowed to send
+
+A public URL that sends email is a liability unless it can only be done by the
+people it belongs to. Anybody could otherwise sign up and spend the owner's mail
+account from the owner's name. So:
+
+- **A trial workspace** is one click and does everything except send: build a
+  brief, rank operators, hand out private links, read a reply that is pasted in,
+  compare proposals, select a trip. It belongs to the browser it was made in.
+- **An account** is email and password, and it keeps the work.
+- **Sending is gated.** Only an account whose address is on the deployment's
+  `SEND_ALLOWED_EMAILS` may send. With that list empty, nobody can — which is the
+  right default for a deployment that is about to be public. A trial workspace is
+  refused with a message that says what still works, and an account that is not
+  listed is refused with its own address in the reason, so it is clear it is not a
+  password problem.
+
+The refusal is enforced on the server, in the one action that reaches a real
+inbox, not in the interface.
+
 ## What each sponsor actually does
 
 Each one is a real surface in the product, not a line in this file, and the status
@@ -186,9 +206,13 @@ npx convex env set FIRECRAWL_API_KEY …        # Firecrawl
 npx convex env set OPENAI_API_KEY …           # OpenAI
 npx convex env set AGENTMAIL_API_KEY …        # AgentMail
 npx convex env set AGENTMAIL_WEBHOOK_SECRET … # the inbound shared secret
+npx convex env set SEND_ALLOWED_EMAILS you@agency.example   # who may send; required
 npx convex run replies:registerWebhook        # one webhook covers every brief inbox
 npm run deploy
 ```
+
+`SEND_ALLOWED_EMAILS` takes a comma-separated list. Leaving it unset is safe: the
+app still works, and nothing can send.
 
 ## Repository layout
 

@@ -3,7 +3,7 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
-import { providerMessageId, requestMessage } from "./outbound";
+import { isSendableAddress, providerMessageId, requestMessage } from "./outbound";
 
 const modules = import.meta.glob("./**/*.ts");
 const token = (letter: string) => letter.repeat(43);
@@ -64,7 +64,7 @@ test("the provider's message id is read from whichever field it uses", () => {
   expect(providerMessageId(null)).toBe("");
 });
 
-test("sending refuses without a configured provider and writes nothing", async () => {
+test("a trial workspace cannot send, and nothing is written", async () => {
   const t = convexTest(schema, modules).withIdentity({ subject: "advisor" });
   const { briefId } = await t.mutation(api.briefs.create, {
     brief,
@@ -86,33 +86,18 @@ test("sending refuses without a configured provider and writes nothing", async (
       briefOperatorId: row._id,
       email: "hello@operator.example",
     }),
-  ).rejects.toThrow("not been configured");
+  ).rejects.toThrow("cannot send email");
   const after = (await t.query(api.briefs.get, { briefId }))!.shortlist[0];
   expect(after.sentAt).toBeUndefined();
   expect(after.email).toBeUndefined();
 });
 
-test("a malformed address is refused before anything is attempted", async () => {
-  const t = convexTest(schema, modules).withIdentity({ subject: "advisor" });
-  const { briefId } = await t.mutation(api.briefs.create, {
-    brief,
-    selectedDestinationSlugs: ["bali"],
-  });
-  await t.mutation(api.briefs.setShortlist, {
-    briefId,
-    operators: [
-      {
-        operatorSlug: "p1",
-        operatorName: "Island Wellbeing Indonesia",
-        capabilityToken: token("a"),
-      },
-    ],
-  });
-  const row = (await t.query(api.briefs.get, { briefId }))!.shortlist[0];
-  await expect(
-    t.action(api.outbound.sendRequest, {
-      briefOperatorId: row._id,
-      email: "not-an-address",
-    }),
-  ).rejects.toThrow("valid email");
+test("the one address a request may go to is decided by a named rule", () => {
+  expect(isSendableAddress("  Bookings@Operator.Example ")).toBe(true);
+  expect(isSendableAddress("name+tag@sub.domain.example")).toBe(true);
+  expect(isSendableAddress("not-an-address")).toBe(false);
+  expect(isSendableAddress("two addresses@example.com")).toBe(false);
+  expect(isSendableAddress("no@tld")).toBe(false);
+  expect(isSendableAddress("")).toBe(false);
+  expect(isSendableAddress(`${"x".repeat(320)}@example.com`)).toBe(false);
 });

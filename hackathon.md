@@ -581,3 +581,33 @@ deployment, the inbound route answered **403 without its secret, 200 `recorded`
 with it, and 200 `duplicate` on a repeat delivery**, and the stored row landed with
 no brief attached — mail kept rather than binned. The migration ran against real
 data: one legacy inbox adopted, one brief cleared, none remaining.
+
+### 2026-09-16 - a public app has to be safe to make public
+
+Working towards deployment surfaced the thing that would have made deploying
+careless: the app sends real email from the owner's mail account, and nothing
+stopped anyone who opened the URL from doing it. Every visitor could create a
+workspace, spend one of three mail inboxes and send from TripBrief's name.
+
+**Accounts exist now.** The password provider was configured from the beginning
+and never used — the interface only ever offered the anonymous trial. It now
+offers both: email and password to create an account or sign in, and the trial kept
+as one click for evaluation. Failure messages say what to do about it ("that
+password does not match", "there is no account with that email yet") rather than
+repeating the provider's internal names.
+
+**And sending is gated, on the server.** Only an account whose address is on the
+deployment's `SEND_ALLOWED_EMAILS` may send; an empty list means nobody can, which
+is the right default for a deployment about to be public. A trial workspace is
+refused with a message that says what still works — everything except sending —
+and an account that is not listed is refused with its own address in the reason,
+so the person can tell it is not a password problem. The check lives in the one
+action that reaches a real inbox, not in the interface.
+
+**Verified against the live local deployment**, through the app's own public API:
+a password account signed up successfully, reported `canSend: true` while listed,
+and `canSend: false` with a reason naming its address once removed. The trial and
+empty-list branches are covered by tests (44 now, across 9 files). The combination
+of an allowed account and a real send was not run again, deliberately: a fresh
+workspace would have spent the last of the account's three mail inboxes, and the
+send path itself was already proven by the earlier live delivery.

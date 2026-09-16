@@ -18,6 +18,13 @@ import { displayName, parseInbox } from "./mailboxes";
 const sendUrl = (inboxId: string) =>
   `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(inboxId)}/messages/send`;
 
+// The one address a request may go to. Kept as a named rule so it can be tested
+// without a mail provider, and so the send path has exactly one opinion about it.
+export function isSendableAddress(value: string) {
+  const email = value.trim().toLowerCase();
+  return email.length <= 320 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 export function requestMessage(
   brief: Pick<
     Doc<"briefs">,
@@ -219,9 +226,16 @@ export const sendRequest = action({
     });
     if (!found || found.row.owner !== owner)
       throw new ConvexError("That operator is not on one of your briefs.");
+    // The one place in the product that reaches a real person's inbox, so the
+    // account's permission is checked here rather than in the interface.
+    const permission: {
+      allowed: boolean;
+      reason: string;
+    } = await ctx.runQuery(internal.accounts.permissionFor, { owner });
+    if (!permission.allowed) throw new ConvexError(permission.reason);
     const { row, brief } = found;
     const to = args.email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.length > 320)
+    if (!isSendableAddress(to))
       throw new ConvexError("Enter a valid email address for this operator.");
     if (row.email && row.email !== to)
       throw new ConvexError(

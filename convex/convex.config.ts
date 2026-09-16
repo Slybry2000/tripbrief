@@ -9,6 +9,9 @@ const app = defineApp({
     OPENAI_API_KEY: v.optional(v.string()),
     AGENTMAIL_API_KEY: v.optional(v.string()),
     AGENTMAIL_WEBHOOK_SECRET: v.optional(v.string()),
+    // Who may send real email. Empty means nobody, which is the safe default for
+    // a public deployment.
+    SEND_ALLOWED_EMAILS: v.optional(v.string()),
     // The public address the app is served from. A response link has to point at
     // wherever the operator can actually open it: the deployment's own site URL in
     // production, and the local dev server when the backend is running locally.
