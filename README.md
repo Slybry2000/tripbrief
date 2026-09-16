@@ -73,12 +73,16 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
    rather than more questions.
    The brief names itself from the finished answers (place, who it is for, and
    the month), so no name is asked for up front.
-2. Search public supplier websites with Firecrawl and add prospects to the
-   shortlist. Shortlisting a partner also creates that partner's own response
-   link — one per supplier, no account for them.
+2. Find partners without typing a search: the brief decides the queries — where
+   the group is going, who is travelling, what they care about and what has to
+   be avoided — and Firecrawl returns the candidate websites. Shortlisting a
+   partner also creates that partner's own response link, one per supplier, with
+   no account for them.
 3. Open the Suppliers card: it lists who is quoting, the private link for each
    one, and where each stands. Add a supplier's email address and send the
-   invitation from the brief's own inbox.
+   invitation from the brief's own inbox. When a supplier replies to that
+   address, the reply appears on the same card, matched to the supplier it came
+   from.
 4. Open a supplier's link in a separate browser tab and answer it the way a real
    supplier would: their quote, how they would run the trip, their own words on
    the requirements they want to answer, and any documents they already have —

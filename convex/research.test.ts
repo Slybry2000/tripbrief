@@ -20,13 +20,10 @@ test("research fails closed before network access when signed out or unconfigure
   const network = vi.spyOn(globalThis, "fetch");
   try {
     await expect(
-      t.action(api.research.search, { tripId, query: "Portugal operators" }),
+      t.action(api.research.searchForBrief, { tripId }),
     ).rejects.toThrow("sign in");
     await expect(
-      advisor.action(api.research.search, {
-        tripId,
-        query: "Portugal operators",
-      }),
+      advisor.action(api.research.searchForBrief, { tripId }),
     ).rejects.toThrow("not been configured");
     expect(network).not.toHaveBeenCalled();
   } finally {

@@ -17,8 +17,10 @@ import type * as invites from "../invites.js";
 import type * as offerRules from "../offerRules.js";
 import type * as outbound from "../outbound.js";
 import type * as partners from "../partners.js";
+import type * as replies from "../replies.js";
 import type * as research from "../research.js";
 import type * as researchLimits from "../researchLimits.js";
+import type * as searchQueries from "../searchQueries.js";
 import type * as trips from "../trips.js";
 
 import type {
@@ -37,8 +39,10 @@ declare const fullApi: ApiFromModules<{
   offerRules: typeof offerRules;
   outbound: typeof outbound;
   partners: typeof partners;
+  replies: typeof replies;
   research: typeof research;
   researchLimits: typeof researchLimits;
+  searchQueries: typeof searchQueries;
   trips: typeof trips;
 }>;
 

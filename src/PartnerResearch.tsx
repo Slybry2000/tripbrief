@@ -5,116 +5,120 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { newCapabilityToken } from "./capability";
 
+// The advisor does not search. The brief already knows the destination, who is
+// travelling, what they care about and what has to be avoided, so the search is
+// built from it and the queries used are shown afterwards.
 export function PartnerResearch({ tripId }: { tripId: Id<"trips"> }) {
-  const search = useAction(api.research.search);
+  const search = useAction(api.research.searchForBrief);
   const save = useMutation(api.partners.save);
   const createFromPartner = useMutation(api.invites.createFromPartner);
   const partners = useQuery(api.partners.list, { tripId });
   const invites = useQuery(api.invites.list, { tripId });
-  const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [results, setResults] = useState<Awaited<
+  const [found, setFound] = useState<Awaited<
     ReturnType<typeof search>
   > | null>(null);
+  const message = (cause: unknown, fallback: string) =>
+    cause instanceof ConvexError && typeof cause.data === "string"
+      ? cause.data
+      : cause instanceof Error && cause.message
+        ? cause.message
+        : fallback;
+
   return (
     <section className="card">
-      <h2>Find prospective partners</h2>
+      <p className="eyebrow">STEP ONE</p>
+      <h2>Find partners for this brief</h2>
       <p>
-        Search public websites with Firecrawl. These are research leads, not
-        confirmed offers.
+        Nothing to type. The brief decides the search: where the group is going,
+        who is travelling, what they care about, and what suppliers have to
+        avoid.
       </p>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
+      <button
+        disabled={busy}
+        onClick={() => {
           setBusy(true);
           setError("");
-          setResults(null);
-          void search({ tripId, query })
-            .then(setResults)
-            .catch((cause: unknown) => {
-              setError(
-                cause instanceof ConvexError && typeof cause.data === "string"
-                  ? cause.data
-                  : "Research could not finish. Please try again.",
-              );
-            })
+          setFound(null);
+          void search({ tripId })
+            .then(setFound)
+            .catch((cause: unknown) =>
+              setError(message(cause, "Research could not finish. Please try again.")),
+            )
             .finally(() => setBusy(false));
         }}
       >
-        <label>
-          Public partner search
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            required
-            minLength={3}
-            maxLength={300}
-            placeholder="Lisbon group travel operators"
-          />
-        </label>
-        <small>
-          Only this search text goes to Firecrawl. Do not include traveler names
-          or private details.
-        </small>
-        <button disabled={busy}>
-          {busy ? "Researching…" : "Search partner websites"}
-        </button>
-      </form>
+        {busy ? "Searching…" : "Search partner websites for this brief"}
+      </button>
       {error && <p role="alert">{error}</p>}
-      {results?.length === 0 && (
-        <p>No matching websites found. Try a broader search.</p>
+      {found && (
+        <>
+          <p className="searched-for">
+            <small>
+              Searched for:{" "}
+              {found.queries.map((query) => (
+                <code key={query}>{query}</code>
+              ))}{" "}
+              {found.usedModel
+                ? "— written from your brief."
+                : "— built from your brief."}
+            </small>
+          </p>
+          {found.results.length === 0 && (
+            <p>
+              No matching websites came back. Broaden the destination, or run it
+              again later.
+            </p>
+          )}
+          {found.results.map((result) => (
+            <article key={result.url}>
+              <h3>
+                <a href={result.url} target="_blank" rel="noopener noreferrer">
+                  {result.title}
+                </a>
+              </h3>
+              <p>{result.description}</p>
+              <small>
+                Unverified website information · confirm directly with the
+                supplier.
+              </small>
+              <button
+                disabled={
+                  busy || partners?.some((partner) => partner.url === result.url)
+                }
+                onClick={() => {
+                  setBusy(true);
+                  setError("");
+                  // Shortlisting a partner is also the moment they become a
+                  // supplier with their own response link.
+                  void save({ tripId, ...result })
+                    .then((partnerId) =>
+                      createFromPartner({
+                        tripId,
+                        partnerId,
+                        token: newCapabilityToken(),
+                      }),
+                    )
+                    .catch((cause: unknown) =>
+                      setError(message(cause, "Could not shortlist this partner.")),
+                    )
+                    .finally(() => setBusy(false));
+                }}
+              >
+                {partners?.some((partner) => partner.url === result.url)
+                  ? "On the shortlist"
+                  : "Add to shortlist"}
+              </button>
+            </article>
+          ))}
+        </>
       )}
-      {results?.map((result) => (
-        <article key={result.url}>
-          <h3>
-            <a href={result.url} target="_blank" rel="noopener noreferrer">
-              {result.title}
-            </a>
-          </h3>
-          <p>{result.description}</p>
-          <small>
-            Unverified website information · confirm directly with the supplier.
-          </small>
-          <button
-            disabled={
-              busy || partners?.some((partner) => partner.url === result.url)
-            }
-            // Shortlisting a partner is also the moment they become a supplier
-            // with a response link — that is what the shortlist is for.
-            onClick={() => {
-              setBusy(true);
-              setError("");
-              void save({ tripId, ...result })
-                .then((partnerId) =>
-                  createFromPartner({
-                    tripId,
-                    partnerId,
-                    token: newCapabilityToken(),
-                  }),
-                )
-                .catch((cause: unknown) => {
-                  setError(
-                    cause instanceof ConvexError &&
-                      typeof cause.data === "string"
-                      ? cause.data
-                      : "Could not shortlist this partner.",
-                  );
-                })
-                .finally(() => setBusy(false));
-            }}
-          >
-            {partners?.some((partner) => partner.url === result.url)
-              ? "Shortlisted"
-              : "Add to shortlist"}
-          </button>
-        </article>
-      ))}
       <h3>Saved partner shortlist</h3>
       <p>
         <small>
-          Shortlisting a partner also gives them a private response link,
-          ready in the Suppliers card below.
+          Shortlisting a partner also gives them a private response link, ready
+          in the Suppliers card below.
         </small>
       </p>
       {partners === undefined ? (

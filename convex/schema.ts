@@ -88,6 +88,23 @@ export default defineSchema({
     url: v.string(),
     description: v.string(),
   }).index("by_tripId", ["tripId"]),
+  // A supplier's emailed reply, stored as it arrived. It is the raw material the
+  // engine standardises, and it is never overwritten by an offer.
+  supplierReplies: defineTable({
+    tripId: v.id("trips"),
+    owner: v.string(),
+    inviteId: v.optional(v.id("supplierInvites")),
+    inboxId: v.string(),
+    fromEmail: v.string(),
+    fromName: v.optional(v.string()),
+    subject: v.string(),
+    text: v.string(),
+    messageId: v.string(),
+    receivedAt: v.number(),
+  })
+    .index("by_tripId", ["tripId"])
+    .index("by_messageId", ["messageId"])
+    .index("by_inboxId", ["inboxId"]),
   trips: defineTable({
     owner: v.string(),
     title: v.string(),
@@ -109,7 +126,10 @@ export default defineSchema({
     agentMailInboxId: v.optional(v.string()),
     agentMailInboxEmail: v.optional(v.string()),
     updatedAt: v.number(),
-  }).index("by_owner", ["owner"]),
+  })
+    .index("by_owner", ["owner"])
+    // Inbound mail is matched to its brief by the inbox it arrived in.
+    .index("by_agentMailInboxId", ["agentMailInboxId"]),
   offers: defineTable({
     owner: v.string(),
     tripId: v.id("trips"),

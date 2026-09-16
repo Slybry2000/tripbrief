@@ -437,6 +437,7 @@ function getSupplierToken(): string {
 function Suppliers({ tripId }: { tripId: Id<"trips"> }) {
   const invites = useQuery(api.invites.list, { tripId });
   const partners = useQuery(api.partners.list, { tripId });
+  const replies = useQuery(api.replies.list, { tripId });
   const createFromPartner = useMutation(api.invites.createFromPartner);
   const createManual = useMutation(api.invites.create);
   const setEmail = useMutation(api.invites.setEmail);
@@ -457,8 +458,18 @@ function Suppliers({ tripId }: { tripId: Id<"trips"> }) {
       <h2>Who is quoting</h2>
       <p>
         Suppliers come from the shortlist you build above. Each one gets their
-        own private link, and the brief&rsquo;s own inbox sends it for you.
+        own private link, and the brief&rsquo;s own inbox sends it for you and
+        receives the reply.
       </p>
+      {replies && replies.length > 0 && (
+        <p>
+          <small>
+            {replies.length}{" "}
+            {replies.length === 1 ? "reply has" : "replies have"} arrived by
+            email.
+          </small>
+        </p>
+      )}
       {waiting.length > 0 && (
         <>
           <p>
@@ -520,6 +531,20 @@ function Suppliers({ tripId }: { tripId: Id<"trips"> }) {
               {invite.sendError && (
                 <small role="alert">{invite.sendError}</small>
               )}
+              {replies
+                ?.filter((reply) => reply.inviteId === invite._id)
+                .map((reply) => (
+                  <details key={reply._id} className="received-reply">
+                    <summary>
+                      Reply received{" "}
+                      {new Date(reply.receivedAt).toLocaleDateString()}
+                    </summary>
+                    <p>
+                      <strong>{reply.subject}</strong>
+                    </p>
+                    <pre>{reply.text}</pre>
+                  </details>
+                ))}
             </span>
             <span className="supplier-link">
               <input
@@ -626,6 +651,25 @@ function Suppliers({ tripId }: { tripId: Id<"trips"> }) {
           </small>
         )}
       </div>
+      {replies?.some((reply) => !reply.inviteId) && (
+        <>
+          <h3>Replies from addresses you did not invite</h3>
+          {replies
+            .filter((reply) => !reply.inviteId)
+            .map((reply) => (
+              <details key={reply._id} className="received-reply">
+                <summary>
+                  {reply.fromEmail} ·{" "}
+                  {new Date(reply.receivedAt).toLocaleDateString()}
+                </summary>
+                <p>
+                  <strong>{reply.subject}</strong>
+                </p>
+                <pre>{reply.text}</pre>
+              </details>
+            ))}
+        </>
+      )}
       <details>
         <summary>Add a supplier that search did not find</summary>
         <form

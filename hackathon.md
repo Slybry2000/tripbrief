@@ -301,6 +301,43 @@ with the generated one, so accepting it costs nothing and changing it is one
 click. Two new tests cover the month and year spans, the lane labels and the
 fallbacks. 48 tests, lint and the production build pass.
 
+### 2026-09-16 - the search comes from the brief, and the inbox receives
+Three fixes, all of them about the end of the flow:
+
+**The search is the brief's, not the advisor's.** The free-text search box is
+gone. `research.searchForBrief` builds its queries from what the intake already
+knows — destination, who is travelling, the group's interests and the needs that
+have to be met (`convex/searchQueries.ts`) — and the model is asked to sharpen
+them when it is available, with the tested rules as the fallback. What was
+searched for is shown after the run, so the advisor can see what the brief
+decided. Accessibility needs are searched for before a second interest, because
+an accessible hotel is the harder constraint.
+
+The provider itself was never broken: `research.checkProvider`, a new ops probe
+that never touches the credential, returned HTTP 200 from Firecrawl on this
+production deployment. The old form's search box was `required`, so pressing the
+button with nothing typed did nothing at all — and there was nothing to type.
+
+**The inbox receives.** `message.received` webhooks from AgentMail now post to
+`/incoming/agentmail` (`convex/http.ts`, `convex/replies.ts`), guarded by a
+shared secret header; the endpoint answers 403 without it and 200 with it, both
+verified against the live deployment. A reply is matched to a brief by the inbox
+it landed in and to a supplier by the address the invitation was sent to —
+never by anything in the message body. A reply from an address we never invited
+is kept on the brief under its own heading rather than guessed at. Duplicate
+deliveries are dropped by message id. One account-level webhook covers every
+brief's inbox, so a new trip needs no setup.
+
+**The flow is now ordered the way the work happens:** find partners from the
+brief, shortlist them, which creates each one's response link, then send from
+the brief's own inbox and receive the reply on the same card.
+
+Five new tests cover the queries (including that no search ever carries the
+budget), and six cover inbound mail: matching, duplicates, mail for an inbox no
+brief owns, an uninvited sender, owner-only reading, and the event reader
+ignoring anything that is not a received message. 63 tests, lint and the
+production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the
