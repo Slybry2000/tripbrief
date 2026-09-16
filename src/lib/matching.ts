@@ -96,7 +96,7 @@ export function assessOperatorTiming(request: TripRequest, profile: OperatorProf
   if (!operatesForDates) reasons.push("Does not operate during the requested dates or a blackout overlaps the full window.");
   if (!exceptionalLeadTimeWorks) reasons.push(`Requires at least ${profile.timing.shortestLeadTimeDays} days even by exception; only ${daysRemaining} remain.`);
   else if (!leadTimeWorks) warnings.push(`Below the normal ${profile.timing.minimumLeadTimeDays}-day lead time; exception review required.`);
-  if (!proposalDeadlineWorks) reasons.push(`Maximum ${profile.timing.maximumProposalTurnaroundDays}-day proposal turnaround would miss Dream Travel's decision deadline.`);
+  if (!proposalDeadlineWorks) reasons.push(`Maximum ${profile.timing.maximumProposalTurnaroundDays}-day proposal turnaround would miss the agency's decision deadline.`);
   if (request.flexibleDates && evaluatedDepartureDate !== request.preferredDepartureDate && operatesForDates) warnings.push(`Preferred date conflicts, but ${evaluatedDepartureDate} works within the flexible window.`);
 
   const status = reasons.length ? "Conflict" : warnings.length ? "At Risk" : "Works";
@@ -163,14 +163,14 @@ export function buildWorkbackSchedule(request: TripRequest, proposal: OperatorPr
   const minimumWarning = request.confirmedTravelers < request.minimumViableTravelers;
   return [
     create(0, "Trip departs", "Shared", "departure", `${request.travelerCount} target travelers · ${proposal.destinationId}`),
-    create(proposal.travelerNamesDaysBefore, "Final traveler names due", "Dream Travel", "operator", "Submit the final rooming and traveler-name list."),
-    create(proposal.finalPaymentDaysBefore, "Final payment to operator", "Dream Travel", "operator", `${proposal.currency} payment deadline under the selected proposal.`),
+    create(proposal.travelerNamesDaysBefore, "Final traveler names due", "Agency", "operator", "Submit the final rooming and traveler-name list."),
+    create(proposal.finalPaymentDaysBefore, "Final payment to operator", "Agency", "operator", `${proposal.currency} payment deadline under the selected proposal.`),
     create(proposal.roomReleaseDaysBefore, "Unused rooms released", "Operator", "operator", "Uncommitted room inventory can return to the supplier."),
     create(proposal.finalHeadcountDaysBefore, "Final group count committed", "Shared", "operator", `Operator commitment based on the final ${request.minimumViableTravelers}+ traveler plan.`),
-    create(60, `Minimum viable group: ${request.minimumViableTravelers}`, "Dream Travel", "decision", `Current demo count: ${request.confirmedTravelers}. Go / No-Go decision required if the minimum is not reached.`, minimumWarning),
-    create(90, `Sales target: ${twoThirdsTarget} confirmed`, "Dream Travel", "sales", "Review sales pace, pricing, and supplier commitments."),
-    create(120, `Sales target: ${halfTarget} confirmed`, "Dream Travel", "sales", "Early viability checkpoint."),
-    create(150, "Trip actively selling", "Dream Travel", "sales", "Launch sales materials and client outreach."),
+    create(60, `Minimum viable group: ${request.minimumViableTravelers}`, "Agency", "decision", `Current demo count: ${request.confirmedTravelers}. Go / No-Go decision required if the minimum is not reached.`, minimumWarning),
+    create(90, `Sales target: ${twoThirdsTarget} confirmed`, "Agency", "sales", "Review sales pace, pricing, and supplier commitments."),
+    create(120, `Sales target: ${halfTarget} confirmed`, "Agency", "sales", "Early viability checkpoint."),
+    create(150, "Trip actively selling", "Agency", "sales", "Launch sales materials and client outreach."),
     create(180, "Operator and itinerary locked", "Shared", "decision", "Approve the operating partner and final trip structure."),
   ].sort((a, b) => b.date.localeCompare(a.date));
 }

@@ -69,6 +69,27 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .source-link { color: var(--green); font-size: .85rem; }
 .resume-briefs { margin: 0 4vw 40px; }
 .resume-briefs .section-heading { max-width: 760px; }
+.topbar-actions { display: flex; gap: 8px; margin-left: auto; }
+.operator-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.status-badge.pending { background: var(--gold-bg); color: var(--gold); }
+.inbox-list, .evidence-list { display: grid; gap: 12px; margin-top: 14px; }
+.inbox-list article { display: flex; flex-wrap: wrap; gap: 14px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); }
+.inbox-list article > div { flex: 1 1 320px; }
+.inbox-list small { color: var(--muted); }
+.inbox-list h3 { margin: 6px 0; font-size: 1.05rem; }
+.inbox-list p { margin: 0; color: var(--muted); font-size: .9rem; }
+.reply-compose { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 16px; margin-top: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--mint-2); }
+.reply-compose > div { flex: 1 1 220px; }
+.reply-compose h3 { margin: 0 0 4px; font-size: 1rem; }
+.reply-compose p { margin: 0; color: var(--muted); font-size: .85rem; }
+.reply-compose label { flex: 1 1 420px; display: grid; gap: 6px; font-size: .85rem; color: var(--muted); }
+.draft-review { margin-top: 22px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--white); box-shadow: var(--shadow); }
+.evidence-list blockquote { margin: 0; padding: 12px 14px; border-left: 3px solid var(--green); background: var(--mint-2); border-radius: 8px; font-size: .9rem; }
+.evidence-list blockquote span { display: block; text-transform: uppercase; letter-spacing: .06em; font-size: .68rem; color: var(--muted); margin-bottom: 4px; }
+.danger-zone { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; margin-top: 34px; padding: 18px; border: 1px solid #e9c6c1; border-radius: 14px; background: var(--red-bg); }
+.danger-zone > div:first-child { flex: 1 1 420px; display: grid; gap: 4px; }
+.danger-zone span { color: var(--muted); font-size: .9rem; }
+.primary.danger { background: var(--red); border-color: var(--red); }
 .dashboard-hero h1 { max-width: 800px; font-size: clamp(2.8rem, 5vw, 4.6rem); line-height: 1.03; margin: 0 0 22px; }
 .hero-copy { max-width: 650px; font-size: 1.14rem; color: var(--muted); line-height: 1.65; }
 .hero-actions { display: flex; gap: 12px; margin-top: 32px; }
@@ -647,4 +668,22 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
   .selection-commercial { flex-wrap: wrap; justify-content: center; }
   .traveler-progress { min-width: 0; }
   .workback-timeline article { grid-template-columns: 105px 16px 1fr; gap: 10px; }
+}
+
+/* ---------------------------------------------------------------------------
+   Navigation stays reachable at every width.
+   The workflow rail and this header are the only way to move around, so on a
+   narrow screen the navigation drops to its own row and scrolls sideways rather
+   than disappearing.
+   --------------------------------------------------------------------------- */
+.topbar, .operator-topbar { flex-wrap: wrap; }
+.topbar nav, .operator-topbar nav { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+@media (max-width: 1100px) { .operator-topbar nav { display: flex; } }
+@media (max-width: 900px) { .topbar nav { display: flex; } }
+@media (max-width: 760px) {
+  .topbar, .operator-topbar { height: auto; min-height: 64px; padding: 8px 4vw; row-gap: 6px; }
+  .topbar nav, .operator-topbar nav { order: 5; width: 100%; margin-left: 0; border-top: 1px solid var(--line); }
+  .operator-topbar .reset-button, .topbar .reset-button { display: inline-flex; }
+  .brand-home { min-width: 0; }
+  .side-switch { margin-left: auto; }
 }

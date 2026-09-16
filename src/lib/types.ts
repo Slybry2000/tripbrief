@@ -223,7 +223,7 @@ export type WorkbackItem = {
   date: string;
   daysBefore: number;
   label: string;
-  owner: "Dream Travel" | "Operator" | "Shared";
+  owner: "Agency" | "Operator" | "Shared";
   category: "departure" | "operator" | "sales" | "decision";
   detail: string;
   warning: boolean;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import type { FunctionReturnType } from "convex/server";
@@ -52,7 +52,7 @@ type StoredOperator = {
   typicalNetPriceMin: number;
   typicalNetPriceMax: number;
   approvalStatus: string;
-  source: "seed" | "researched";
+  source: "seed" | "researched" | "manual";
   website?: string;
 };
 // What the network query returns for one operator's capability record. It names
@@ -111,8 +111,6 @@ function cacheNetwork(rows: NetworkRow[]) {
 }
 
 const operatorWebsite = (slug: string) => networkBySlug.get(slug)?.website ?? "";
-const isResearched = (slug: string) =>
-  networkBySlug.get(slug)?.source === "researched";
 
 // The stored record and the engine's record differ by one field name and one
 // added key, so the conversion lives in exactly two functions.
@@ -194,8 +192,8 @@ const operations = ["private_transportation", "shared_transportation", "airport_
 const requirements = ["low_physical_difficulty", "mostly_private_experiences", "few_hotel_changes", "strong_wellness_focus", "strong_food_focus", "strong_cultural_focus"];
 const travelerTypes = ["adult_groups", "families", "multigenerational", "private_groups", "retreats", "corporate_groups", "educational_groups", "religious_groups"];
 const hotelTypes = ["3-star", "4-star", "5-star_luxury", "luxury", "boutique_hotels", "private_villas", "resorts", "wellness_retreats", "eco_lodges", "specialty_accommodations"];
-const dreamSteps = ["Client Needs", "Destinations", "ITO Matches", "Choose Partners", "Trip Request", "Responses", "Compare Trips", "Selection & Workback"];
-const orderedViews: DreamView[] = ["brief", "destinations", "operators", "choose", "request", "responses", "compare", "selected"];
+const workflowSteps = ["Client Needs", "Destinations", "ITO Matches", "Choose Partners", "Trip Request", "Responses", "Compare Trips", "Selection & Workback"];
+const orderedViews: AppView[] = ["brief", "destinations", "operators", "choose", "request", "responses", "compare", "selected"];
 
 const titleCase = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -204,7 +202,7 @@ const destinationName = (id: string) => destinations.find((item) => item.id === 
 const levelLabel = (level: number) => level === 1 ? "3-star" : level === 2 ? "4-star" : "5-star / Luxury";
 const fitLabel = (score: number) => score >= 90 ? "Excellent" : score >= 75 ? "Strong" : score >= 55 ? "Partial" : "Limited";
 
-type DreamView = "dashboard" | "brief" | "destinations" | "operators" | "choose" | "request" | "responses" | "compare" | "selected" | "directory" | "portal";
+type AppView = "dashboard" | "brief" | "destinations" | "operators" | "choose" | "request" | "responses" | "compare" | "selected" | "directory" | "portal";
 type OperatorView = "login" | "workspace" | "profile" | "request" | "quote" | "submitted";
 type RankedOperator = { partner: Partner; profile: OperatorProfile; match: OperatorMatch; bestTrip: ReadyMadeTrip | null; bestTripScore: number };
 
@@ -217,23 +215,25 @@ function operatorRanking(request: TripRequest, profileOverride?: OperatorProfile
   }).filter((item) => !selectedLocationsOnly || servesSelectedDestinations(request, item.profile)).sort((a, b) => b.match.score - a.match.score || a.partner.name.localeCompare(b.partner.name));
 }
 
-function BrandHeader({ dreamView, setDreamView, reset }: { dreamView: DreamView; setDreamView: (value: DreamView) => void; reset: () => void }) {
+function BrandHeader({ activeView, setActiveView, reset, signOut }: { activeView: AppView; setActiveView: (value: AppView) => void; reset: () => void; signOut: () => void }) {
   return <header className="topbar operator-topbar">
-    <button className="brand-home" onClick={() => setDreamView("dashboard")} aria-label="Dream Travel operator finder dashboard"><span className="brand-mark">DT</span><span><strong>Dream Travel</strong><small>Incoming Operator Finder</small></span></button>
-    <div className="side-switch" aria-label="Choose workspace"><button className={dreamView !== "portal" ? "active" : ""} onClick={() => setDreamView("dashboard")}>Dream Travel</button><button className={dreamView === "portal" ? "active" : ""} onClick={() => setDreamView("portal")}>Operator Links</button></div>
-    <nav aria-label="Dream Travel navigation"><button className={dreamView === "dashboard" ? "nav-active" : ""} onClick={() => setDreamView("dashboard")}>Dashboard</button><button className={dreamView === "brief" ? "nav-active" : ""} onClick={() => setDreamView("brief")}>New Client Brief</button><button className={dreamView === "directory" ? "nav-active" : ""} onClick={() => setDreamView("directory")}>ITO Network</button></nav>
-    <button className="reset-button" onClick={reset}>Reset Demo</button>
+    <button className="brand-home" onClick={() => setActiveView("dashboard")} aria-label="TripBrief operator finder dashboard"><span className="brand-mark">TB</span><span><strong>TripBrief</strong><small>Incoming Operator Finder</small></span></button>
+    <div className="side-switch" aria-label="Choose workspace"><button className={activeView !== "portal" ? "active" : ""} onClick={() => setActiveView("dashboard")}>TripBrief</button><button className={activeView === "portal" ? "active" : ""} onClick={() => setActiveView("portal")}>Operator Links</button></div>
+    <nav aria-label="TripBrief navigation"><button className={activeView === "dashboard" ? "nav-active" : ""} onClick={() => setActiveView("dashboard")}>Dashboard</button><button className={activeView === "brief" ? "nav-active" : ""} onClick={() => setActiveView("brief")}>New Client Brief</button><button className={activeView === "directory" ? "nav-active" : ""} onClick={() => setActiveView("directory")}>ITO Network</button></nav>
+    <div className="topbar-actions"><button className="reset-button" onClick={reset}>Home</button><button className="reset-button" onClick={signOut}>Sign out</button></div>
   </header>;
 }
 
+// The app really sends mail and really stores briefs, so the notice says what is
+// true rather than what is convenient: the network it ships with is invented.
 function DemoNotice() {
-  return <aside className="demo-notice"><span>i</span>Fictional demo data only. No real operators, availability checks, messages, bookings, or payments are involved.</aside>;
+  return <aside className="demo-notice"><span>i</span>This workspace starts with a fictional operator network, for evaluation. Replace it with your own operators before you send anything to a real supplier. Sending is always one deliberate click on one named operator.</aside>;
 }
 
-function WorkflowProgress({ view, go }: { view: DreamView; go: (value: DreamView) => void }) {
+function WorkflowProgress({ view, go }: { view: AppView; go: (value: AppView) => void }) {
   const current = orderedViews.indexOf(view);
   if (current < 0) return null;
-  return <div className="progress-wrap eight-steps" aria-label={`Step ${current + 1} of 8`}><div className="progress-line" />{dreamSteps.map((step, index) => <button key={step} className={`${index === current ? "current" : ""} ${index < current ? "done" : ""}`} disabled={index > current} onClick={() => index <= current && go(orderedViews[index])}><span>{index < current ? "✓" : index + 1}</span><small>{step}</small></button>)}</div>;
+  return <div className="progress-wrap eight-steps" aria-label={`Step ${current + 1} of 8`}><div className="progress-line" />{workflowSteps.map((step, index) => <button key={step} className={`${index === current ? "current" : ""} ${index < current ? "done" : ""}`} disabled={index > current} onClick={() => index <= current && go(orderedViews[index])}><span>{index < current ? "✓" : index + 1}</span><small>{step}</small></button>)}</div>;
 }
 
 function Choice({ item, checked, onChange }: { item: string; checked: boolean; onChange: () => void }) {
@@ -252,7 +252,7 @@ function Score({ value, caption = "Capability Match" }: { value: number; caption
 // the same live query the matcher uses, so adding a researched operator or a
 // destination changes it.
 function Dashboard({ start, portal, briefs, open }: { start: () => void; portal: () => void; briefs: { _id: Id<"briefs">; name: string; status: string; travelerCount: number; nights: number; selectedDestinations: string[] }[]; open: (id: Id<"briefs">, status: string) => void }) {
-  return <><section className="dashboard-hero operator-hero v2-hero"><div><p className="eyebrow">DREAM TRAVEL · ITO SOURCING &amp; OPERATIONS</p><h1>From client needs to the right local operator—and a trip that can actually operate.</h1><p className="hero-copy">Discover suitable destinations, qualify incoming operators by their profile capabilities, then ask shortlisted operators to confirm dates, availability, and the trip they would actually provide.</p><div className="hero-actions"><button className="primary" onClick={start}>Start With Client Needs <span>→</span></button><button className="secondary" onClick={portal}>Operator links &amp; capability records</button></div></div><div className="hero-model"><div><small>1</small><strong>Client needs</strong><span>Destination can stay open</span></div><b>→</b><div><small>2</small><strong>Capable ITO shortlist</strong><span>Profile match only</span></div><b>→</b><div><small>3</small><strong>Confirmed proposals</strong><span>Dates and availability come from the ITO</span></div><b>→</b><div><small>4</small><strong>Workback plan</strong><span>Deadlines tied to departure</span></div></div></section><section className="metrics"><article className="metric-card"><span className="metric-value">{partners.length}</span><h2>ITO profiles in the network</h2><p>Structured supplier-product data</p></article><article className="metric-card"><span className="metric-value">{destinations.length}</span><h2>Destination knowledge sets</h2><p>Discovery before operator selection</p></article><article className="metric-card"><span className="metric-value">6</span><h2>Visible match dimensions</h2><p>Timing confirmed after request</p></article><article className="metric-card"><span className="metric-value">8</span><h2>Connected workflow steps</h2><p>Needs through workback schedule</p></article></section>{briefs.length > 0 && <section className="resume-briefs"><div className="section-heading"><p className="eyebrow">YOUR BRIEFS</p><h2>Continue where the request stopped</h2><p>Every brief, its shortlist, its private operator links and every proposal that has come back are stored. Open one to pick the workflow up at the step it reached.</p></div><div className="link-list">{briefs.map((item) => <article key={item._id}><div><h2>{item.name}</h2><p>{item.status === "selected" ? "Trip and operator selected" : item.status === "comparing" ? "Proposals received — ready to compare" : item.status === "sent" ? "Requests sent — waiting for proposals" : "Draft brief"} · {item.travelerCount} travellers · {item.nights} nights{item.selectedDestinations.length ? ` · ${item.selectedDestinations.map(destinationName).join(", ")}` : ""}</p></div><button className="primary" onClick={() => open(item._id, item.status)}>Open this brief →</button></article>)}</div></section>}<DemoNotice /></>;
+  return <><section className="dashboard-hero operator-hero v2-hero"><div><p className="eyebrow">TRIPBRIEF · ITO SOURCING &amp; OPERATIONS</p><h1>From client needs to the right local operator—and a trip that can actually operate.</h1><p className="hero-copy">Discover suitable destinations, qualify incoming operators by their profile capabilities, then ask shortlisted operators to confirm dates, availability, and the trip they would actually provide.</p><div className="hero-actions"><button className="primary" onClick={start}>Start With Client Needs <span>→</span></button><button className="secondary" onClick={portal}>Operator links &amp; capability records</button></div></div><div className="hero-model"><div><small>1</small><strong>Client needs</strong><span>Destination can stay open</span></div><b>→</b><div><small>2</small><strong>Capable ITO shortlist</strong><span>Profile match only</span></div><b>→</b><div><small>3</small><strong>Confirmed proposals</strong><span>Dates and availability come from the ITO</span></div><b>→</b><div><small>4</small><strong>Workback plan</strong><span>Deadlines tied to departure</span></div></div></section><section className="metrics"><article className="metric-card"><span className="metric-value">{partners.length}</span><h2>ITO profiles in the network</h2><p>Structured supplier-product data</p></article><article className="metric-card"><span className="metric-value">{destinations.length}</span><h2>Destination knowledge sets</h2><p>Discovery before operator selection</p></article><article className="metric-card"><span className="metric-value">6</span><h2>Visible match dimensions</h2><p>Timing confirmed after request</p></article><article className="metric-card"><span className="metric-value">8</span><h2>Connected workflow steps</h2><p>Needs through workback schedule</p></article></section>{briefs.length > 0 && <section className="resume-briefs"><div className="section-heading"><p className="eyebrow">YOUR BRIEFS</p><h2>Continue where the request stopped</h2><p>Every brief, its shortlist, its private operator links and every proposal that has come back are stored. Open one to pick the workflow up at the step it reached.</p></div><div className="link-list">{briefs.map((item) => <article key={item._id}><div><h2>{item.name}</h2><p>{item.status === "selected" ? "Trip and operator selected" : item.status === "comparing" ? "Proposals received — ready to compare" : item.status === "sent" ? "Requests sent — waiting for proposals" : "Draft brief"} · {item.travelerCount} travellers · {item.nights} nights{item.selectedDestinations.length ? ` · ${item.selectedDestinations.map(destinationName).join(", ")}` : ""}</p></div><button className="primary" onClick={() => open(item._id, item.status)}>Open this brief →</button></article>)}</div></section>}<DemoNotice /></>;
 }
 
 function BriefForm({ request, setRequest, next }: { request: TripRequest; setRequest: (value: TripRequest) => void; next: () => void }) {
@@ -284,7 +284,7 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
     setRequest({ ...request, selectedDestinationIds, selectedPartnerIds: [], selectedProposalId: null });
   };
   const selectedNames = request.selectedDestinationIds.map(destinationName);
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 2 · DESTINATION DISCOVERY & SELECTION</p><h1>Which locations is the customer interested in?</h1><p>Use the discovery scores as guidance, then select one or more locations the customer wants Dream Travel to pursue. Only ITOs serving those locations will be considered next.</p></div><div className="destination-discovery-grid selectable-destinations">{ranked.map(({ destination, score }, index) => { const strengths = request.desiredExperiences.filter((item) => (destination.experienceStrengths[item] ?? 0) >= 4); const selected = request.selectedDestinationIds.includes(destination.id); return <article className={`destination-discovery-card ${selected ? "selected" : ""}`} key={destination.id}><span className="destination-rank">#{index + 1}</span><label className={`destination-select ${selected ? "checked" : ""}`}><input type="checkbox" checked={selected} onChange={() => toggleDestination(destination.id)} /><span>{selected ? "✓ Selected" : "+ Select location"}</span></label><div><p>{destination.country}</p><h2>{destination.name}</h2><span>{destination.description}</span></div><Score value={score} caption="Destination Fit" /><TagList title="Strong for this brief" values={strengths} /><div className="watchouts"><strong>Planning notes</strong>{destination.watchOuts.map((note) => <span key={note}>• {note}</span>)}</div></article>; })}</div><div className="method-note"><strong>Nothing is requested automatically.</strong><span>This selection only narrows the ITO shortlist. Dream Travel will choose the operators separately and review the request before sending it.</span></div><div className="sticky-action"><span>{selectedNames.length ? <><strong>{selectedNames.length}</strong> selected: {selectedNames.join(", ")}</> : "Select at least one customer-approved location."}</span><button className="primary" disabled={!selectedNames.length} onClick={next}>Find ITOs in Selected Locations <span>→</span></button></div></section>;
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 2 · DESTINATION DISCOVERY & SELECTION</p><h1>Which locations is the customer interested in?</h1><p>Use the discovery scores as guidance, then select one or more locations the customer wants the agency to pursue. Only ITOs serving those locations will be considered next.</p></div><div className="destination-discovery-grid selectable-destinations">{ranked.map(({ destination, score }, index) => { const strengths = request.desiredExperiences.filter((item) => (destination.experienceStrengths[item] ?? 0) >= 4); const selected = request.selectedDestinationIds.includes(destination.id); return <article className={`destination-discovery-card ${selected ? "selected" : ""}`} key={destination.id}><span className="destination-rank">#{index + 1}</span><label className={`destination-select ${selected ? "checked" : ""}`}><input type="checkbox" checked={selected} onChange={() => toggleDestination(destination.id)} /><span>{selected ? "✓ Selected" : "+ Select location"}</span></label><div><p>{destination.country}</p><h2>{destination.name}</h2><span>{destination.description}</span></div><Score value={score} caption="Destination Fit" /><TagList title="Strong for this brief" values={strengths} /><div className="watchouts"><strong>Planning notes</strong>{destination.watchOuts.map((note) => <span key={note}>• {note}</span>)}</div></article>; })}</div><div className="method-note"><strong>Nothing is requested automatically.</strong><span>This selection only narrows the ITO shortlist. The advisor chooses the operators separately and review the request before sending it.</span></div><div className="sticky-action"><span>{selectedNames.length ? <><strong>{selectedNames.length}</strong> selected: {selectedNames.join(", ")}</> : "Select at least one customer-approved location."}</span><button className="primary" disabled={!selectedNames.length} onClick={next}>Find ITOs in Selected Locations <span>→</span></button></div></section>;
 }
 
 function CapabilityBreakdown({ match }: { match: OperatorMatch }) {
@@ -293,7 +293,7 @@ function CapabilityBreakdown({ match }: { match: OperatorMatch }) {
 }
 
 function TimingConfirmationPanel({ item }: { item: RankedOperator }) {
-  return <div className="timing-panel awaiting-confirmation"><div className="timing-head"><div><small>REQUEST TIMING</small><strong>Awaiting operator confirmation</strong></div><span>Not yet submitted</span></div><p>Dream Travel has not asked this ITO to review the requested window yet. Its profile can provide planning context, but it cannot confirm this trip&apos;s dates or live space.</p><ul><li>Profile minimum lead time: {item.profile.timing.minimumLeadTimeDays} days</li><li>Typical proposal turnaround: {item.profile.timing.averageProposalTurnaroundDays}–{item.profile.timing.maximumProposalTurnaroundDays} business days</li><li>{item.profile.timing.seasonalNotes}</li></ul></div>;
+  return <div className="timing-panel awaiting-confirmation"><div className="timing-head"><div><small>REQUEST TIMING</small><strong>Awaiting operator confirmation</strong></div><span>Not yet submitted</span></div><p>This operator has not been asked to review the requested window yet. Its profile can provide planning context, but it cannot confirm this trip&apos;s dates or live space.</p><ul><li>Profile minimum lead time: {item.profile.timing.minimumLeadTimeDays} days</li><li>Typical proposal turnaround: {item.profile.timing.averageProposalTurnaroundDays}–{item.profile.timing.maximumProposalTurnaroundDays} business days</li><li>{item.profile.timing.seasonalNotes}</li></ul></div>;
 }
 
 function OperatorResultCard({ item, rank }: { item: RankedOperator; rank: number }) {
@@ -343,11 +343,79 @@ function SelectedAndWorkback({ request, proposal, reset }: { request: TripReques
   const partner = partners.find((item) => item.id === proposal.partnerId)!;
   const margin = calculateProposalMargin(request, proposal)!;
   const schedule = buildWorkbackSchedule(request, proposal);
-  return <section className="workflow-section selected-workback"><div className="selection-confirm"><div className="selected-icon">✓</div><div><p className="eyebrow">STEP 8 · SELECTED TRIP & OPERATING PARTNER</p><h1>{proposal.programName}</h1><p>Dream Travel will sell this proposed trip. <strong>{partner.name}</strong> is the behind-the-scenes operating partner.</p></div><div className="selection-commercial"><span><small>NET / PERSON</small><strong>{money(proposal.netPricePerPerson)}</strong></span><span><small>EST. MARGIN</small><strong>{(margin.margin * 100).toFixed(1)}%</strong></span><span><small>LIVE AVAILABILITY</small><strong>{proposal.availability}</strong></span></div></div><div className="workback-heading"><div><p className="eyebrow">INITIAL WORKBACK SCHEDULE</p><h2>Work backward from {formatDate(proposal.startDate)}</h2><p>Contractual deadlines come from the selected proposal. Sales and viability checkpoints remain Dream Travel decisions.</p></div><div className="traveler-progress"><strong>{request.confirmedTravelers} confirmed</strong><span>{request.minimumViableTravelers} minimum viable · {request.travelerCount} target</span><div><i style={{ width: `${Math.min(100, request.confirmedTravelers / request.travelerCount * 100)}%` }} /></div></div></div><div className="go-no-go-warning"><span>!</span><div><strong>Go / No-Go Decision Required if the minimum is missed</strong><p>The demo does not automatically cancel. Dream Travel can continue, cancel, renegotiate, change price, reduce commitments, or choose another operator.</p></div></div><div className="workback-timeline">{schedule.map((item) => <article className={`${item.category} ${item.warning ? "warning" : ""}`} key={`${item.date}-${item.label}`}><div className="timeline-date"><strong>{formatDate(item.date)}</strong><span>{item.daysBefore ? `${item.daysBefore} days before` : "Departure"}</span></div><i /><div className="timeline-content"><span>{item.owner}</span><h3>{item.label}</h3><p>{item.detail}</p></div></article>)}</div><div className="handoff-box"><strong>Matching is complete; operations now begin.</strong><p>The capability engine answered who could deliver. This schedule answers what must happen next so the selected trip does not drift toward costly deadlines.</p></div><button className="primary" onClick={reset}>Start Another ITO Search</button></section>;
+  return <section className="workflow-section selected-workback"><div className="selection-confirm"><div className="selected-icon">✓</div><div><p className="eyebrow">STEP 8 · SELECTED TRIP & OPERATING PARTNER</p><h1>{proposal.programName}</h1><p>Your agency will sell this proposed trip. <strong>{partner.name}</strong> is the behind-the-scenes operating partner.</p></div><div className="selection-commercial"><span><small>NET / PERSON</small><strong>{money(proposal.netPricePerPerson)}</strong></span><span><small>EST. MARGIN</small><strong>{(margin.margin * 100).toFixed(1)}%</strong></span><span><small>LIVE AVAILABILITY</small><strong>{proposal.availability}</strong></span></div></div><div className="workback-heading"><div><p className="eyebrow">INITIAL WORKBACK SCHEDULE</p><h2>Work backward from {formatDate(proposal.startDate)}</h2><p>Contractual deadlines come from the selected proposal. Sales and viability checkpoints remain the agency's decisions.</p></div><div className="traveler-progress"><strong>{request.confirmedTravelers} confirmed</strong><span>{request.minimumViableTravelers} minimum viable · {request.travelerCount} target</span><div><i style={{ width: `${Math.min(100, request.confirmedTravelers / request.travelerCount * 100)}%` }} /></div></div></div><div className="go-no-go-warning"><span>!</span><div><strong>Go / No-Go Decision Required if the minimum is missed</strong><p>The demo does not automatically cancel. The agency can continue, cancel, renegotiate, change price, reduce commitments, or choose another operator.</p></div></div><div className="workback-timeline">{schedule.map((item) => <article className={`${item.category} ${item.warning ? "warning" : ""}`} key={`${item.date}-${item.label}`}><div className="timeline-date"><strong>{formatDate(item.date)}</strong><span>{item.daysBefore ? `${item.daysBefore} days before` : "Departure"}</span></div><i /><div className="timeline-content"><span>{item.owner}</span><h3>{item.label}</h3><p>{item.detail}</p></div></article>)}</div><div className="handoff-box"><strong>Matching is complete; operations now begin.</strong><p>The capability engine answered who could deliver. This schedule answers what must happen next so the selected trip does not drift toward costly deadlines.</p></div><button className="primary" onClick={reset}>Start Another ITO Search</button></section>;
 }
 
-function OperatorDirectory({ request, profile, briefId }: { request: TripRequest; profile: OperatorProfile; briefId: Id<"briefs"> | null }) {
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">APPROVED NETWORK</p><h1>Incoming Tour Operator Capability Records</h1><p>Supplier-product data covering what, where, who, how, cost, and timing.</p></div><div className="directory-grid">{operatorRanking(request, profile).map((item) => <article key={item.partner.id}><span className="status-badge">{item.partner.approvalStatus === "capability_intake_pending" ? "Capability intake pending" : "Approved ITO"}</span><h2>{item.partner.name}</h2><p>{item.profile.serviceAreas.flatMap((area) => [area.country, ...area.regions]).join(" · ") || item.profile.locations.map(destinationName).join(" · ")}</p><div className="mini-facts"><span>{item.profile.minGroupSize}–{item.profile.maxGroupSize} travelers</span><span>{item.profile.timing.minimumLeadTimeDays}-day lead time</span>{isResearched(item.partner.id) && <span>Added from a published site</span>}</div><TagList title="Experiences" values={item.profile.services.slice(0, 7)} tone="neutral" />{operatorWebsite(item.partner.id) && <a className="source-link" href={operatorWebsite(item.partner.id)} target="_blank" rel="noreferrer">Source website</a>}</article>)}</div><NetworkResearch request={request} briefId={briefId} /></section>;
+// The network page: who is in this workspace's operator network, how to reach
+// each operator's own capability record, and how to bring another one in. It is a
+// management surface rather than a ranking — the brief decides what matters for a
+// particular request.
+function OperatorDirectory({ request, briefId }: { request: TripRequest; briefId: Id<"briefs"> | null }) {
+  const links = useQuery(api.network.capabilityLinks) ?? [];
+  const createLink = useMutation(api.network.createCapabilityLink);
+  const removeOperator = useMutation(api.network.removeOperator);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+  const [busySlug, setBusySlug] = useState("");
+  const linkFor = (slug: string) => links.find((row) => row.operatorSlug === slug);
+  const openIntake = async (slug: string) => {
+    setError(""); setNotice(""); setBusySlug(slug);
+    try {
+      await createLink({ operatorSlug: slug, token: newCapabilityToken() });
+      setNotice(`A capability intake link is ready for ${partners.find((item) => item.id === slug)?.name ?? slug}. Open it, or send it to the operator.`);
+    } catch (cause) { setError(errorText(cause, "Could not create that link.")); }
+    finally { setBusySlug(""); }
+  };
+  const remove = async (slug: string, name: string) => {
+    setError(""); setNotice("");
+    if (!window.confirm(`Remove ${name} from the operator network? Its capability record and its intake link go with it. This cannot be undone.`)) return;
+    try { await removeOperator({ operatorSlug: slug }); setNotice(`${name} was removed from the network.`); }
+    catch (cause) { setError(errorText(cause, "Could not remove that operator.")); }
+  };
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">THE OPERATOR NETWORK</p><h1>Who this workspace can ask to operate a trip.</h1><p>Every record here is capability data: what, where, who, how, cost and timing. It is what the matcher reads, and it is the operator's own to keep current through its private intake link.</p></div>
+    {error && <div className="inline-warning"><strong>Network</strong><span>{error}</span></div>}
+    {notice && <div className="inline-success"><strong>Done</strong><span>{notice}</span></div>}
+    <div className="directory-grid">{partners.map((partner) => {
+      const capability = operatorProfiles.find((item) => item.partnerId === partner.id);
+      const link = linkFor(partner.id);
+      const pending = partner.approvalStatus === "capability_intake_pending";
+      return <article key={partner.id}><span className={`status-badge ${pending ? "pending" : ""}`}>{pending ? "Capability intake pending" : "Capability on file"}</span><h2>{partner.name}</h2><p>{capability?.serviceAreas.flatMap((area) => [area.country, ...area.regions]).join(" · ") || capability?.locations.map(destinationName).join(" · ")}</p><div className="mini-facts"><span>{capability?.minGroupSize}–{capability?.maxGroupSize} travellers</span><span>{capability?.timing.minimumLeadTimeDays ?? 0}-day minimum lead time</span><span>{capability?.services.length ?? 0} experiences</span></div><TagList title="Experiences" values={(capability?.services ?? []).slice(0, 7)} tone="neutral" />{operatorWebsite(partner.id) && <a className="source-link" href={operatorWebsite(partner.id)} target="_blank" rel="noreferrer">Source website</a>}
+        <div className="operator-actions">{link ? <><a className="primary" href={responseLink(link.token)} target="_blank" rel="noreferrer">Open its intake link →</a><button className="secondary" onClick={() => void navigator.clipboard?.writeText(responseLink(link.token)).then(() => setNotice(`Link for ${partner.name} copied.`))}>Copy link</button></> : <button className="primary" disabled={busySlug === partner.id} onClick={() => void openIntake(partner.id)}>{busySlug === partner.id ? "Creating…" : "Create its intake link"}</button>}<button className="secondary" onClick={() => void remove(partner.id, partner.name)}>Remove</button></div>
+        {link?.lastOpenedAt && <small className="quiet">Last opened {new Date(link.lastOpenedAt).toLocaleDateString()}</small>}
+      </article>;
+    })}</div>
+    <AddOperator />
+    <NetworkResearch request={request} briefId={briefId} />
+  </section>;
+}
+
+// An operator an advisor already knows, typed in by hand. Both this and a
+// researched candidate start with an empty capability record, because neither the
+// advisor nor a search result can claim what an operator can deliver.
+function AddOperator() {
+  const addOperator = useMutation(api.network.addOperator);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [country, setCountry] = useState("");
+  const [destinationSlugs, setDestinationSlugs] = useState<string[]>([]);
+  const [minGroupSize, setMinGroupSize] = useState(8);
+  const [maxGroupSize, setMaxGroupSize] = useState(30);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const save = async () => {
+    setError(""); setNotice("");
+    try {
+      const result = await addOperator({ name, country, destinationSlugs, minGroupSize, maxGroupSize });
+      setNotice(`${name} was added. Create its intake link below and send it, and it can fill in what it can actually deliver.`);
+      setName(""); setCountry(""); setDestinationSlugs([]); setOpen(false);
+      void result;
+    } catch (cause) { setError(errorText(cause, "Could not add that operator.")); }
+  };
+  return <div className="network-research"><div className="section-heading split-heading"><div><p className="eyebrow">ADD BY HAND</p><h2>Bring in an operator you already work with</h2><p>A name and a footprint are enough. Capability, commercial terms and timing all arrive from the operator's own intake, not from here.</p></div><button className="secondary" onClick={() => setOpen(!open)}>{open ? "Close" : "Add an operator"}</button></div>
+    {error && <div className="inline-warning"><strong>Add</strong><span>{error}</span></div>}
+    {notice && <div className="inline-success"><strong>Added</strong><span>{notice}</span></div>}
+    {open && <div className="form-card"><div className="form-grid three"><label className="wide">Operator name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Coast & Valley Travel" /></label><label>Country<input value={country} onChange={(event) => setCountry(event.target.value)} /></label><label>Minimum group<input type="number" value={minGroupSize} onChange={(event) => setMinGroupSize(Number(event.target.value))} /></label><label>Maximum group<input type="number" value={maxGroupSize} onChange={(event) => setMaxGroupSize(Number(event.target.value))} /></label></div><fieldset><legend>Destinations it operates</legend><div className="choice-grid compact">{destinations.map((item) => <Choice key={item.id} item={item.id} checked={destinationSlugs.includes(item.id)} onChange={() => setDestinationSlugs(destinationSlugs.includes(item.id) ? destinationSlugs.filter((slug) => slug !== item.id) : [...destinationSlugs, item.id])} />)}</div></fieldset><div className="sticky-action"><span>It starts with an empty capability record, so it matches nothing until it fills one in.</span><button className="primary" disabled={name.trim().length < 3} onClick={() => void save()}>Add to the network</button></div></div>}
+  </div>;
 }
 
 // Looking for an operator the network does not have yet. Firecrawl returns
@@ -360,7 +428,7 @@ function NetworkResearch({ request, briefId }: { request: TripRequest; briefId: 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const runSearch = useAction(api.research.search);
-  const addOperator = useMutation(api.network.addFromCandidate);
+  const addOperator = useMutation(api.network.addOperator);
   const dismiss = useMutation(api.research.dismiss);
   const found = useQuery(api.research.list, { destinationSlug });
   const destination = destinations.find((item) => item.id === destinationSlug) ?? destinations[0];
@@ -373,12 +441,14 @@ function NetworkResearch({ request, briefId }: { request: TripRequest; briefId: 
     } catch (cause) { setError(cause instanceof Error ? cause.message.replace(/^\[.*?\]\s*/, "") : "The search failed."); }
     finally { setBusy(false); }
   };
+  // A researched page is evidence, not a member: it becomes an operator only
+  // when an advisor adds it, and it carries the page it came from.
   const add = async (candidateId: Id<"candidates">, title: string) => {
     setError("");
     try {
-      const result = await addOperator({ candidateId, name: title, destinationSlugs: [destinationSlug], country: destination.country, minGroupSize: request.minimumViableTravelers || 8, maxGroupSize: Math.max(request.travelerCount, 10) });
-      setNotice(`${title} was added to the network as ${result.slug}. Send it a capability link so it can be matched.`);
-    } catch (cause) { setError(cause instanceof Error ? cause.message.replace(/^\[.*?\]\s*/, "") : "Could not add that operator."); }
+      const result = await addOperator({ candidateId, name: title, destinationSlugs: [destinationSlug], country: destination.country, minGroupSize: request.minimumViableTravelers || 8, maxGroupSize: Math.max(request.travelerCount, 10), website: (found ?? []).find((item) => item._id === candidateId)?.url });
+      setNotice(`${title} was added to the network as ${result.slug}. Create its intake link above and send it, and it can be matched.`);
+    } catch (cause) { setError(errorText(cause, "Could not add that operator.")); }
   };
   return <section className="network-research"><div className="section-heading split-heading"><div><p className="eyebrow">GROW THE NETWORK</p><h2>Find incoming operators that are not in the network yet</h2><p>Firecrawl searches published websites for operators serving one destination. A result is evidence, not a network member: it becomes an operator only when you add it, and it matches nothing until it has filled in a capability record.</p></div><label>Destination<select value={destinationSlug} onChange={(event) => { setDestinationSlug(event.target.value); setQueries([]); setNotice(""); }}>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
     {error && <div className="inline-warning"><strong>Research</strong><span>{error}</span></div>}
@@ -407,22 +477,22 @@ function ProfileEditor({ profile, setProfile, save }: { profile: OperatorProfile
     <IntakeSection number="04" title="Groups and accommodations" description="Who fits your operating model and what accommodation supply you normally contract."><div className="form-grid three"><label>Minimum group<input type="number" value={profile.minGroupSize} onChange={(event) => setProfile({ ...profile, minGroupSize: Number(event.target.value) })} /></label><label>Ideal group<input type="number" value={profile.idealGroupSize} onChange={(event) => setProfile({ ...profile, idealGroupSize: Number(event.target.value) })} /></label><label>Maximum group<input type="number" value={profile.maxGroupSize} onChange={(event) => setProfile({ ...profile, maxGroupSize: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={profile.supportsFIT} onChange={(event) => setProfile({ ...profile, supportsFIT: event.target.checked })} />FIT / individual travelers</label></div><fieldset><legend>Group formats</legend><div className="choice-grid compact">{["fit", "small_groups", "medium_groups", "large_groups", "private_groups", "retreats"].map((item) => <Choice key={item} item={item} checked={profile.groupTypes.includes(item)} onChange={() => toggle("groupTypes", item)} />)}</div></fieldset><fieldset><legend>Accommodation types</legend><div className="choice-grid">{hotelTypes.map((item) => <Choice key={item} item={item} checked={profile.hotelTypes.includes(item)} onChange={() => toggle("hotelTypes", item)} />)}</div></fieldset></IntakeSection>
     <IntakeSection number="05" title="Budget and commercial fit" description="Demo values are normalized to USD; the currency field remains part of the model."><div className="form-grid three"><label>Typical net minimum<input type="number" value={commercial.typicalNetMin} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMin: Number(event.target.value) } })} /></label><label>Typical net maximum<input type="number" value={commercial.typicalNetMax} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMax: Number(event.target.value) } })} /></label><label>Currency<select value={commercial.currency} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, currency: event.target.value } })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Minimum trip value<input type="number" value={commercial.minimumTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, minimumTripValue: Number(event.target.value) } })} /></label><label>Typical trip value<input type="number" value={commercial.typicalTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalTripValue: Number(event.target.value) } })} /></label><label>Preferred group value<input type="number" value={commercial.preferredGroupValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, preferredGroupValue: Number(event.target.value) } })} /></label><label className="inline-check"><input type="checkbox" checked={commercial.pricingVariesByGroupSize} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, pricingVariesByGroupSize: event.target.checked } })} />Pricing changes by group size</label></div></IntakeSection>
     <IntakeSection number="06" title="Availability, lead times, and deadlines" description="Operating availability and known exceptions inform matching. Live space remains unconfirmed until you respond."><div className="availability-layers"><article><small>LAYER 1</small><strong>Operating availability</strong><span>{timing.yearRound ? "Year-round" : timing.operatingMonths.map((month) => new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2027, month - 1, 1))).replace(" ", "")).join(", ")}</span></article><article><small>LAYER 2</small><strong>Known exceptions</strong><span>{timing.blackoutPeriods.length ? timing.blackoutPeriods.map((period) => `${formatDate(period.start)}–${formatDate(period.end)}`).join(", ") : "No blackouts listed"}</span></article><article><small>LAYER 3</small><strong>Live availability</strong><span>Confirmed only in a proposal</span></article></div><div className="form-grid three"><label className="inline-check"><input type="checkbox" checked={timing.yearRound} onChange={(event) => setProfile({ ...profile, timing: { ...timing, yearRound: event.target.checked } })} />Operate year-round</label><label>Shortest accepted lead<input type="number" value={timing.shortestLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, shortestLeadTimeDays: Number(event.target.value) } })} /></label><label>Normal minimum lead<input type="number" value={timing.minimumLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, minimumLeadTimeDays: Number(event.target.value) } })} /></label><label>Ideal lead time<input type="number" value={timing.idealLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, idealLeadTimeDays: Number(event.target.value) } })} /></label><label>Average proposal turnaround<input type="number" value={timing.averageProposalTurnaroundDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, averageProposalTurnaroundDays: Number(event.target.value) } })} /></label><label>Maximum proposal turnaround<input type="number" value={timing.maximumProposalTurnaroundDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, maximumProposalTurnaroundDays: Number(event.target.value) } })} /></label><label>Space hold (days)<input type="number" value={timing.spaceHoldDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, spaceHoldDays: Number(event.target.value) } })} /></label><label>Deposit due (days before)<input type="number" value={timing.depositDueDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, depositDueDaysBefore: Number(event.target.value) } })} /></label><label>Final payment (days before)<input type="number" value={timing.finalPaymentDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, finalPaymentDaysBefore: Number(event.target.value) } })} /></label><label>Final headcount (days before)<input type="number" value={timing.finalHeadcountDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, finalHeadcountDaysBefore: Number(event.target.value) } })} /></label><label>Traveler names (days before)<input type="number" value={timing.travelerNamesDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, travelerNamesDaysBefore: Number(event.target.value) } })} /></label><label>Room release (days before)<input type="number" value={timing.roomReleaseDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, roomReleaseDaysBefore: Number(event.target.value) } })} /></label></div><label>Seasonal notes<textarea rows={3} value={timing.seasonalNotes} onChange={(event) => setProfile({ ...profile, timing: { ...timing, seasonalNotes: event.target.value } })} /></label><div className="deadline-list"><strong>Cancellation deadlines</strong>{timing.cancellationDeadlines.map((deadline) => <span key={deadline.daysBefore}>{deadline.daysBefore} days before · {deadline.penalty} penalty</span>)}</div></IntakeSection>
-    <IntakeSection number="07" title="Optional ready-made programs" description="Useful context after qualification. Programs never increase or reduce Capability Match.">{trips.filter((trip) => trip.partnerId === profile.partnerId).map((trip) => <div className="profile-trip" key={trip.id}><div><strong>{trip.name}</strong><span>{trip.nights} nights · {money(trip.netPricePerPerson)} starting net</span></div><span>Supporting information only</span></div>)}{trips.filter((trip) => trip.partnerId === profile.partnerId).length === 0 && <p className="quiet">No ready-made programs listed. Matching never depends on having one.</p>}</IntakeSection><div className="sticky-action"><span>Saving updates Dream Travel matching immediately.</span><button className="primary" onClick={save}>Save Capability Record</button></div></section>;
+    <IntakeSection number="07" title="Optional ready-made programs" description="Useful context after qualification. Programs never increase or reduce Capability Match.">{trips.filter((trip) => trip.partnerId === profile.partnerId).map((trip) => <div className="profile-trip" key={trip.id}><div><strong>{trip.name}</strong><span>{trip.nights} nights · {money(trip.netPricePerPerson)} starting net</span></div><span>Supporting information only</span></div>)}{trips.filter((trip) => trip.partnerId === profile.partnerId).length === 0 && <p className="quiet">No ready-made programs listed. Matching never depends on having one.</p>}</IntakeSection><div className="sticky-action"><span>Saving updates the matching immediately.</span><button className="primary" onClick={save}>Save Capability Record</button></div></section>;
 }
 
 function PartnerRequest({ request, profile, quote }: { request: TripRequest; profile: OperatorProfile; quote: () => void }) {
   const ranked = operatorRanking(request, profile);
   const item = ranked.find((row) => row.partner.id === profile.partnerId) ?? ranked[0];
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">TRIP REQUEST FROM DREAM TRAVEL</p><h1>{request.name}</h1><p>Review the requested window, recommend the actual trip you would operate, and confirm dates, availability, fit, pricing assumptions, and deadlines.</p></div><span className="needs-response-badge">Needs Response</span></div><div className="brief-strip v2"><div><strong>{request.travelerCount} travelers · {request.minimumViableTravelers} minimum</strong><span>{request.nights} nights · {levelLabel(request.experienceLevel)} · {titleCase(request.pace)} pace</span></div><div><small>TRAVEL WINDOW TO REVIEW</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="portal-columns request-detail"><section><h2>Complete client brief</h2><TagList title="Experiences" values={request.desiredExperiences} tone="neutral" /><TagList title="Operating needs" values={[...request.transportationNeeds, ...request.accessibilityNeeds, ...request.importantRequirements]} tone="neutral" /><div className="notes"><strong>Dream Travel notes</strong><p>{request.notes}</p></div></section><aside><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></aside></div></section>;
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">TRIP REQUEST FROM THE AGENCY</p><h1>{request.name}</h1><p>Review the requested window, recommend the actual trip you would operate, and confirm dates, availability, fit, pricing assumptions, and deadlines.</p></div><span className="needs-response-badge">Needs Response</span></div><div className="brief-strip v2"><div><strong>{request.travelerCount} travelers · {request.minimumViableTravelers} minimum</strong><span>{request.nights} nights · {levelLabel(request.experienceLevel)} · {titleCase(request.pace)} pace</span></div><div><small>TRAVEL WINDOW TO REVIEW</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="portal-columns request-detail"><section><h2>Complete client brief</h2><TagList title="Experiences" values={request.desiredExperiences} tone="neutral" /><TagList title="Operating needs" values={[...request.transportationNeeds, ...request.accessibilityNeeds, ...request.importantRequirements]} tone="neutral" /><div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div></section><aside><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></aside></div></section>;
 }
 
 function ProposalBuilder({ request, proposal, setProposal, submit }: { request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void; submit: () => void }) {
   const toggle = (key: "transportation" | "experiencesIncluded" | "requirementsMet", item: string) => setProposal({ ...proposal, [key]: proposal[key].includes(item) ? proposal[key].filter((value) => value !== item) : [...proposal[key], item] });
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell Dream Travel exactly what you will provide.</h1><p>This becomes the offer Dream Travel compares and the source for operational deadlines after selection.</p></div><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{destinations.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}>{hotelTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><div className="form-card"><h2>Fit, changes, and gaps</h2><div className="form-grid three"><label>Final proposed fit<input type="number" min="0" max="100" value={proposal.finalFit} onChange={(event) => setProposal({ ...proposal, finalFit: Number(event.target.value) })} /></label><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>)}</div></div><div className="quote-summary"><div><small>PROPOSED NET</small><strong>{money(proposal.netPricePerPerson)}</strong></div><div><small>TARGET RETAIL</small><strong>{money(request.targetRetailPricePerPerson)}</strong></div><div><small>EST. MARGIN</small><strong>{(((request.targetRetailPricePerPerson - proposal.netPricePerPerson) / request.targetRetailPricePerPerson) * 100).toFixed(1)}%</strong></div><button className="primary" onClick={submit}>Submit Full Proposal →</button></div></section>;
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell the agency exactly what you will provide.</h1><p>This becomes the offer your agency compares and the source for operational deadlines after selection.</p></div><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{destinations.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}>{hotelTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><div className="form-card"><h2>Fit, changes, and gaps</h2><div className="form-grid three"><label>Final proposed fit<input type="number" min="0" max="100" value={proposal.finalFit} onChange={(event) => setProposal({ ...proposal, finalFit: Number(event.target.value) })} /></label><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>)}</div></div><div className="quote-summary"><div><small>PROPOSED NET</small><strong>{money(proposal.netPricePerPerson)}</strong></div><div><small>TARGET RETAIL</small><strong>{money(request.targetRetailPricePerPerson)}</strong></div><div><small>EST. MARGIN</small><strong>{(((request.targetRetailPricePerPerson - proposal.netPricePerPerson) / request.targetRetailPricePerPerson) * 100).toFixed(1)}%</strong></div><button className="primary" onClick={submit}>Submit Full Proposal →</button></div></section>;
 }
 
-function Submitted({ switchToDream, label = "View on Dream Travel Side →" }: { switchToDream: () => void; label?: string }) {
-  return <section className="portal-submitted"><div className="selected-icon">✓</div><p className="eyebrow">PROPOSAL SUBMITTED</p><h1>Dream Travel received the complete operating proposal.</h1><p>Availability, fit, price, assumptions, deposits, deadlines, and cancellation terms are now available for comparison. The proposal is attached to the request you opened, and the agency's workspace updates the moment you submit.</p><button className="primary" onClick={switchToDream}>{label}</button></section>;
+function Submitted({ goBack, label = "Back to the request →" }: { goBack: () => void; label?: string }) {
+  return <section className="portal-submitted"><div className="selected-icon">✓</div><p className="eyebrow">PROPOSAL SUBMITTED</p><h1>The agency received the complete operating proposal.</h1><p>Availability, fit, price, assumptions, deposits, deadlines, and cancellation terms are now available for comparison. The proposal is attached to the request you opened, and the agency's workspace updates the moment you submit.</p><button className="primary" onClick={goBack}>{label}</button></section>;
 }
 
 // ---------------------------------------------------------------------------
@@ -436,7 +506,7 @@ export default function App() {
 }
 
 function Splash({ label }: { label: string }) {
-  return <main className="app-shell"><div className="splash"><span className="brand-mark">DT</span><p>{label}</p></div></main>;
+  return <main className="app-shell"><div className="splash"><span className="brand-mark">TB</span><p>{label}</p></div></main>;
 }
 
 // Convex prefixes a thrown message; the sentence after the prefix is ours.
@@ -452,12 +522,13 @@ function AdvisorApp() {
   const [error, setError] = useState("");
   if (isLoading) return <Splash label="Opening the workspace…" />;
   if (!isAuthenticated)
-    return <main className="app-shell"><section className="portal-login"><div className="portal-login-card"><span className="portal-logo">DT</span><p className="eyebrow">DREAM TRAVEL · ITO SOURCING</p><h1>Incoming operator finder</h1><p>Start with what the client wants. Discover the destinations that fit, qualify incoming operators by their own capability records, and ask the shortlist to confirm what they would actually operate.</p><button className="primary full" onClick={() => { void signIn("anonymous").catch(() => setError("Could not open the workspace. Please try again.")); }}>Open a private trial workspace →</button><small>This preview belongs to this browser session. Fictional data only: no real operator, traveller, message or booking is involved.</small>{error && <p role="alert">{error}</p>}</div></section></main>;
+    return <main className="app-shell"><section className="portal-login"><div className="portal-login-card"><span className="portal-logo">TB</span><p className="eyebrow">TRIPBRIEF · ITO SOURCING</p><h1>Incoming operator finder</h1><p>Start with what the client wants. Discover the destinations that fit, qualify incoming operators by their own capability records, and ask the shortlist to confirm what they would actually operate.</p><button className="primary full" onClick={() => { void signIn("anonymous").catch(() => setError("Could not open the workspace. Please try again.")); }}>Open a private trial workspace →</button><small>This preview belongs to this browser session. Fictional data only: no real operator, traveller, message or booking is involved.</small>{error && <p role="alert">{error}</p>}</div></section></main>;
   return <Workspace />;
 }
 
 type BriefBundle = FunctionReturnType<typeof api.briefs.get>;
 type ShortlistRow = NonNullable<BriefBundle>["shortlist"][number];
+type DraftReply = FunctionReturnType<typeof api.proposals.draftFromReply>;
 
 function Workspace() {
   const network = useQuery(api.network.list);
@@ -472,18 +543,28 @@ function Workspace() {
   const writeDestinations = useMutation(api.briefs.setDestinations);
   const writeShortlist = useMutation(api.briefs.setShortlist);
   const decide = useMutation(api.briefs.recordDecision);
+  const removeBrief = useMutation(api.briefs.remove);
   const sendRequest = useAction(api.outbound.sendRequest);
-  const [dreamView, setDreamView] = useState<DreamView>("dashboard");
+  const ensureWorkspace = useMutation(api.network.ensureWorkspace);
+  const { signOut } = useAuthActions();
+  const [activeView, setActiveView] = useState<AppView>("dashboard");
   const [request, setRequest] = useState<TripRequest>({ ...defaultRequest });
   const [hydrated, setHydrated] = useState<string | null>(null);
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  // The network is one live read at the root, cached under the names the demo's
+  // The operator network is one live read at the root, cached under the names the demo's
   // matching engine already uses, so every ranking view sees the current records.
   if (network) cacheNetwork(network);
+
+  // A workspace starts with the studio's fictional network. The mutation is
+  // idempotent, so one call on load is enough and a later call costs nothing.
+  useEffect(() => {
+    void ensureWorkspace({}).catch(() => undefined);
+  }, [ensureWorkspace]);
 
   // The brief is copied into working state once, so typing is never fighting a
   // live query. This is React's own "adjust state when an input changes" case:
@@ -494,14 +575,17 @@ function Workspace() {
     setRequest(fromStoredBrief(bundle.brief, bundle.shortlist));
   }
 
-  const goDream = (view: DreamView) => { setDreamView(view); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const goView = (view: AppView) => { setActiveView(view); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const report = (cause: unknown, fallback: string) => setError(errorText(cause, fallback));
   const proposals: OperatorProposal[] = (bundle?.proposals ?? []).map((proposal) => toDemoProposal({ ...proposal, id: proposal._id }));
   const shortlist = bundle?.shortlist ?? [];
-  const profile = operatorProfiles[0] ?? demoProfile;
+  // The ranking engine takes an optional override for the one operator the demo
+  // portal used to edit. The network is live now, so the override is simply that
+  // operator's current record.
+  const profile = operatorProfiles.find((item) => item.partnerId === "p1") ?? operatorProfiles[0] ?? demoProfile;
 
-  const start = () => { setRequest({ ...defaultRequest }); setEmails({}); setError(""); setNotice(""); setHydrated(null); setBriefId("none"); goDream("brief"); };
-  const reset = () => { setRequest({ ...defaultRequest }); setEmails({}); setError(""); setNotice(""); setHydrated(null); if (briefList?.length) setBriefId(briefList[0]._id); goDream("dashboard"); };
+  const start = () => { setRequest({ ...defaultRequest }); setEmails({}); setError(""); setNotice(""); setHydrated(null); setBriefId("none"); goView("brief"); };
+  const reset = () => { setRequest({ ...defaultRequest }); setEmails({}); setError(""); setNotice(""); setHydrated(null); if (briefList?.length) setBriefId(briefList[0]._id); goView("dashboard"); };
 
   // Step 1 stores the brief. That is what makes every later step a record rather
   // than a screen: the shortlist, the requests and the proposals hang off it.
@@ -515,17 +599,17 @@ function Workspace() {
         setBriefId(created.briefId);
         setHydrated(created.briefId);
       }
-      goDream("destinations");
+      goView("destinations");
     } catch (cause) { report(cause, "Could not save the brief."); }
   };
 
   const chooseDestinations = async () => {
     setError("");
-    if (!briefId) { goDream("destinations"); return; }
+    if (!briefId) { goView("destinations"); return; }
     try {
       await saveBrief({ briefId, brief: briefPayload(request) });
       await writeDestinations({ briefId, destinationSlugs: request.selectedDestinationIds });
-      goDream("operators");
+      goView("operators");
     } catch (cause) { report(cause, "Could not save the customer-approved locations."); }
   };
 
@@ -542,7 +626,7 @@ function Workspace() {
           capabilityToken: shortlist.find((row) => row.operatorSlug === slug)?.capabilityToken ?? newCapabilityToken(),
         })),
       });
-      goDream("request");
+      goView("request");
     } catch (cause) { report(cause, "Could not prepare the shortlist."); }
   };
 
@@ -561,12 +645,12 @@ function Workspace() {
     } catch (cause) { report(cause, "The request was not sent."); }
     finally { setSending(false); }
     setNotice(sent ? `${sent} request${sent === 1 ? "" : "s"} sent from the brief's own inbox.` : "No address was entered, so no email was sent. Each operator still has its own private link.");
-    goDream("responses");
+    goView("responses");
   };
 
   const selectProposal = async (id: string) => {
     setRequest({ ...request, selectedProposalId: id, status: "Selected" });
-    goDream("selected");
+    goView("selected");
     if (!briefId) return;
     setError("");
     try { await decide({ briefId, proposalId: id as Id<"proposals"> }); }
@@ -596,7 +680,7 @@ function Workspace() {
 
   // The operator panel sits outside the eight steps, so it needs to hand the
   // advisor back to wherever the brief actually is.
-  const resumeView = (): DreamView => {
+  const resumeView = (): AppView => {
     const status = bundle?.brief?.status;
     if (status === "selected") return "selected";
     if (status === "comparing") return "compare";
@@ -609,27 +693,48 @@ function Workspace() {
     setHydrated(null);
     setError("");
     setNotice("");
-    goDream(status === "selected" ? "selected" : status === "comparing" ? "compare" : status === "sent" ? "request" : "destinations");
+    goView(status === "selected" ? "selected" : status === "comparing" ? "compare" : status === "sent" ? "request" : "destinations");
   };
 
-  const dreamContent = dreamView === "dashboard" ? <Dashboard start={start} portal={() => goDream("portal")} briefs={briefList ?? []} open={openBrief} />
-    : dreamView === "brief" ? <BriefForm request={request} setRequest={setRequest} next={() => void saveBriefStep()} />
-    : dreamView === "destinations" ? <DestinationDiscovery request={request} setRequest={setRequest} next={() => void chooseDestinations()} />
-    : dreamView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goDream("choose")} />
-    : dreamView === "choose" ? <ChoosePartners request={request} profile={profile} setRequest={setRequest} next={() => void choosePartners()} />
-    : dreamView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} /><TripRequestReview request={request} profile={profile} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from the brief's own inbox…</div>}</>
-    : dreamView === "responses" ? <OperatorResponses request={request} proposals={proposals} next={() => goDream("compare")} />
-    : dreamView === "compare" ? <CompareProposals request={request} proposals={proposals} select={(id) => void selectProposal(id)} />
-    : dreamView === "selected" && selectedProposal ? <SelectedAndWorkback request={request} proposal={selectedProposal} reset={reset} />
-    : dreamView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} createDemoLink={() => void addDemoLink()} resume={() => goDream(resumeView())} />
-    : <OperatorDirectory request={request} profile={profile} briefId={briefId} />;
+  // Deleting is the one irreversible action in the product, so it is confirmed in
+  // the panel and then again on the server's terms: everything the brief produced
+  // goes, and the operators stay in the network.
+  const deleteBrief = async () => {
+    if (!briefId) return;
+    setDeleting(true); setError(""); setNotice("");
+    try {
+      await removeBrief({ briefId });
+      setBriefId("none");
+      setHydrated(null);
+      setRequest({ ...defaultRequest });
+      setEmails({});
+      setNotice("That brief and everything it produced were deleted.");
+      goView("dashboard");
+    } catch (cause) { setError(errorText(cause, "The brief could not be deleted.")); }
+    finally { setDeleting(false); }
+  };
 
-  return <main className="app-shell"><BrandHeader dreamView={dreamView} setDreamView={goDream} reset={reset} /><WorkflowProgress view={dreamView} go={goDream} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{dreamContent}</main>;
+  const viewContent = activeView === "dashboard" ? <Dashboard start={start} portal={() => goView("portal")} briefs={briefList ?? []} open={openBrief} />
+    : activeView === "brief" ? <BriefForm request={request} setRequest={setRequest} next={() => void saveBriefStep()} />
+    : activeView === "destinations" ? <DestinationDiscovery request={request} setRequest={setRequest} next={() => void chooseDestinations()} />
+    : activeView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goView("choose")} />
+    : activeView === "choose" ? <ChoosePartners request={request} profile={profile} setRequest={setRequest} next={() => void choosePartners()} />
+    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} /><TripRequestReview request={request} profile={profile} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from the brief's own inbox…</div>}</>
+    : activeView === "responses" ? <><OperatorResponses request={request} proposals={proposals} next={() => goView("compare")} />{briefId && <ReplyImport briefId={briefId} shortlist={shortlist} />}</>
+    : activeView === "compare" ? <CompareProposals request={request} proposals={proposals} select={(id) => void selectProposal(id)} />
+    : activeView === "selected" && selectedProposal ? <SelectedAndWorkback request={request} proposal={selectedProposal} reset={reset} />
+    : activeView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} createDemoLink={() => void addDemoLink()} resume={() => goView(resumeView())} deleting={deleting} onDelete={() => void deleteBrief()} />
+    : <OperatorDirectory request={request} briefId={briefId} />;
+
+  return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} reset={reset} signOut={() => { void signOut(); }} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
 }
 
 // The operators a brief has been sent to, each with the private link it owns.
-function OperatorLinks({ shortlist, briefName, createDemoLink, resume }: { shortlist: ShortlistRow[]; briefName: string; createDemoLink: () => void; resume: () => void }) {
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">OPERATOR LINKS</p><h1>What the operator sees, through its own private link.</h1><p>Each row is one operator on one request. The link needs no account, carries no traveller detail, and can only ever read and answer that operator's own request. Open one in a new tab to drive the other side of the demo.</p></div><div className="heading-actions"><button className="secondary" onClick={createDemoLink}>Add the demo operator's link</button><button className="primary" onClick={resume}>Back to the brief's workflow →</button></div></div>{shortlist.length === 0 ? <div className="method-note"><strong>No operator links yet.</strong><span>Choose partners on {briefName || "a brief"} and each one gets its own link here.</span></div> : <div className="link-list">{shortlist.map((row) => <article key={row._id}><div><h2>{row.operatorName}</h2><p>{row.status === "submitted" ? "Proposal received" : row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "Ready to send"}</p></div><a className="primary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open the operator's link →</a></article>)}</div>}</section>;
+function OperatorLinks({ shortlist, briefName, createDemoLink, resume, onDelete, deleting }: { shortlist: ShortlistRow[]; briefName: string; createDemoLink: () => void; resume: () => void; onDelete: () => void; deleting: boolean }) {
+  const [confirming, setConfirming] = useState(false);
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">OPERATOR LINKS</p><h1>What the operator sees, through its own private link.</h1><p>Each row is one operator on one request. The link needs no account, carries no traveller detail, and can only ever read and answer that operator's own request. Open one in a new tab to drive the other side of the demo.</p></div><div className="heading-actions"><button className="secondary" onClick={createDemoLink}>Add the demo operator's link</button><button className="primary" onClick={resume}>Back to the brief's workflow →</button></div></div>{shortlist.length === 0 ? <div className="method-note"><strong>No operator links yet.</strong><span>Choose partners on {briefName || "a brief"} and each one gets its own link here.</span></div> : <div className="link-list">{shortlist.map((row) => <article key={row._id}><div><h2>{row.operatorName}</h2><p>{row.status === "submitted" ? "Proposal received" : row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "Ready to send"}</p></div><a className="primary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open the operator's link →</a></article>)}</div>}
+    <div className="danger-zone"><div><strong>Delete this brief</strong><span>Removes the brief, its group detail, every operator on it, every response link, every proposal it received and the mail it received. It cannot be undone. The operators themselves stay in the network.</span></div>{confirming ? <div className="heading-actions"><button className="secondary" onClick={() => setConfirming(false)}>Keep it</button><button className="primary danger" disabled={deleting} onClick={onDelete}>{deleting ? "Deleting…" : "Yes, delete this brief"}</button></div> : <button className="secondary" onClick={() => setConfirming(true)}>Delete…</button>}</div>
+  </section>;
 }
 
 // One address per operator, captured by hand. Nothing is prefilled with a real
@@ -637,6 +742,70 @@ function OperatorLinks({ shortlist, briefName, createDemoLink, resume }: { short
 function SendPanel({ shortlist, emails, setEmails }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void }) {
   if (!shortlist.length) return null;
   return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the brief's own inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div><div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? ""} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
+}
+
+// Not every operator answers through a link. Some reply by email, in their own
+// words and their own format. This is where that reply is read: a model drafts
+// the structured proposal, every claim in the draft carries an exact quote from
+// the reply, and a person corrects and records it. The model never writes.
+function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist: ShortlistRow[] }) {
+  const replies = useQuery(api.replies.list, { briefId }) ?? [];
+  const draftFromReply = useAction(api.proposals.draftFromReply);
+  const recordEmailed = useMutation(api.proposals.recordEmailed);
+  const [slug, setSlug] = useState("");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [result, setResult] = useState<DraftReply | null>(null);
+  const waiting = shortlist.filter((row) => row.status !== "submitted");
+  if (!shortlist.length) return null;
+
+  const draft = async (operatorSlug: string, source: string) => {
+    setError(""); setNotice(""); setResult(null); setBusy(true);
+    try {
+      const response = await draftFromReply({
+        briefId,
+        sourceText: source,
+        destinations: destinations.map((item) => ({ slug: item.id, name: item.name })),
+      });
+      setSlug(operatorSlug);
+      setText(source);
+      setResult(response);
+    } catch (cause) { setError(errorText(cause, "The draft could not be produced.")); }
+    finally { setBusy(false); }
+  };
+
+  const record = async () => {
+    if (!result) return;
+    setError(""); setNotice(""); setBusy(true);
+    try {
+      await recordEmailed({
+        briefId,
+        operatorSlug: slug,
+        sourceText: text,
+        standardised: true,
+        proposal: {
+          ...result.draft,
+          availability: result.draft.availability as OperatorProposal["availability"],
+          basedOnExistingProgram: false,
+          basedOnProgramSlug: "",
+          cancellationTerms: [],
+        },
+      });
+      setNotice("The proposal was recorded against that operator, with the reply kept beside it.");
+      setResult(null); setText(""); setSlug("");
+    } catch (cause) { setError(errorText(cause, "The proposal could not be recorded.")); }
+    finally { setBusy(false); }
+  };
+
+  return <section className="workflow-section reply-panel"><div className="section-heading"><p className="eyebrow">EMAILED REPLIES</p><h2>An operator can answer in its own words</h2><p>A reply that arrives in the brief's inbox is matched to the operator it came from. Paste it here and a model drafts the structured proposal, quoting the reply for every claim — then you correct it and record it. Nothing is recorded until you press the button.</p></div>
+    {error && <div className="inline-warning"><strong>Reply</strong><span>{error}</span></div>}
+    {notice && <div className="inline-success"><strong>Recorded</strong><span>{notice}</span></div>}
+    {replies.length > 0 && <div className="inbox-list">{replies.map((message) => <article key={message._id}><div><small>{new Date(message.receivedAt).toLocaleString()} · {message.fromEmail}</small><h3>{message.subject || "(no subject)"}</h3><p>{message.text.slice(0, 240)}{message.text.length > 240 ? "…" : ""}</p></div><button className="primary" disabled={busy} onClick={() => void draft(message.operatorSlug ?? waiting[0]?.operatorSlug ?? "", message.text)}>Draft a proposal from this →</button></article>)}</div>}
+    {waiting.map((row) => <article className="reply-compose" key={row._id}><div><h3>{row.operatorName}</h3><p>{row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "No request sent yet — the link is the other way in."}</p></div><label>Paste the reply<input value={slug === row.operatorSlug ? text : ""} placeholder="Paste what the operator wrote…" onChange={(event) => { setSlug(row.operatorSlug); setText(event.target.value); setResult(null); }} /></label><button className="secondary" disabled={busy || (slug !== row.operatorSlug) || text.trim().length < 20} onClick={() => void draft(row.operatorSlug, text)}>{busy && slug === row.operatorSlug ? "Drafting…" : "Draft the proposal"}</button></article>)}
+    {result && <div className="draft-review"><div className="section-heading split-heading"><div><p className="eyebrow">REVIEW DRAFT · {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}</p><h2>{result.draft.programName || "Untitled program"}</h2><p>The model read the reply and filled this in. Every quote below is copied from the reply; anything the reply did not say is left at zero or empty. Correct it, then record it.</p></div><span className="status-badge">{result.draft.finalFit}% final fit · {money(result.draft.netPricePerPerson)} net</span></div><div className="form-grid three"><label>Program name<input value={result.draft.programName} onChange={(event) => setResult({ ...result, draft: { ...result.draft, programName: event.target.value } })} /></label><label>Net price / person<input type="number" value={result.draft.netPricePerPerson} onChange={(event) => setResult({ ...result, draft: { ...result.draft, netPricePerPerson: Number(event.target.value) } })} /></label><label>Final proposed fit<input type="number" min="0" max="100" value={result.draft.finalFit} onChange={(event) => setResult({ ...result, draft: { ...result.draft, finalFit: Number(event.target.value) } })} /></label><label className="wide">Operator notes<textarea rows={3} value={result.draft.operatorNotes} onChange={(event) => setResult({ ...result, draft: { ...result.draft, operatorNotes: event.target.value } })} /></label></div><div className="result-detail-grid"><TagList title="Experiences it says it includes" values={result.draft.experiencesIncluded} /><TagList title="Requirements it says it meets" values={result.draft.requirementsMet} /><TagList title="It says it cannot provide" values={result.draft.cannotProvide} tone="missing" /></div>{result.evidence.length > 0 && <div className="evidence-list"><strong>Quoted from the reply</strong>{result.evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}{result.caveats.length > 0 && <div className="method-note"><strong>The model flagged</strong>{result.caveats.map((caveat) => <span key={caveat}>{caveat}</span>)}</div>}<div className="sticky-action"><span>Recording attaches this proposal to {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}, with the reply kept as its source.</span><button className="primary" disabled={busy} onClick={() => void record()}>Record this proposal</button></div></div>}
+  </section>;
 }
 
 // ---------------------------------------------------------------------------
@@ -681,16 +850,19 @@ function OperatorApp({ token }: { token: string }) {
 
   if (link === undefined) return <Splash label="Opening your request…" />;
   if (link === null)
-    return <main className="app-shell"><section className="portal-submitted"><div className="selected-icon">!</div><p className="eyebrow">LINK NOT ACTIVE</p><h1>This response link is no longer active.</h1><p>Ask Dream Travel for a current link. Nothing was read, changed or submitted.</p></section></main>;
-  if (!brief || !profile || !draft) return <Splash label="Reading the request…" />;
+    return <main className="app-shell"><section className="portal-submitted"><div className="selected-icon">!</div><p className="eyebrow">LINK NOT ACTIVE</p><h1>This response link is no longer active.</h1><p>Ask your agency for a current link. Nothing was read, changed or submitted.</p></section></main>;
+  if (!profile) return <Splash label="Reading your capability record…" />;
 
-  const request = fromOperatorBrief(brief);
+  // A standing capability link carries no request: the operator is here to keep
+  // its own record current. A request link carries one brief and one proposal.
+  const request = brief ? fromOperatorBrief(brief) : null;
+  if (request && !draft) return <Splash label="Reading the request…" />;
   const go = (next: OperatorView) => { setNotice(""); setError(""); setView(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const save = async () => {
     setError(""); setSaving(true);
     try {
       await saveCapability({ token, capability: toStoredCapability(profile) });
-      setNotice("Capability record saved. Dream Travel's matching uses it from this point on.");
+      setNotice("Capability record saved. The agency's matching uses it from this point on.");
       setView("workspace");
     } catch (cause) { setError(errorText(cause, "Could not save the capability record.")); }
     finally { setSaving(false); }
@@ -698,19 +870,27 @@ function OperatorApp({ token }: { token: string }) {
   const send = async () => {
     setError(""); setSaving(true);
     try {
+      if (!draft) return;
       await submit({ token, proposal: toStoredProposal(draft) });
       setView("submitted");
     } catch (cause) { setError(errorText(cause, "Could not submit the proposal.")); }
     finally { setSaving(false); }
   };
 
-  const content = view === "workspace" ? <PartnerWorkspace profile={profile} request={request} go={go} />
+  const content = view === "workspace" ? (request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />)
     : view === "profile" ? <ProfileEditor profile={profile} setProfile={setProfile} save={() => void save()} />
-    : view === "request" ? <PartnerRequest request={request} profile={profile} quote={() => go("quote")} />
-    : view === "quote" ? <ProposalBuilder request={request} proposal={draft} setProposal={setDraft} submit={() => void send()} />
-    : <Submitted switchToDream={() => go("workspace")} label="Back to the request →" />;
+    : view === "request" && request ? <PartnerRequest request={request} profile={profile} quote={() => go("quote")} />
+    : view === "quote" && request && draft ? <ProposalBuilder request={request} proposal={draft} setProposal={setDraft} submit={() => void send()} />
+    : view === "submitted" ? <Submitted goBack={() => go("workspace")} label="Back to the request →" />
+    : request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />;
 
-  return <main className="app-shell"><header className="topbar operator-topbar"><span className="brand-home"><span className="brand-mark">DT</span><span><strong>{link.operatorName}</strong><small>Dream Travel operator link · {request.name}</small></span></span><nav aria-label="Operator navigation"><button className={view === "workspace" ? "nav-active" : ""} onClick={() => go("workspace")}>Workspace</button><button className={view === "profile" ? "nav-active" : ""} onClick={() => go("profile")}>Capability Record</button><button className={view === "request" || view === "quote" ? "nav-active" : ""} onClick={() => go("request")}>The Request</button></nav><span className="link-badge">Private link</span></header>{content}{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{saving && <div className="floating-success">Saving…</div>}</main>;
+  return <main className="app-shell"><header className="topbar operator-topbar"><span className="brand-home"><span className="brand-mark">TB</span><span><strong>{link.operatorName}</strong><small>TripBrief operator link{request ? ` · ${request.name}` : " · capability record"}</small></span></span><nav aria-label="Operator navigation"><button className={view === "workspace" ? "nav-active" : ""} onClick={() => go("workspace")}>Workspace</button><button className={view === "profile" ? "nav-active" : ""} onClick={() => go("profile")}>Capability Record</button>{request && <button className={view === "request" || view === "quote" ? "nav-active" : ""} onClick={() => go("request")}>The Request</button>}</nav><span className="link-badge">Private link</span></header>{content}{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{saving && <div className="floating-success">Saving…</div>}</main>;
+}
+
+// What an operator sees when it opens its standing link and there is no request
+// waiting: the record that decides whether it is ever matched, and nothing else.
+function CapabilityWorkspace({ profile, go }: { profile: OperatorProfile; go: () => void }) {
+  return <section className="workflow-section partner-workspace"><div className="portal-identity"><div><span className="portal-logo">TB</span><div><p className="eyebrow">YOUR CAPABILITY RECORD</p><h1>Keep this current, and you are matched on it</h1><span>{profile.serviceAreas.flatMap((area) => [area.country, ...area.regions]).join(" · ") || profile.locations.map(destinationName).join(" · ")}</span></div></div><button className="primary" onClick={go}>Open the capability record</button></div><div className="portal-metrics"><article><span>{profile.serviceAreas.length}</span><strong>Operating area</strong><p>With regional detail</p></article><article><span>{profile.services.length}</span><strong>Experiences</strong><p>What you can arrange</p></article><article><span>{profile.operations.length}</span><strong>Operating services</strong><p>How trips are delivered</p></article><article><span>{profile.timing.minimumLeadTimeDays}</span><strong>Day minimum lead</strong><p>Planning context</p></article></div><div className="method-note"><strong>No request is waiting on this link.</strong><span>This link is yours to keep: it is how the agency knows what you can deliver, and it is how a request reaches you when a group fits. A trip request always arrives as its own separate link.</span></div></section>;
 }
 
 // ---------------------------------------------------------------------------
@@ -964,7 +1144,7 @@ function toStoredProposal(proposal: OperatorProposal) {
 // it would actually operate, and the submitted form will not accept a proposal
 // without a program name, a start date and a net price. The payment terms are
 // prefilled from the operator's own capability record, because those are the
-// terms it already told Dream Travel it works to.
+// terms it already told the agency it works to.
 function blankProposal(request: TripRequest, operatorSlug: string): OperatorProposal {
   const timing = operatorProfiles.find((item) => item.partnerId === operatorSlug)?.timing;
   return {

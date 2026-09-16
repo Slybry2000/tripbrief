@@ -5,13 +5,14 @@ import { authTables } from "@convex-dev/auth/server";
 // ---------------------------------------------------------------------------
 // The operator network
 //
-// Dream Travel sells the trip; the incoming tour operator runs it. The network
+// The agency sells the trip; the incoming tour operator runs it. The network
 // is what the advisor matches a client brief against, so it is stored rather
 // than hard-coded: an operator maintains its own capability record, and every
 // match run reads the current version of it.
 // ---------------------------------------------------------------------------
 
 export const operatorRecord = v.object({
+  owner: v.string(),
   slug: v.string(),
   name: v.string(),
   country: v.string(),
@@ -25,7 +26,11 @@ export const operatorRecord = v.object({
   approvalStatus: v.string(),
   // "seed" for the shipped fictional network, "researched" for an operator an
   // advisor added from a real published website.
-  source: v.union(v.literal("seed"), v.literal("researched")),
+  source: v.union(
+    v.literal("seed"),
+    v.literal("researched"),
+    v.literal("manual"),
+  ),
   website: v.optional(v.string()),
   updatedAt: v.number(),
 });
@@ -83,6 +88,7 @@ export const commercialTerms = v.object({
 // vocabulary (experiences, operations, requirement names, hotel levels), so the
 // arrays are bounded by construction and never grow with use.
 export const operatorCapability = v.object({
+  owner: v.string(),
   operatorSlug: v.string(),
   locations: v.array(v.string()),
   serviceAreas: v.array(serviceArea),
@@ -197,13 +203,31 @@ export default defineSchema({
   ...authTables,
 
   operators: defineTable(operatorRecord)
-    .index("by_slug", ["slug"])
-    .index("by_source", ["source"]),
+    .index("by_owner_and_slug", ["owner", "slug"])
+    .index("by_owner_and_source", ["owner", "source"]),
 
+  // One capability record per operator. It is the only thing an operator can
+  // write, and it is what the matcher reads.
   operatorCapability: defineTable(operatorCapability).index(
-    "by_operatorSlug",
-    ["operatorSlug"],
+    "by_owner_and_operatorSlug",
+    ["owner", "operatorSlug"],
   ),
+
+  // A standing link that lets an operator keep its own capability record current.
+  // It is not tied to a brief: a brief is deleted, an operator stays in the
+  // network. A request link is separate, and lives on `briefOperators`.
+  operatorLinks: defineTable({
+    owner: v.string(),
+    operatorSlug: v.string(),
+    token: v.string(),
+    sentTo: v.optional(v.string()),
+    lastOpenedAt: v.optional(v.number()),
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_owner_and_operatorSlug", ["owner", "operatorSlug"]),
 
   briefs: defineTable({
     owner: v.string(),

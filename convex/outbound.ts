@@ -28,7 +28,7 @@ export function requestMessage(
   const text = [
     `Hello ${operatorName},`,
     "",
-    `Dream Travel would like you to quote for ${brief.name} (${scope}).`,
+    `TripBrief would like you to quote for ${brief.name} (${scope}).`,
     "",
     "Open your private link to read the client brief, confirm the dates you can actually operate, and return a structured proposal:",
     link,
@@ -39,7 +39,7 @@ export function requestMessage(
   ].join("\n");
   const html = [
     `<p>Hello ${escapeHtml(operatorName)},</p>`,
-    `<p>Dream Travel would like you to quote for <strong>${escapeHtml(brief.name)}</strong> (${escapeHtml(scope)}).</p>`,
+    `<p>TripBrief would like you to quote for <strong>${escapeHtml(brief.name)}</strong> (${escapeHtml(scope)}).</p>`,
     `<p><a href="${escapeHtml(link)}">Open your private link</a> to read the client brief, confirm the dates you can actually operate, and return a structured proposal.</p>`,
     "<p>The link is unique to you and needs no account. Existing programs are welcome as a starting point; your reply must confirm what you would really provide.</p>",
     "<p>This message contains no personal details about any traveller.</p>",

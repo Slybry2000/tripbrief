@@ -1,6 +1,6 @@
 # Hackathon log
 
-- **Project:** TripBrief → **Dream Travel — Incoming Operator Finder** (the repository name is unchanged; the product inside it is described below)
+- **Project:** TripBrief — Incoming Operator Finder
 - **Event:** Convex All Gas Hackathon
 - **What it does:** Turns a group-travel request into a capability-ranked shortlist of incoming tour operators, sends each one its own private request, and compares the trips they would actually operate — with a human choosing the shortlist and the winner.
 - **Live app:** https://hip-minnow-543.convex.site
@@ -370,9 +370,8 @@ The site the hackathon had was a competent generic comparer, and it was the wron
 product. The operator answered a question nobody had asked: it compared supplier
 proposals against a numbered requirement list, when the work actually starts one
 step earlier, with a client who wants something and an agency that has neither the
-destination nor the operator. The demo built from the 14-file build pack
-(`Dream Travel Trip Matcher — Demo v0.2`) is what this product was supposed to
-look like, so the app was rebuilt around it.
+destination nor the operator. A separate demo was built to work out that
+experience, and the app was rebuilt around it.
 
 **What the app is now.** Eight steps: client needs, destination discovery,
 capability-ranked operator matches, choose partners, one bespoke trip request per
@@ -427,13 +426,63 @@ droppable, a decision that cannot name another brief's proposal, the cascade
 delete, reply matching, duplicate suppression, and the two quota-cheap provider
 paths failing closed when they are not configured.
 
-**Honest open items.** The vendor integrations have not all been exercised
-against their live providers on this deployment today: Firecrawl was verified
-earlier, and OpenAI and AgentMail are wired, unit-tested and configured through
-`convex env`, but no live OpenAI draft and no live AgentMail send has been
-performed since the pivot. The "add a researched operator, then have it fill in
-its intake" path has not been run end to end in the browser. Neither the
-deployed convex.site address nor the public repository has been updated to this
-build yet — that needs an explicit go-ahead, because the client's name now
-appears in a public app and repository, which the original hackathon boundary
-explicitly excluded.
+**Honest open items at that point.** The vendor integrations had not all been
+exercised against their live providers that day: Firecrawl was verified earlier,
+and OpenAI and AgentMail were wired and unit-tested, but no live OpenAI draft and
+no live AgentMail send had been performed since the pivot. The deployed
+convex.site address and the public repository had not been updated to this build
+yet.
+
+### 2026-09-16 - the demo showed the experience; this had to be the app
+
+The port above was faithful and it was not a product. Reviewing it against the
+submission gates surfaced the difference, and the same day's work closed it. All
+of the following is in the same build:
+
+- **The identity stayed TripBrief.** The demo's copy had carried another
+  company's name, and none of it belongs in this repository: 47 references in the
+  app, plus the workback owners, the outbound email, the schema comments and the
+  document title, were rewritten. Where the copy had named that company as the
+  *agency*, it now says "the agency" or "your agency"; where it named a product, it
+  says TripBrief. Internal identifiers named after it were renamed too. Nothing in
+  the repository now refers to that company, and no client name appears in the
+  demo data either.
+- **The network became a workspace's own.** It had been global, so two trial
+  workspaces shared one operator list. `operators` and `operatorCapability` are now
+  owned, indexed by owner and slug, and seeded per workspace on first sign-in. One
+  workspace cannot read or change another's operators. The local deployment held
+  rows written before the change, so the column was added as optional, the
+  unowned rows were cleared, and it was tightened to required — the migration path
+  for a populated deployment, exercised against a populated one.
+- **An operator no longer depends on a brief to exist.** Before this, an operator
+  could only be onboarded by shortlisting it on a brief, and its capability link
+  died with the brief. There are now two links: a request link scoped to one brief
+  and one operator, and a standing capability link scoped to the network. An
+  operator can keep its own record current without any brief existing, and the
+  operator portal tells it plainly when no request is waiting.
+- **The network page became a management surface.** Operators can be added by hand
+  or from a researched page, each one gets a capability intake link it can be sent,
+  and an operator that has never quoted can be removed. Removing one that has
+  answered a brief is refused, because that record is part of a decision.
+- **OpenAI became reachable.** The drafting action existed and nothing in the app
+  could call it. The responses step now lists the mail a brief received, matches it
+  to the operator it came from, drafts a structured proposal from any reply, shows
+  every quote the draft rests on, and refuses to record anything until a person
+  corrects and confirms it.
+- **The app can be operated, not just demonstrated.** Sign out; delete a brief and
+  everything it produced, behind a confirmation; correct a failed send and retry it
+  rather than being locked out; a home view that lists the workspace's briefs and
+  reopens each one at the step it actually reached.
+- **The navigation survives a narrow screen.** The stylesheet the experience was
+  ported from hid the header navigation below 1100px and the whole row below 760px,
+  which left the workflow rail as the only way to move. The header now wraps and the
+  navigation scrolls sideways instead of disappearing. Verified at a 481px viewport.
+- **The notice tells the truth about what sends.** It used to promise that no real
+  message was involved, which stopped being true the moment the send path worked.
+  It now says the shipped network is fictional and that sending is one deliberate
+  click on one named operator.
+
+The suite grew from 32 to 35 tests, the new ones covering workspace isolation (two
+workspaces, identical seeded slugs, changes on one provably invisible to the other),
+both link kinds and their scope, adding by hand and from research, removing an
+operator that has never quoted, and refusing to remove one that has.

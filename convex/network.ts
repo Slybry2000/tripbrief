@@ -3,15 +3,18 @@ import {
   mutation,
   query,
   type MutationCtx,
+  type QueryCtx,
 } from "./_generated/server";
 import { ConvexError, v, type Infer } from "convex/values";
+import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
 import { operatorCapability, operatorRecord } from "./schema";
 import { seedOperatorProfiles, seedOperators } from "./seedData";
 
 // ---------------------------------------------------------------------------
-// Bounds. Everything an operator types reaches the shared network record, so it
-// is capped at the size of the vocabulary it is drawn from before it is written.
+// Bounds. Everything an operator types reaches the shared capability record, so
+// it is capped at the size of the vocabulary it is drawn from before it is
+// written.
 // ---------------------------------------------------------------------------
 const LIMIT = 64;
 const SHORT = 120;
@@ -32,12 +35,12 @@ const isoDate = (value: string) =>
 
 export type CapabilityInput = Omit<
   Infer<typeof operatorCapability>,
-  "operatorSlug" | "updatedAt"
+  "owner" | "operatorSlug" | "updatedAt"
 >;
 
-// The single normaliser for an operator-supplied capability record. The operator
-// slug is deliberately not part of the input: it comes from the row the token
-// belongs to, never from the browser.
+// The single normaliser for an operator-supplied capability record. The owner and
+// the slug are deliberately absent: they come from the link the write arrived
+// through, never from the browser.
 export function cleanCapability(input: CapabilityInput): CapabilityInput {
   return {
     locations: cleanList(input.locations),
@@ -78,11 +81,13 @@ export function cleanCapability(input: CapabilityInput): CapabilityInput {
       yearRound: input.timing.yearRound,
       operatingMonths: months(input.timing.operatingMonths),
       seasonalNotes: text(input.timing.seasonalNotes, LONG),
-      blackoutPeriods: input.timing.blackoutPeriods.slice(0, 12).map((period) => ({
-        start: isoDate(period.start),
-        end: isoDate(period.end),
-        label: text(period.label),
-      })),
+      blackoutPeriods: input.timing.blackoutPeriods
+        .slice(0, 12)
+        .map((period) => ({
+          start: isoDate(period.start),
+          end: isoDate(period.end),
+          label: text(period.label),
+        })),
       shortestLeadTimeDays: days(input.timing.shortestLeadTimeDays),
       minimumLeadTimeDays: days(input.timing.minimumLeadTimeDays),
       idealLeadTimeDays: days(input.timing.idealLeadTimeDays),
@@ -122,23 +127,97 @@ function plain(
   return rest;
 }
 
-async function operatorBySlug(ctx: MutationCtx, slug: string) {
+const TOKEN = /^[A-Za-z0-9_-]{40,80}$/;
+
+async function requireUser(ctx: QueryCtx | MutationCtx) {
+  const owner = await getAuthUserId(ctx);
+  if (!owner) throw new ConvexError("Please sign in to use your workspace.");
+  return owner;
+}
+
+async function operatorFor(ctx: QueryCtx | MutationCtx, owner: string, slug: string) {
   return await ctx.db
     .query("operators")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .withIndex("by_owner_and_slug", (q) =>
+      q.eq("owner", owner).eq("slug", slug),
+    )
     .unique();
 }
 
-// The advisor's matcher reads the whole network. It is small by design: an
-// approved operator network is curated, not crawled.
+async function capabilityFor(
+  ctx: QueryCtx | MutationCtx,
+  owner: string,
+  slug: string,
+) {
+  return await ctx.db
+    .query("operatorCapability")
+    .withIndex("by_owner_and_operatorSlug", (q) =>
+      q.eq("owner", owner).eq("operatorSlug", slug),
+    )
+    .unique();
+}
+
+// Either half of the operator's side of the product resolves through one token:
+// a standing capability link, or a request link that belongs to one brief.
+type ResolvedLink = {
+  kind: "capability" | "request";
+  owner: string;
+  operatorSlug: string;
+  operatorName: string;
+  briefOperatorId?: Doc<"briefOperators">["_id"];
+};
+
+async function resolve(ctx: QueryCtx, token: string): Promise<ResolvedLink | null> {
+  const standing = await ctx.db
+    .query("operatorLinks")
+    .withIndex("by_token", (q) => q.eq("token", token))
+    .unique();
+  if (standing && !standing.revokedAt) {
+    const operator = await operatorFor(ctx, standing.owner, standing.operatorSlug);
+    if (!operator) return null;
+    return {
+      kind: "capability",
+      owner: standing.owner,
+      operatorSlug: standing.operatorSlug,
+      operatorName: operator.name,
+    };
+  }
+  const request = await ctx.db
+    .query("briefOperators")
+    .withIndex("by_capabilityToken", (q) => q.eq("capabilityToken", token))
+    .unique();
+  if (!request) return null;
+  return {
+    kind: "request",
+    owner: request.owner,
+    operatorSlug: request.operatorSlug,
+    operatorName: request.operatorName,
+    briefOperatorId: request._id,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The advisor's side
+// ---------------------------------------------------------------------------
+
+// A workspace's own network. It starts as the fictional studio network the app
+// ships with, and every change after that belongs to that workspace alone.
 export const list = query({
   args: {},
   returns: v.array(
     v.object({ operator: operatorRecord, capability: operatorCapability }),
   ),
   handler: async (ctx) => {
-    const operators = await ctx.db.query("operators").take(200);
-    const profiles = await ctx.db.query("operatorCapability").take(200);
+    const owner = await getAuthUserId(ctx);
+    if (!owner) return [];
+    const operators = await ctx.db
+      .query("operators")
+      .withIndex("by_owner_and_slug", (q) => q.eq("owner", owner))
+      .take(200);
+    const profiles = await ctx.db
+      .query("operatorCapability")
+      .withIndex("by_owner_and_operatorSlug", (q) => q.eq("owner", owner))
+      .take(200);
     const bySlug = new Map(
       profiles.map((profile) => [profile.operatorSlug, profile]),
     );
@@ -149,72 +228,107 @@ export const list = query({
     for (const operator of operators) {
       const profile = bySlug.get(operator.slug);
       if (!profile) continue;
-      const { _id, _creationTime, ...operatorRecordFields } = operator;
+      const { _id, _creationTime, ...operatorFields } = operator;
       void _id;
       void _creationTime;
-      rows.push({ operator: operatorRecordFields, capability: plain(profile) });
+      rows.push({ operator: operatorFields, capability: plain(profile) });
     }
-    return rows.sort((a, b) => a.operator.slug.localeCompare(b.operator.slug));
+    return rows.sort((a, b) => a.operator.name.localeCompare(b.operator.name));
   },
 });
 
-// The operator's own view, read through its private response link. It returns
-// that operator's capability and the request it was sent, and never another
-// operator's record.
+// The standing link an operator keeps: it is what lets an operator maintain its
+// own capability record without waiting for a brief to be sent to it.
+export const capabilityLink = query({
+  args: { operatorSlug: v.string() },
+  returns: v.union(
+    v.null(),
+    v.object({ token: v.string(), sentTo: v.optional(v.string()) }),
+  ),
+  handler: async (ctx, args) => {
+    const owner = await getAuthUserId(ctx);
+    if (!owner) return null;
+    const link = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_owner_and_operatorSlug", (q) =>
+        q.eq("owner", owner).eq("operatorSlug", args.operatorSlug),
+      )
+      .unique();
+    if (!link || link.revokedAt) return null;
+    return { token: link.token, sentTo: link.sentTo };
+  },
+});
+
+// Every operator's standing link in one read, so the network page can show which
+// operators can still be asked to update themselves.
+export const capabilityLinks = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      operatorSlug: v.string(),
+      token: v.string(),
+      sentTo: v.optional(v.string()),
+      lastOpenedAt: v.optional(v.number()),
+    }),
+  ),
+  handler: async (ctx) => {
+    const owner = await getAuthUserId(ctx);
+    if (!owner) return [];
+    const links = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_owner_and_operatorSlug", (q) => q.eq("owner", owner))
+      .take(200);
+    return links
+      .filter((link) => !link.revokedAt)
+      .map((link) => ({
+        operatorSlug: link.operatorSlug,
+        token: link.token,
+        sentTo: link.sentTo,
+        lastOpenedAt: link.lastOpenedAt,
+      }));
+  },
+});
+
+// The operator's own view, through either kind of link.
 export const forToken = query({
   args: { token: v.string() },
   returns: v.union(
     v.null(),
     v.object({
-      briefOperatorId: v.id("briefOperators"),
+      kind: v.union(v.literal("capability"), v.literal("request")),
       operatorSlug: v.string(),
       operatorName: v.string(),
-      status: v.string(),
       capability: v.union(v.null(), operatorCapability),
     }),
   ),
   handler: async (ctx, args) => {
-    const row = await ctx.db
-      .query("briefOperators")
-      .withIndex("by_capabilityToken", (q) =>
-        q.eq("capabilityToken", args.token),
-      )
-      .unique();
-    if (!row) return null;
-    const profile = await ctx.db
-      .query("operatorCapability")
-      .withIndex("by_operatorSlug", (q) => q.eq("operatorSlug", row.operatorSlug))
-      .unique();
+    if (!TOKEN.test(args.token)) return null;
+    const link = await resolve(ctx, args.token);
+    if (!link) return null;
+    const profile = await capabilityFor(ctx, link.owner, link.operatorSlug);
     return {
-      briefOperatorId: row._id,
-      operatorSlug: row.operatorSlug,
-      operatorName: row.operatorName,
-      status: row.status,
+      kind: link.kind,
+      operatorSlug: link.operatorSlug,
+      operatorName: link.operatorName,
       capability: profile ? plain(profile) : null,
     };
   },
 });
 
-// An operator maintains its own capability record through its response link.
-// Saving it changes what the advisor's matcher sees on the very next match run.
+// An operator maintains its own capability record. The owner and the slug come
+// from the link, so one operator can never write another's record.
 export const saveCapability = mutation({
   args: {
     token: v.string(),
-    capability: operatorCapability.omit("operatorSlug", "updatedAt"),
+    capability: operatorCapability.omit("owner", "operatorSlug", "updatedAt"),
   },
   returns: v.object({ operatorSlug: v.string() }),
   handler: async (ctx, args) => {
-    const row = await ctx.db
-      .query("briefOperators")
-      .withIndex("by_capabilityToken", (q) =>
-        q.eq("capabilityToken", args.token),
-      )
-      .unique();
-    if (!row) throw new ConvexError("This link is no longer active.");
-    const existing = await ctx.db
-      .query("operatorCapability")
-      .withIndex("by_operatorSlug", (q) => q.eq("operatorSlug", row.operatorSlug))
-      .unique();
+    if (!TOKEN.test(args.token))
+      throw new ConvexError("This link is no longer active.");
+    const link = await resolve(ctx, args.token);
+    if (!link) throw new ConvexError("This link is no longer active.");
+    const existing = await capabilityFor(ctx, link.owner, link.operatorSlug);
     const now = Date.now();
     const clean = cleanCapability(args.capability);
     if (existing)
@@ -225,69 +339,182 @@ export const saveCapability = mutation({
     else
       await ctx.db.insert("operatorCapability", {
         ...clean,
-        operatorSlug: row.operatorSlug,
+        owner: link.owner,
+        operatorSlug: link.operatorSlug,
         updatedAt: now,
       });
-    await ctx.db.patch("briefOperators", row._id, { updatedAt: now });
-    return { operatorSlug: row.operatorSlug };
+    if (link.kind === "capability") {
+      const standing = await ctx.db
+        .query("operatorLinks")
+        .withIndex("by_token", (q) => q.eq("token", args.token))
+        .unique();
+      if (standing) {
+        // The record now exists, so the operator is no longer pending.
+        await ctx.db.patch("operatorLinks", standing._id, {
+          lastOpenedAt: standing.lastOpenedAt ?? now,
+          updatedAt: now,
+        });
+        const operator = await operatorFor(ctx, link.owner, link.operatorSlug);
+        if (operator && operator.approvalStatus === "capability_intake_pending")
+          await ctx.db.patch("operators", operator._id, {
+            approvalStatus: "capability_on_file",
+            updatedAt: now,
+          });
+      }
+    } else if (link.briefOperatorId) {
+      await ctx.db.patch("briefOperators", link.briefOperatorId, {
+        updatedAt: now,
+      });
+    }
+    return { operatorSlug: link.operatorSlug };
   },
 });
 
-// Seeding is idempotent and additive: an operator already in the network keeps
+// Creating the standing link is one click on the network page, and it is
+// idempotent: asking twice returns the same link rather than minting a second.
+// The token is generated in the advisor's browser, so the server never has to
+// mint or guess a secret, and it is checked for collisions on the way in.
+export const createCapabilityLink = mutation({
+  args: { operatorSlug: v.string(), token: v.string() },
+  returns: v.object({ token: v.string() }),
+  handler: async (ctx, args) => {
+    const owner = await requireUser(ctx);
+    if (!TOKEN.test(args.token))
+      throw new ConvexError("That link could not be generated. Please retry.");
+    const operator = await operatorFor(ctx, owner, args.operatorSlug);
+    if (!operator) throw new ConvexError("Operator not found.");
+    const existing = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_owner_and_operatorSlug", (q) =>
+        q.eq("owner", owner).eq("operatorSlug", args.operatorSlug),
+      )
+      .unique();
+    const now = Date.now();
+    if (existing) {
+      if (!existing.revokedAt) return { token: existing.token };
+      throw new ConvexError(
+        "That operator's link was revoked. Ask the operator for a current one.",
+      );
+    }
+    const clash = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_token", (q) => q.eq("token", args.token))
+      .unique();
+    if (clash) throw new ConvexError("That link could not be generated. Please retry.");
+    await ctx.db.insert("operatorLinks", {
+      owner,
+      operatorSlug: args.operatorSlug,
+      token: args.token,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { token: args.token };
+  },
+});
+
+// Seeding is idempotent and additive: an operator already in a workspace keeps
 // whatever it has since written about itself.
-export const seed = internalMutation({
+export const ensureWorkspace = mutation({
   args: {},
-  returns: v.object({ operators: v.number(), profiles: v.number() }),
+  returns: v.object({ added: v.number() }),
   handler: async (ctx) => {
+    const owner = await requireUser(ctx);
+    const existing = await ctx.db
+      .query("operators")
+      .withIndex("by_owner_and_slug", (q) => q.eq("owner", owner))
+      .take(1);
+    if (existing.length) return { added: 0 };
+    await dropUnowned(ctx);
+    const now = Date.now();
+    for (const record of seedOperators) {
+      await ctx.db.insert("operators", { ...record, owner, updatedAt: now });
+    }
+    for (const profile of seedOperatorProfiles) {
+      await ctx.db.insert("operatorCapability", {
+        ...profile,
+        owner,
+        updatedAt: now,
+      });
+    }
+    return { added: seedOperators.length };
+  },
+});
+
+// Seeding runs against a workspace on first sign-in. It is also available
+// directly, so a fresh deployment can be set up from the CLI.
+export const seed = internalMutation({
+  args: { owner: v.string() },
+  returns: v.object({ operators: v.number(), profiles: v.number() }),
+  handler: async (ctx, args) => {
     const now = Date.now();
     let operators = 0;
     let profiles = 0;
     for (const record of seedOperators) {
-      if (await operatorBySlug(ctx, record.slug)) continue;
-      await ctx.db.insert("operators", { ...record, updatedAt: now });
+      if (await operatorFor(ctx, args.owner, record.slug)) continue;
+      await ctx.db.insert("operators", { ...record, owner: args.owner, updatedAt: now });
       operators += 1;
     }
     for (const profile of seedOperatorProfiles) {
-      const existing = await ctx.db
-        .query("operatorCapability")
-        .withIndex("by_operatorSlug", (q) =>
-          q.eq("operatorSlug", profile.operatorSlug),
-        )
-        .unique();
+      const existing = await capabilityFor(ctx, args.owner, profile.operatorSlug);
       if (existing) continue;
-      await ctx.db.insert("operatorCapability", { ...profile, updatedAt: now });
+      await ctx.db.insert("operatorCapability", {
+        ...profile,
+        owner: args.owner,
+        updatedAt: now,
+      });
       profiles += 1;
     }
     return { operators, profiles };
   },
 });
 
-// A researched website becomes an operator only when a human adds it. It starts
-// with an empty capability record, and the advisor sends that operator the same
-// intake the seeded network was built from.
-export const addFromCandidate = mutation({
+// Records written before the network became workspace-scoped have no owner, so
+// they belong to nobody. They are removed rather than left to fail every read.
+async function dropUnowned(ctx: MutationCtx) {
+  const legacyOperators = await ctx.db.query("operators").take(200);
+  for (const operator of legacyOperators)
+    if (!operator.owner) await ctx.db.delete("operators", operator._id);
+  const legacyProfiles = await ctx.db.query("operatorCapability").take(200);
+  for (const profile of legacyProfiles)
+    if (!profile.owner) await ctx.db.delete("operatorCapability", profile._id);
+}
+
+// A network grows two ways: an advisor types an operator in, or an advisor adds
+// one that research found. Both start from nothing, and neither claims anything
+// the operator has not confirmed.
+export const addOperator = mutation({
   args: {
-    candidateId: v.id("candidates"),
     name: v.string(),
-    destinationSlugs: v.array(v.string()),
     country: v.string(),
+    destinationSlugs: v.array(v.string()),
     minGroupSize: v.number(),
     maxGroupSize: v.number(),
+    website: v.optional(v.string()),
+    candidateId: v.optional(v.id("candidates")),
   },
-  returns: v.object({ slug: v.string() }),
+  returns: v.object({ slug: v.string(), created: v.boolean() }),
   handler: async (ctx, args) => {
-    const candidate = await ctx.db.get("candidates", args.candidateId);
-    if (!candidate) throw new ConvexError("That result is no longer available.");
-    if (candidate.addedOperatorSlug)
-      return { slug: candidate.addedOperatorSlug };
+    const owner = await requireUser(ctx);
     const name = text(args.name);
     if (name.length < 3) throw new ConvexError("Give the operator a name.");
     const destinations = cleanList(args.destinationSlugs, 12);
-    const slug = await uniqueSlug(ctx, name);
+    const slug = await uniqueSlug(ctx, owner, name);
     const now = Date.now();
     const min = Math.max(1, Math.round(args.minGroupSize));
     const max = Math.max(min, Math.round(args.maxGroupSize));
+    let website = args.website?.slice(0, 500) ?? "";
+    if (args.candidateId) {
+      const candidate = await ctx.db.get("candidates", args.candidateId);
+      if (!candidate || candidate.owner !== owner)
+        throw new ConvexError("That result is no longer available.");
+      if (candidate.addedOperatorSlug)
+        return { slug: candidate.addedOperatorSlug, created: false };
+      // The operator's record carries the page it was found on, so the evidence
+      // for "this exists" stays with it.
+      website = candidate.url.slice(0, 500);
+    }
     await ctx.db.insert("operators", {
+      owner,
       slug,
       name,
       country: text(args.country),
@@ -299,13 +526,12 @@ export const addFromCandidate = mutation({
       typicalNetPriceMin: 0,
       typicalNetPriceMax: 0,
       approvalStatus: "capability_intake_pending",
-      source: "researched",
-      website: candidate.url.slice(0, 500),
+      source: args.candidateId ? "researched" : "manual",
+      website,
       updatedAt: now,
     });
-    // An empty capability record is what "we know this exists and nothing else"
-    // looks like. It matches nothing until the operator fills it in.
     await ctx.db.insert("operatorCapability", {
+      owner,
       operatorSlug: slug,
       locations: destinations,
       serviceAreas: destinations.map((destinationSlug) => ({
@@ -362,12 +588,50 @@ export const addFromCandidate = mutation({
       },
       updatedAt: now,
     });
-    await ctx.db.patch("candidates", candidate._id, { addedOperatorSlug: slug });
-    return { slug };
+    if (args.candidateId)
+      await ctx.db.patch("candidates", args.candidateId, {
+        addedOperatorSlug: slug,
+      });
+    return { slug, created: true };
   },
 });
 
-async function uniqueSlug(ctx: MutationCtx, name: string) {
+// An operator leaves the network only when it has never quoted: once there is a
+// proposal, the record is part of a decision and stays.
+export const removeOperator = mutation({
+  args: { operatorSlug: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const owner = await requireUser(ctx);
+    const operator = await operatorFor(ctx, owner, args.operatorSlug);
+    if (!operator) throw new ConvexError("Operator not found.");
+    const history = await ctx.db
+      .query("briefOperators")
+      .withIndex("by_operatorSlug", (q) =>
+        q.eq("operatorSlug", args.operatorSlug),
+      )
+      .take(1);
+    const mine = history.filter((row) => row.owner === owner);
+    if (mine.some((row) => row.status === "submitted"))
+      throw new ConvexError(
+        "This operator has answered a brief, so its record stays in the network.",
+      );
+    const profile = await capabilityFor(ctx, owner, args.operatorSlug);
+    if (profile) await ctx.db.delete("operatorCapability", profile._id);
+    const links = await ctx.db
+      .query("operatorLinks")
+      .withIndex("by_owner_and_operatorSlug", (q) =>
+        q.eq("owner", owner).eq("operatorSlug", args.operatorSlug),
+      )
+      .unique();
+    if (links) await ctx.db.delete("operatorLinks", links._id);
+    for (const row of mine) await ctx.db.delete("briefOperators", row._id);
+    await ctx.db.delete("operators", operator._id);
+    return null;
+  },
+});
+
+async function uniqueSlug(ctx: MutationCtx, owner: string, name: string) {
   const base =
     name
       .toLowerCase()
@@ -376,7 +640,7 @@ async function uniqueSlug(ctx: MutationCtx, name: string) {
       .slice(0, 48) || "operator";
   for (let suffix = 1; suffix <= 50; suffix += 1) {
     const slug = suffix === 1 ? base : `${base}-${suffix}`;
-    if (!(await operatorBySlug(ctx, slug))) return slug;
+    if (!(await operatorFor(ctx, owner, slug))) return slug;
   }
   return `${base}-${Date.now().toString(36)}`;
 }
