@@ -287,6 +287,7 @@ type DraftReply = {
   draft: DraftFields;
   evidence: { field: string; quote: string }[];
   droppedEvidence: string[];
+  quoteCheck: boolean;
   caveats: string[];
 };
 
@@ -306,6 +307,9 @@ export const draftFromReply = action({
     // useful, but the advisor knows exactly which parts to check by hand — the
     // rule from the RFP work: anything unsupported is dropped and named.
     droppedEvidence: v.array(v.string()),
+    // False when the draft came from a document we could not quote-check, so the
+    // interface can say so rather than implying a guarantee it cannot make.
+    quoteCheck: v.boolean(),
     caveats: v.array(v.string()),
   }),
   // The return type is written out because this action calls `api` and
@@ -363,7 +367,19 @@ export const draftFromReply = action({
   },
 });
 
-function draftSchema(brief: BriefFields, destinationSlugs: string[]) {
+export function draftSchema(
+  brief: Pick<
+    BriefFields,
+    | "nights"
+    | "travelerCount"
+    | "minimumViableTravelers"
+    | "desiredExperiences"
+    | "importantRequirements"
+    | "transportationNeeds"
+    | "accessibilityNeeds"
+  >,
+  destinationSlugs: string[],
+) {
   const destination = destinationSlugs.length
     ? { type: "string", enum: destinationSlugs }
     : { type: "string" };
@@ -474,9 +490,17 @@ function draftSchema(brief: BriefFields, destinationSlugs: string[]) {
 export function validateDraft(
   raw: unknown,
   sourceText: string,
-  brief: BriefFields,
+  brief: Pick<
+    BriefFields,
+    "desiredExperiences" | "importantRequirements"
+  >,
   destinations: { slug: string; name: string }[],
+  options: { verifiable?: boolean } = {},
 ) {
+  // A document the model read directly cannot have its quotes checked against
+  // text we never extracted, so the draft is returned as unverified instead of
+  // being refused. The interface says which of the two it is holding.
+  const verifiable = options.verifiable !== false;
   const reject = (): never => {
     throw new ConvexError(
       "The AI draft did not match the operator's reply. Record the proposal by hand instead.",
@@ -533,7 +557,7 @@ export function validateDraft(
     const quote = item.quote.trim();
     if (!quote) continue;
     const field = text(item.field, 60);
-    if (!quoteIsPresent(quote, sourceText)) {
+    if (verifiable && !quoteIsPresent(quote, sourceText)) {
       // The model wrote something the operator did not. That quote is never shown
       // as evidence; the field is reported instead, so the advisor checks it.
       droppedEvidence.push(field || "an unnamed field");
@@ -544,7 +568,8 @@ export function validateDraft(
 
   // If the model produced evidence and none of it can be found, it is inventing
   // wholesale and the draft must not be offered at all.
-  if (evidence.length > 0 && cleanedEvidence.length === 0) return reject();
+  if (verifiable && evidence.length > 0 && cleanedEvidence.length === 0)
+    return reject();
 
   return {
     draft: {
@@ -586,6 +611,7 @@ export function validateDraft(
     },
     evidence: cleanedEvidence.slice(0, 12),
     droppedEvidence: [...new Set(droppedEvidence)].slice(0, 12),
+    quoteCheck: verifiable,
     caveats: Array.isArray(caveats)
       ? caveats
           .filter((item): item is string => typeof item === "string")

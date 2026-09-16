@@ -10,6 +10,9 @@ export async function structuredResponse(args: {
   schemaName: string;
   schema: unknown;
   timeoutMs?: number;
+  // A document the model should read as well as the text. Used when an operator
+  // hands over their own trip document rather than a page we can fetch.
+  file?: { filename: string; dataUrl: string };
 }): Promise<unknown> {
   let response: Response;
   try {
@@ -24,7 +27,19 @@ export async function structuredResponse(args: {
         store: false,
         input: [
           { role: "developer", content: args.developer },
-          { role: "user", content: args.user },
+          args.file
+            ? {
+                role: "user",
+                content: [
+                  { type: "input_text", text: args.user },
+                  {
+                    type: "input_file",
+                    filename: args.file.filename,
+                    file_data: args.file.dataUrl,
+                  },
+                ],
+              }
+            : { role: "user", content: args.user },
         ],
         text: {
           format: {
