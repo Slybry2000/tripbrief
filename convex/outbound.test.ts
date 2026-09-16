@@ -3,36 +3,12 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
+import { demoBrief as brief } from "./fixtures.test";
 import { isSendableAddress, providerMessageId, requestMessage } from "./outbound";
 
 const modules = import.meta.glob("./**/*.ts");
 const token = (letter: string) => letter.repeat(43);
 
-const brief = {
-  name: "Wellness Escape",
-  evaluationDate: "2027-05-23",
-  travelMonth: "October",
-  travelerCount: 16,
-  minimumViableTravelers: 12,
-  confirmedTravelers: 8,
-  nights: 7,
-  earliestDepartureDate: "2027-10-10",
-  preferredDepartureDate: "2027-10-15",
-  latestDepartureDate: "2027-10-25",
-  flexibleDates: true,
-  proposalDecisionDate: "2027-06-10",
-  targetRetailPricePerPerson: 3500,
-  flightsIncluded: false,
-  experienceLevel: 2,
-  pace: "relaxed",
-  climates: ["warm"],
-  desiredExperiences: ["yoga"],
-  importantRequirements: ["strong_wellness_focus"],
-  travelerTypes: ["private_groups"],
-  transportationNeeds: ["private_transportation"],
-  accessibilityNeeds: [],
-  notes: "Private wellness group. Include one gentle outdoor experience.",
-};
 
 test("the request email carries the link and nothing about the travellers", () => {
   const message = requestMessage(

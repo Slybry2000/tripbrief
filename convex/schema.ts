@@ -158,6 +158,20 @@ export const briefFields = v.object({
   transportationNeeds: v.array(v.string()),
   accessibilityNeeds: v.array(v.string()),
   notes: v.string(),
+  // What an incoming operator needs in order to quote. Named in the operator's
+  // terms rather than the form's, because it is read by them.
+  groupDescription: v.string(),
+  ages: v.string(),
+  rooms: v.string(),
+  dietaryAndMedical: v.string(),
+  dateFirmness: v.string(),
+  budgetBasis: v.string(),
+  guestOrigin: v.string(),
+  dayShape: v.string(),
+  inclusionsExpected: v.array(v.string()),
+  // Constraints, not preferences: shown to the operator on their own and never
+  // folded into the numbered requirements.
+  hardNos: v.array(v.string()),
 });
 
 export const availability = v.union(

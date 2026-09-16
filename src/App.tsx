@@ -10,6 +10,7 @@ import programSeed from "./data/programs.json";
 import { buildWorkbackSchedule, calculateDestinationMatch, calculateOperatorMatch, calculateProposalMargin, calculateTargetNet, calculateTripMatch, servesSelectedDestinations } from "./lib/matching";
 import type { Destination, OperatorMatch, OperatorProfile, OperatorProposal, Partner, ReadyMadeTrip, TripRequest } from "./lib/types";
 import { newCapabilityToken, readResponseToken, responseLink } from "./capability";
+import { buildRequirements, hardNoList, missingMusts, TIER_LABEL } from "./lib/requirements";
 
 const destinations = destinationSeed as Destination[];
 const defaultRequest = requestSeed as TripRequest;
@@ -196,6 +197,9 @@ const operations = ["private_transportation", "shared_transportation", "airport_
 const requirements = ["low_physical_difficulty", "mostly_private_experiences", "few_hotel_changes", "strong_wellness_focus", "strong_food_focus", "strong_cultural_focus"];
 const travelerTypes = ["adult_groups", "families", "multigenerational", "private_groups", "retreats", "corporate_groups", "educational_groups", "religious_groups"];
 const hotelTypes = ["3-star", "4-star", "5-star_luxury", "luxury", "boutique_hotels", "private_villas", "resorts", "wellness_retreats", "eco_lodges", "specialty_accommodations"];
+// What a group commonly expects to be inside the price. Named the way an operator
+// names it, because it becomes a requirement they answer.
+const inclusionOptions = ["airport_transfers", "private_transportation", "shared_transportation", "breakfast_daily", "half_board", "two_group_dinners", "entrance_fees", "private_guide", "english_speaking_guide", "yoga_and_spa_sessions", "one_activity_daily", "insurance_guidance", "tips_and_gratuities"];
 const workflowSteps = ["Client Needs", "Destinations", "ITO Matches", "Choose Partners", "Trip Request", "Responses", "Compare Trips", "Selection & Workback"];
 const orderedViews: AppView[] = ["brief", "destinations", "operators", "choose", "request", "responses", "compare", "selected"];
 
@@ -250,6 +254,14 @@ function WorkflowProgress({ view, go }: { view: AppView; go: (value: AppView) =>
   return <div className="progress-wrap eight-steps" aria-label={`Step ${current + 1} of 8`}><div className="progress-line" />{workflowSteps.map((step, index) => <button key={step} className={`${index === current ? "current" : ""} ${index < current ? "done" : ""}`} disabled={index > current} onClick={() => index <= current && go(orderedViews[index])}><span>{index < current ? "✓" : index + 1}</span><small>{step}</small></button>)}</div>;
 }
 
+// The advisor's own view of what the operator will read: the same numbering the
+// packet uses, and the must-haves nobody has answered yet.
+function RequirementSummary({ request }: { request: TripRequest }) {
+  const requirements = buildRequirements(request);
+  const missing = missingMusts(request);
+  return <div className={missing.length ? "inline-warning" : "inline-success"}><strong>{requirements.length} requirements · R1–R{requirements.length}</strong>{missing.length ? <><span>An operator cannot price around these yet:</span>{missing.map((item) => <span key={item.key}>· {item.label}</span>)}</> : <span>Every must-have is answered, so this can be priced without a phone call.</span>}</div>;
+}
+
 function Choice({ item, checked, onChange }: { item: string; checked: boolean; onChange: () => void }) {
   return <label className={`choice ${checked ? "checked" : ""}`}><input type="checkbox" checked={checked} onChange={onChange} /><span>{checked ? "✓" : ""}</span>{titleCase(item)}</label>;
 }
@@ -272,7 +284,7 @@ function Dashboard({ start, portal, briefs, open }: { start: () => void; portal:
 function BriefForm({ request, setRequest, next }: { request: TripRequest; setRequest: (value: TripRequest) => void; next: () => void }) {
   const [errors, setErrors] = useState<string[]>([]);
   const update = <K extends keyof TripRequest>(key: K, value: TripRequest[K]) => setRequest({ ...request, [key]: value });
-  const toggle = (key: "climates" | "desiredExperiences" | "importantRequirements" | "travelerTypes" | "transportationNeeds" | "accessibilityNeeds", item: string) => update(key, request[key].includes(item) ? request[key].filter((value) => value !== item) : [...request[key], item]);
+  const toggle = (key: "climates" | "desiredExperiences" | "importantRequirements" | "travelerTypes" | "transportationNeeds" | "accessibilityNeeds" | "inclusionsExpected", item: string) => update(key, request[key].includes(item) ? request[key].filter((value) => value !== item) : [...request[key], item]);
   const validate = () => {
     const nextErrors: string[] = [];
     if (request.minimumViableTravelers > request.travelerCount) nextErrors.push("Minimum viable travelers cannot exceed target group size.");
@@ -287,6 +299,18 @@ function BriefForm({ request, setRequest, next }: { request: TripRequest; setReq
     <div className="form-card date-card"><h2>Departure window and decision timing</h2><p className="form-help">These dates become questions in the trip request. Each shortlisted ITO must review them and confirm what it can actually operate.</p><div className="form-grid three"><label>Earliest departure<input type="date" value={request.earliestDepartureDate} onChange={(event) => update("earliestDepartureDate", event.target.value)} /></label><label>Preferred departure<input type="date" value={request.preferredDepartureDate} onChange={(event) => update("preferredDepartureDate", event.target.value)} /></label><label>Latest departure<input type="date" value={request.latestDepartureDate} onChange={(event) => update("latestDepartureDate", event.target.value)} /></label><label>Proposal decision deadline<input type="date" value={request.proposalDecisionDate} onChange={(event) => update("proposalDecisionDate", event.target.value)} /></label><label className="inline-check"><input type="checkbox" checked={request.flexibleDates} onChange={(event) => update("flexibleDates", event.target.checked)} />Flexible dates within this window</label></div></div>
     <div className="form-card"><fieldset><legend>Preferred climate</legend><div className="choice-grid compact">{["warm", "tropical", "mild", "cool"].map((item) => <Choice key={item} item={item} checked={request.climates.includes(item)} onChange={() => toggle("climates", item)} />)}</div></fieldset><fieldset><legend>Experiences and trip types</legend><div className="choice-grid">{experiences.map((item) => <Choice key={item} item={item} checked={request.desiredExperiences.includes(item)} onChange={() => toggle("desiredExperiences", item)} />)}</div></fieldset></div>
     <div className="form-card"><fieldset><legend>Transportation and operating needs</legend><div className="choice-grid">{operations.slice(0, 10).map((item) => <Choice key={item} item={item} checked={request.transportationNeeds.includes(item)} onChange={() => toggle("transportationNeeds", item)} />)}</div></fieldset><fieldset><legend>Accessibility and trip requirements</legend><div className="choice-grid">{[...requirements, "accessible_transportation", "low_mobility_options"].map((item) => { const key = item.includes("mobility") || item.includes("accessible") ? "accessibilityNeeds" : "importantRequirements"; return <Choice key={item} item={item} checked={request[key].includes(item)} onChange={() => toggle(key, item)} />; })}</div></fieldset><label>Additional context<textarea rows={4} value={request.notes} onChange={(event) => update("notes", event.target.value)} /></label></div>
+    <div className="form-card"><h2>What an operator needs in order to quote</h2><p className="form-help">A brief without this comes back as a phone call. These answers become numbered requirements R1, R2, R3 and so on, and the operator answers them one by one.</p><div className="form-grid three">
+      <label className="wide">The group, in the operator&rsquo;s terms<textarea rows={3} value={request.groupDescription} onChange={(event) => update("groupDescription", event.target.value)} placeholder="A friendship group of returning clients who book together once a year…" /></label>
+      <label>Ages<input value={request.ages} onChange={(event) => update("ages", event.target.value)} placeholder="48 to 67" /></label>
+      <label>How firm are the dates?<input value={request.dateFirmness} onChange={(event) => update("dateFirmness", event.target.value)} placeholder="Fixed to the second week of October, movable by three days" /></label>
+      <label className="wide">Rooms and occupancy<textarea rows={3} value={request.rooms} onChange={(event) => update("rooms", event.target.value)} placeholder="8 twin rooms, 2 singles, one couple in a double, no triples" /></label>
+      <label className="wide">Dietary, mobility and medical needs<textarea rows={3} value={request.dietaryAndMedical} onChange={(event) => update("dietaryAndMedical", event.target.value)} placeholder="Two gluten-free, one who cannot manage stairs…" /></label>
+      <label className="wide">The budget covers<input value={request.budgetBasis} onChange={(event) => update("budgetBasis", event.target.value)} placeholder="land only, per person, excluding international flights" /></label>
+      <label className="wide">Where the group travels from<textarea rows={2} value={request.guestOrigin} onChange={(event) => update("guestOrigin", event.target.value)} placeholder="Seattle and Vancouver, arriving on different flights…" /></label>
+      <label className="wide">What a good day looks like<textarea rows={3} value={request.dayShape} onChange={(event) => update("dayShape", event.target.value)} placeholder="One main activity, a long lunch, the late afternoon free…" /></label>
+    </div><fieldset><legend>Must be included in the price</legend><div className="choice-grid">{inclusionOptions.map((item) => <Choice key={item} item={item} checked={request.inclusionsExpected.includes(item)} onChange={() => toggle("inclusionsExpected", item)} />)}</div></fieldset>
+    <label>Hard no&rsquo;s, one per line<textarea rows={3} value={request.hardNos.join("\n")} onChange={(event) => update("hardNos", event.target.value.split("\n").map((line) => line.trim()).filter(Boolean))} placeholder={"no start before 9am\nno bus days over three hours"} /></label>
+    <RequirementSummary request={request} /></div>
     <div className="sticky-action"><span>Target operator net: <strong>{money(calculateTargetNet(request))}</strong> per person</span><button className="primary" onClick={validate}>Discover Destinations <span>→</span></button></div>
   </section>;
 }
@@ -496,10 +520,48 @@ function ProfileEditor({ profile, setProfile, save }: { profile: OperatorProfile
     <IntakeSection number="07" title="Optional ready-made programs" description="Useful context after qualification. Programs never increase or reduce Capability Match.">{trips.filter((trip) => trip.partnerId === profile.partnerId).map((trip) => <div className="profile-trip" key={trip.id}><div><strong>{trip.name}</strong><span>{trip.nights} nights · {money(trip.netPricePerPerson)} starting net</span></div><span>Supporting information only</span></div>)}{trips.filter((trip) => trip.partnerId === profile.partnerId).length === 0 && <p className="quiet">No ready-made programs listed. Matching never depends on having one.</p>}</IntakeSection><div className="sticky-action"><span>Saving updates the matching immediately.</span><button className="primary" onClick={save}>Save Capability Record</button></div></section>;
 }
 
+// The brief as the operator reads it. A row with no answer is left out rather
+// than shown blank — the gap list says what is missing, once, at the end.
+function PacketSection({ title, rows }: { title: string; rows: [string, string][] }) {
+  const filled = rows.filter(([, value]) => value && value.replace(/[,\s]/g, "").length > 0);
+  if (!filled.length) return null;
+  return <section className="packet-section"><h2>{title}</h2><dl>{filled.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>;
+}
+
+// The numbered list is the point of the exercise: several operators answering the
+// same numbers is a comparison, several operators answering in prose is not.
+function RequirementTable({ request }: { request: TripRequest }) {
+  const requirements = buildRequirements(request);
+  if (!requirements.length) return null;
+  return <section className="packet-section"><h2>What you must answer</h2><p className="form-help">Numbered, so your reply lines up with every other operator's. Answer each one: a clear no is useful, a blank is not.</p><ol className="requirement-list">{requirements.map((requirement) => <li key={requirement.id}><div className="requirement-head"><span className="requirement-id">{requirement.id}</span><strong>{requirement.label}</strong><span className={`tier ${requirement.tier}`}>{TIER_LABEL[requirement.tier]}</span></div><p>{requirement.statement}</p><p className="requirement-ask">{requirement.ask}</p></li>)}</ol></section>;
+}
+
+function HardNos({ request }: { request: TripRequest }) {
+  const nos = hardNoList(request);
+  if (!nos.length) return null;
+  return <section className="packet-section hard-nos"><h2>Hard no&rsquo;s</h2><p className="form-help">These are not preferences. If your itinerary breaks one, say so and propose what you would do instead.</p><ul>{nos.map((no) => <li key={no}>{no}</li>)}</ul></section>;
+}
+
+function GapNotice({ request }: { request: TripRequest }) {
+  const missing = missingMusts(request);
+  if (!missing.length) return null;
+  return <section className="packet-section"><h2>What we do not have yet</h2><p className="form-help">The agency has not answered these. Ask, or price against a stated assumption and say what the assumption is.</p><ul>{missing.map((item) => <li key={item.key}>{item.label}</li>)}</ul></section>;
+}
+
 function PartnerRequest({ request, profile, quote }: { request: TripRequest; profile: OperatorProfile; quote: () => void }) {
   const ranked = operatorRanking(request, profile);
   const item = ranked.find((row) => row.partner.id === profile.partnerId) ?? ranked[0];
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">TRIP REQUEST FROM THE AGENCY</p><h1>{request.name}</h1><p>Review the requested window, recommend the actual trip you would operate, and confirm dates, availability, fit, pricing assumptions, and deadlines.</p></div><span className="needs-response-badge">Needs Response</span></div><div className="brief-strip v2"><div><strong>{request.travelerCount} travelers · {request.minimumViableTravelers} minimum</strong><span>{request.nights} nights · {levelLabel(request.experienceLevel)} · {titleCase(request.pace)} pace</span></div><div><small>TRAVEL WINDOW TO REVIEW</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="portal-columns request-detail"><section><h2>Complete client brief</h2><TagList title="Experiences" values={request.desiredExperiences} tone="neutral" /><TagList title="Operating needs" values={[...request.transportationNeeds, ...request.accessibilityNeeds, ...request.importantRequirements]} tone="neutral" /><div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div></section><aside><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></aside></div></section>;
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">TRIP REQUEST FROM THE AGENCY</p><h1>{request.name}</h1><p>Review the requested window, recommend the actual trip you would operate, and confirm dates, availability, fit, pricing assumptions, and deadlines.</p></div><span className="needs-response-badge">Needs Response</span></div><div className="brief-strip v2"><div><strong>{request.travelerCount} travelers · {request.minimumViableTravelers} minimum</strong><span>{request.nights} nights · {levelLabel(request.experienceLevel)} · {titleCase(request.pace)} pace</span></div><div><small>TRAVEL WINDOW TO REVIEW</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="portal-columns request-detail"><section><div className="packet">
+      <PacketSection title="The group" rows={[["Who they are", request.groupDescription], ["Ages", request.ages], ["Travellers", `${request.travelerCount} to price, ${request.minimumViableTravelers} minimum viable, ${request.confirmedTravelers} confirmed`], ["Travelling from", request.guestOrigin]]} />
+      <PacketSection title="Dates" rows={[["Window", `${request.earliestDepartureDate} to ${request.latestDepartureDate}`], ["Preferred departure", request.preferredDepartureDate], ["Length", `${request.nights} nights`], ["How firm", request.dateFirmness]]} />
+      <PacketSection title="Rooms, meals and needs" rows={[["Rooms and occupancy", request.rooms], ["Dietary, mobility and medical", request.dietaryAndMedical], ["Accessibility", request.accessibilityNeeds.map(titleCase).join(", ")], ["Hotel level", levelLabel(request.experienceLevel)]]} />
+      <PacketSection title="Money" rows={[["Budget", `${money(request.targetRetailPricePerPerson)} per person, ${request.budgetBasis || "land only"}`], ["Your net target", `${money(calculateTargetNet(request))} per person`]]} />
+      <PacketSection title="What a good day looks like" rows={[["The shape of a day", request.dayShape], ["Pace", titleCase(request.pace)], ["Built around", request.desiredExperiences.map(titleCase).join(", ")], ["Must be included", request.inclusionsExpected.map(titleCase).join(", ")], ["Transport and support", request.transportationNeeds.map(titleCase).join(", ")]]} />
+    </div>
+    <RequirementTable request={request} />
+    <HardNos request={request} />
+    <GapNotice request={request} />
+    <section><h2>What we are asking you to return</h2><p className="form-help">A complete proposal, not a headline price: the program you would actually operate, the dates you can hold, what is included and what is not, the net price and its assumptions, your deposit and cancellation terms, and an answer to every requirement above.</p><div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div></section></section><section><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></section></div></section>;
 }
 
 function ProposalBuilder({ request, proposal, setProposal, submit }: { request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void; submit: () => void }) {
@@ -1016,6 +1078,16 @@ type StoredBrief = {
   transportationNeeds: string[];
   accessibilityNeeds: string[];
   notes: string;
+  groupDescription?: string;
+  ages?: string;
+  rooms?: string;
+  dietaryAndMedical?: string;
+  dateFirmness?: string;
+  budgetBasis?: string;
+  guestOrigin?: string;
+  dayShape?: string;
+  inclusionsExpected?: string[];
+  hardNos?: string[];
   status: string;
   selectedDestinationSlugs: string[];
   selectedProposalId: Id<"proposals"> | null;
@@ -1047,6 +1119,16 @@ function fromStoredBrief(stored: StoredBrief, shortlist: { operatorSlug: string 
     transportationNeeds: stored.transportationNeeds,
     accessibilityNeeds: stored.accessibilityNeeds,
     notes: stored.notes,
+    groupDescription: stored.groupDescription ?? "",
+    ages: stored.ages ?? "",
+    rooms: stored.rooms ?? "",
+    dietaryAndMedical: stored.dietaryAndMedical ?? "",
+    dateFirmness: stored.dateFirmness ?? "",
+    budgetBasis: stored.budgetBasis ?? "",
+    guestOrigin: stored.guestOrigin ?? "",
+    dayShape: stored.dayShape ?? "",
+    inclusionsExpected: stored.inclusionsExpected ?? [],
+    hardNos: stored.hardNos ?? [],
     status: stored.status === "selected" ? "Selected" : stored.status === "comparing" ? "Comparing" : stored.status === "sent" ? "Sent" : "Draft",
     selectedDestinationIds: stored.selectedDestinationSlugs,
     selectedPartnerIds: shortlist.map((row) => row.operatorSlug),
@@ -1074,6 +1156,16 @@ type OperatorBrief = {
   transportationNeeds: string[];
   accessibilityNeeds: string[];
   notes: string;
+  groupDescription?: string;
+  ages?: string;
+  rooms?: string;
+  dietaryAndMedical?: string;
+  dateFirmness?: string;
+  budgetBasis?: string;
+  guestOrigin?: string;
+  dayShape?: string;
+  inclusionsExpected?: string[];
+  hardNos?: string[];
 };
 
 function fromOperatorBrief(brief: OperatorBrief): TripRequest {
@@ -1099,6 +1191,16 @@ function fromOperatorBrief(brief: OperatorBrief): TripRequest {
     transportationNeeds: brief.transportationNeeds,
     accessibilityNeeds: brief.accessibilityNeeds,
     notes: brief.notes,
+    groupDescription: brief.groupDescription ?? "",
+    ages: brief.ages ?? "",
+    rooms: brief.rooms ?? "",
+    dietaryAndMedical: brief.dietaryAndMedical ?? "",
+    dateFirmness: brief.dateFirmness ?? "",
+    budgetBasis: brief.budgetBasis ?? "",
+    guestOrigin: brief.guestOrigin ?? "",
+    dayShape: brief.dayShape ?? "",
+    inclusionsExpected: brief.inclusionsExpected ?? [],
+    hardNos: brief.hardNos ?? [],
     selectedDestinationIds: [],
     selectedPartnerIds: [],
     selectedProposalId: null,
@@ -1131,6 +1233,16 @@ function briefPayload(request: TripRequest) {
     transportationNeeds: request.transportationNeeds,
     accessibilityNeeds: request.accessibilityNeeds,
     notes: request.notes,
+    groupDescription: request.groupDescription,
+    ages: request.ages,
+    rooms: request.rooms,
+    dietaryAndMedical: request.dietaryAndMedical,
+    dateFirmness: request.dateFirmness,
+    budgetBasis: request.budgetBasis,
+    guestOrigin: request.guestOrigin,
+    dayShape: request.dayShape,
+    inclusionsExpected: request.inclusionsExpected,
+    hardNos: request.hardNos,
   };
 }
 

@@ -701,3 +701,28 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
   .brand-home { min-width: 0; }
   .side-switch { margin-left: auto; }
 }
+
+/* ---------------------------------------------------------------------------
+   The operator's brief.
+   Everything an incoming operator needs, in the order they read it: who the
+   group is, when, what they sleep in, what it costs, what to answer.
+   --------------------------------------------------------------------------- */
+.packet { display: grid; gap: 18px; }
+.packet-section { padding: 18px 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--white); }
+.packet-section h2 { margin: 0 0 12px; font-size: 1.1rem; }
+.packet-section dl { margin: 0; display: grid; gap: 12px; }
+.packet-section dl > div { display: grid; grid-template-columns: minmax(140px, 210px) 1fr; gap: 12px; align-items: baseline; }
+.packet-section dt { text-transform: uppercase; letter-spacing: .06em; font-size: .68rem; color: var(--muted); }
+.packet-section dd { margin: 0; }
+.packet-section ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+.hard-nos { border-color: #e9c6c1; background: var(--red-bg); }
+.requirement-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: none; }
+.requirement-list > li { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--mint-2); }
+.requirement-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.requirement-id { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--green-dark); }
+.requirement-list p { margin: 8px 0 0; }
+.requirement-ask { color: var(--muted); font-size: .9rem; }
+.tier { margin-left: auto; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--white); }
+.tier.must { border-color: #e0c489; background: var(--gold-bg); color: var(--gold); }
+.tier.should { border-color: #cfe4dc; background: var(--white); color: var(--green-dark); }
+@media (max-width: 760px) { .packet-section dl > div { grid-template-columns: 1fr; gap: 4px; } }

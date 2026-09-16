@@ -22,6 +22,18 @@ export type TripRequest = {
   transportationNeeds: string[];
   accessibilityNeeds: string[];
   notes: string;
+  // Everything an incoming operator needs in order to quote, which the first
+  // version of this brief did not ask for.
+  groupDescription: string;
+  ages: string;
+  rooms: string;
+  dietaryAndMedical: string;
+  dateFirmness: string;
+  budgetBasis: string;
+  guestOrigin: string;
+  dayShape: string;
+  inclusionsExpected: string[];
+  hardNos: string[];
   status: "Draft" | "Sent" | "Comparing" | "Selected";
   selectedDestinationIds: string[];
   selectedPartnerIds: string[];
