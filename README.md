@@ -61,7 +61,10 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
 
 ## Demo path
 
-1. Start a private trial workspace and create a fictional group-travel brief.
+1. Start a private trial workspace and answer the guided intake: the trip, the
+   group, what the trip is built around, timing and money, then the
+   requirements. The advisor edits suggested requirements built from those
+   answers, so the group's needs become questions a supplier can answer.
 2. Search public supplier websites with Firecrawl and add prospects to the
    shortlist. Shortlisting a partner also creates that partner's own response
    link — one per supplier, no account for them.

@@ -18,6 +18,25 @@ export const priceBasis = v.union(
   v.literal("per_night"),
 );
 
+// What the advisor gathers before any supplier is contacted. Every field is
+// optional so a brief can still be created quickly; the arrays are bounded in
+// trips.create. Budget stays with the advisor and is never shown to a supplier.
+export const tripProfile = v.object({
+  groupType: v.optional(v.string()),
+  ages: v.optional(v.string()),
+  rooms: v.optional(v.string()),
+  needs: v.optional(v.array(v.string())),
+  interests: v.optional(v.array(v.string())),
+  pace: v.optional(v.string()),
+  setting: v.optional(v.string()),
+  styles: v.optional(v.array(v.string())),
+  mustDo: v.optional(v.string()),
+  dateFlexibility: v.optional(v.string()),
+  budgetBand: v.optional(v.string()),
+  budgetCurrency: v.optional(v.string()),
+  budgetCovers: v.optional(v.array(v.string())),
+});
+
 export default defineSchema({
   ...authTables,
   supplierInvites: defineTable({
@@ -47,6 +66,7 @@ export default defineSchema({
     endDate: v.string(),
     travelers: v.number(),
     brief: v.string(),
+    profile: v.optional(tripProfile),
     // Bounded at 30 in create; requirement numbers never change after offers arrive.
     requirements: v.array(v.object({ number: v.number(), text: v.string() })),
     status: v.union(

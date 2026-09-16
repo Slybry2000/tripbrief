@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
-import schema, { assessment, priceBasis } from "./schema";
+import schema, { assessment, priceBasis, tripProfile } from "./schema";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 async function identity(ctx: Pick<QueryCtx, "auth">) {
@@ -26,18 +26,67 @@ function validDate(value: string) {
   const date = new Date(value + "T00:00:00Z");
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
+// The intake collects chips, so every stored value is bounded: at most 12
+// entries of at most 80 characters each, with no duplicates.
+function validChips(values: string[] | undefined) {
+  if (!values) return true;
+  if (values.length > 12) return false;
+  const cleaned = values.map((value) => value.trim());
+  return (
+    cleaned.every((value) => value.length > 0 && value.length <= 80) &&
+    new Set(cleaned).size === cleaned.length
+  );
+}
+function validProfile(profile: {
+  groupType?: string;
+  ages?: string;
+  rooms?: string;
+  needs?: string[];
+  interests?: string[];
+  pace?: string;
+  setting?: string;
+  styles?: string[];
+  mustDo?: string;
+  dateFlexibility?: string;
+  budgetBand?: string;
+  budgetCurrency?: string;
+  budgetCovers?: string[];
+} | undefined) {
+  if (!profile) return true;
+  const singles = [
+    profile.groupType,
+    profile.ages,
+    profile.rooms,
+    profile.pace,
+    profile.setting,
+    profile.dateFlexibility,
+    profile.budgetBand,
+    profile.budgetCurrency,
+  ];
+  if (singles.some((value) => value !== undefined && (value.trim().length === 0 || value.length > 120)))
+    return false;
+  if (profile.mustDo !== undefined && profile.mustDo.length > 2000) return false;
+  return (
+    validChips(profile.needs) &&
+    validChips(profile.interests) &&
+    validChips(profile.styles) &&
+    validChips(profile.budgetCovers)
+  );
+}
 
 export const create = mutation({
-  args: { title: v.string(), destination: v.string(), startDate: v.string(), endDate: v.string(), travelers: v.number(), brief: v.string(), requirements: v.array(v.string()) },
+  args: { title: v.string(), destination: v.string(), startDate: v.string(), endDate: v.string(), travelers: v.number(), brief: v.string(), requirements: v.array(v.string()), profile: v.optional(tripProfile) },
   returns: v.id("trips"),
   handler: async (ctx, args) => {
     const owner = await identity(ctx);
     if (!validDate(args.startDate) || !validDate(args.endDate) || args.endDate < args.startDate) throw new ConvexError("Choose valid dates with departure before return.");
     if (!Number.isInteger(args.travelers) || args.travelers < 1 || args.travelers > 1000) throw new ConvexError("Travelers must be a whole number from 1 to 1,000.");
     if (args.requirements.length < 1 || args.requirements.length > 30) throw new ConvexError("Include 1–30 requirements.");
+    if (!validProfile(args.profile)) throw new ConvexError("The group details are outside the allowed range.");
     return await ctx.db.insert("trips", {
       owner, title: text(args.title, "Title"), destination: text(args.destination, "Destination"),
       startDate: args.startDate, endDate: args.endDate, travelers: args.travelers,
+      profile: args.profile,
       brief: text(args.brief, "Brief", 8000),
       requirements: args.requirements.map((item, i) => ({ number: i + 1, text: text(item, "Requirement", 500) })),
       status: "draft", updatedAt: Date.now(),

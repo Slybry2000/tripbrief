@@ -6,6 +6,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import { PartnerResearch } from "./PartnerResearch";
 import { SupplierPortal } from "./SupplierPortal";
 import { newCapabilityToken, supplierLink } from "./capability";
+import { IntakeForm } from "./IntakeForm";
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
@@ -131,7 +132,7 @@ function Desk() {
       </aside>
       <main>
         {creating ? (
-          <NewTrip
+          <IntakeForm
             done={(i) => {
               setId(i);
               setCreating(false);
@@ -150,83 +151,6 @@ function Desk() {
         )}
       </main>
     </div>
-  );
-}
-function NewTrip({ done }: { done: (id: Id<"trips">) => void }) {
-  const create = useMutation(api.trips.create);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  return (
-    <section>
-      <p className="eyebrow">01 / THE BRIEF</p>
-      <h1>What are we planning?</h1>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const d = new FormData(e.currentTarget);
-          setBusy(true);
-          void create({
-            title: formText(d, "title"),
-            destination: formText(d, "destination"),
-            startDate: formText(d, "start"),
-            endDate: formText(d, "end"),
-            travelers: Number(d.get("travelers")),
-            brief: formText(d, "brief"),
-            requirements: formText(d, "requirements")
-              .split("\n")
-              .map((x) => x.trim())
-              .filter(Boolean),
-          })
-            .then(done)
-            .catch((e) => setError(String(e)))
-            .finally(() => setBusy(false));
-        }}
-      >
-        <div className="grid">
-          <label>
-            Trip name
-            <input name="title" required maxLength={160} />
-          </label>
-          <label>
-            Destination
-            <input name="destination" required maxLength={160} />
-          </label>
-          <label>
-            Arrival
-            <input name="start" type="date" required />
-          </label>
-          <label>
-            Departure
-            <input name="end" type="date" required />
-          </label>
-          <label>
-            Travelers
-            <input
-              name="travelers"
-              type="number"
-              min="1"
-              max="500"
-              defaultValue="16"
-              required
-            />
-          </label>
-        </div>
-        <label>
-          The group's brief
-          <textarea name="brief" required maxLength={10000} />
-        </label>
-        <label>
-          Requirements · one per line
-          <textarea
-            name="requirements"
-            required
-            placeholder={"Private rooms\nGuided walks\nVegetarian meals"}
-          />
-        </label>
-        {error && <p role="alert">{error}</p>}
-        <button disabled={busy}>{busy ? "Saving…" : "Save brief →"}</button>
-      </form>
-    </section>
   );
 }
 function Trip({ id }: { id: Id<"trips"> }) {

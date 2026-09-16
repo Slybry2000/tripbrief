@@ -161,6 +161,31 @@ email validation and locking, and the invitation message's contents; 23 tests,
 lint and the production build pass, and the new card is confirmed present in the
 deployed bundle. No email has been sent to any real supplier.
 
+### 2026-09-16 - guided intake
+Replaced the six-field brief form with a guided intake of six steps: the trip,
+the group, what the trip is built around, timing and money, what matters to
+them, then a review of everything before it is saved (`src/IntakeForm.tsx`,
+`src/intakeOptions.ts`, `convex/schema.ts`, `convex/trips.ts`).
+
+- The group and interest answers become a starting requirement list
+  (`suggestRequirements`), which the advisor edits. That is the step that turns
+  a vague group brief into questions a supplier can answer one by one.
+- The intake shape follows the private group-trip planner built for a client
+  earlier in this project: the step structure, chip selection, progress rail,
+  and review-before-send. No client branding, client copy or client pricing was
+  reused, and this repository stays free of any client name.
+- The budget band and currency are collected for the advisor only. They are
+  stored on the brief, are not part of the supplier's view (`invites.getByToken`
+  selects its own fields), and are deliberately not turned into requirements. A
+  test asserts the budget never appears in a generated requirement.
+- Every profile field is optional, and the stored chip arrays are bounded and
+  de-duplicated by `trips.create`; the schema change is additive on a live
+  database, so no migration was needed.
+
+Three new tests cover the suggestion rules and the budget exclusion; 26 tests,
+lint and the production build pass, and the deployed bundle contains the new
+intake.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the

@@ -472,3 +472,103 @@ pre {
   line-height: 1.6;
   color: #3c4a44;
 }
+.intake {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+.intake-rail {
+  position: sticky;
+  top: 24px;
+}
+.intake-rail ol {
+  list-style: none;
+  margin: 14px 0 18px;
+  padding: 0;
+}
+.intake-rail li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 9px 12px;
+  background: transparent;
+  color: #5c6b62;
+  font-size: 13px;
+  font-weight: 500;
+  border-left: 2px solid #d8ded4;
+  border-radius: 0;
+}
+.intake-rail li button:hover {
+  background: #eef1e9;
+  color: #254f40;
+}
+.intake-rail li.current button {
+  border-left-color: #254f40;
+  color: #19372f;
+  font-weight: 700;
+}
+.intake-rail li.done button {
+  color: #38672f;
+}
+.intake-body {
+  max-width: 720px;
+}
+.intake-body fieldset {
+  border: 0;
+  border-top: 1px solid #e0e4db;
+  margin: 26px 0 0;
+  padding: 18px 0 0;
+}
+.intake-body legend {
+  font-weight: 700;
+  padding: 0;
+  margin-bottom: 10px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  background: #fff;
+  color: #3c4a44;
+  border: 1px solid #ced8c9;
+  border-radius: 999px;
+  padding: 9px 15px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.chip:hover {
+  background: #eef1e9;
+  color: #254f40;
+}
+.chip[aria-pressed="true"] {
+  background: #254f40;
+  border-color: #254f40;
+  color: #fff;
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+}
+.summary dt {
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #6b7a70;
+}
+.summary dd {
+  margin: 4px 0 0;
+}
+@media (max-width: 860px) {
+  .intake {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .intake-rail {
+    position: static;
+  }
+}
