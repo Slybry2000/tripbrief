@@ -251,12 +251,20 @@ function Trip({ id }: { id: Id<"trips"> }) {
                   );
                   return (
                     <td key={o._id}>
-                      <span className={"status " + a?.status}>
-                        {a?.status ?? "unknown"}
-                      </span>
-                      <p>
-                        {a?.evidence || "No supporting statement supplied."}
-                      </p>
+                      {o.assessments.length === 0 ? (
+                        <p>
+                          <small>Waiting to be standardised</small>
+                        </p>
+                      ) : (
+                        <>
+                          <span className={"status " + (a?.status ?? "unknown")}>
+                            {a?.status ?? "unknown"}
+                          </span>
+                          <p>
+                            {a?.evidence || "No supporting statement supplied."}
+                          </p>
+                        </>
+                      )}
                     </td>
                   );
                 })}
@@ -308,11 +316,49 @@ function Trip({ id }: { id: Id<"trips"> }) {
       <h2>Original responses</h2>
       {offers.map((o) => (
         <details key={o._id}>
-          <summary>{o.supplierName}</summary>
+          <summary>
+            {o.supplierName}
+            {o.attachments?.length
+              ? ` · ${o.attachments.length} attachment${o.attachments.length === 1 ? "" : "s"}`
+              : ""}
+          </summary>
+          {o.attachments?.length ? (
+            <p>
+              {o.attachments.map((file) => (
+                <AttachmentLink key={file.storageId} offerId={o._id} file={file} />
+              ))}
+            </p>
+          ) : null}
           <pre>{o.sourceText}</pre>
         </details>
       ))}
     </section>
+  );
+}
+
+// Each attachment is fetched through the advisor's own authenticated session, so
+// the file is never at a permanent public address.
+function AttachmentLink({
+  offerId,
+  file,
+}: {
+  offerId: Id<"offers">;
+  file: { storageId: Id<"_storage">; name: string };
+}) {
+  const url = useQuery(api.trips.attachmentUrl, {
+    offerId,
+    storageId: file.storageId,
+  });
+  return (
+    <span className="attachment">
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          {file.name}
+        </a>
+      ) : (
+        file.name
+      )}
+    </span>
   );
 }
 

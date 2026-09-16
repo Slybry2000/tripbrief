@@ -186,6 +186,36 @@ Three new tests cover the suggestion rules and the budget exclusion; 26 tests,
 lint and the production build pass, and the deployed bundle contains the new
 intake.
 
+### 2026-09-16 - suppliers answer the same way the organizer does
+The supplier's response is now a guided form in the same shape as the intake
+rather than a grid of coverage dropdowns (`src/SupplierPortal.tsx`,
+`convex/invites.ts`, `convex/offerRules.ts`, `convex/schema.ts`,
+`convex/trips.ts`):
+
+- Four steps: the quote, how they would run the trip, the requirements, then
+  attach and send. A supplier may answer every requirement, some of them, or
+  none, and anything left alone is standardised from their own words afterwards.
+- **Attachments.** A supplier can attach up to five documents of 20 MB each — a
+  quote as a PDF, a sample itinerary, a completed trip. They upload to Convex
+  storage through a URL authorised by the same single-use invitation token, and
+  the advisor reads them behind their own sign-in: `trips.attachmentUrl` returns
+  a short-lived URL for an offer on their own brief and nothing else.
+- **One assembled response.** Everything the supplier gives is assembled into a
+  single document (`offerRules.assembleResponseText`) so the engine, the advisor
+  and the evidence checks all read the same source, and an attachment can never
+  drift from the text that was standardised.
+- The evidence rule was corrected while building this. The engine still has to
+  quote the supplier's document exactly, and the advisor's own import path still
+  demands an exact excerpt, but a supplier writing their own answer is the
+  source of that answer rather than a fabrication. Without that split, an answer
+  echoing itself would have satisfied the old check.
+- Offers that have not been standardised now say so in the comparison instead of
+  showing a misleading "unknown" against every requirement.
+
+Two further tests cover a prose-and-attachment response with no requirement grid,
+and the attachment rules (real upload, five-file cap, open invitation required).
+28 tests, lint and the production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the

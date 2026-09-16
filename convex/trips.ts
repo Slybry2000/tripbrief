@@ -2,6 +2,7 @@ import { ConvexError, v } from "convex/values";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import schema, { assessment, priceBasis, tripProfile } from "./schema";
+import { checkAssessments } from "./offerRules";
 import { getAuthUserId } from "@convex-dev/auth/server";
 
 async function identity(ctx: Pick<QueryCtx, "auth">) {
@@ -121,13 +122,10 @@ export const addOffer = mutation({
     const currency = args.currency.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency) || !Intl.supportedValuesOf("currency").includes(currency)) throw new ConvexError("Enter a recognized three-letter currency code.");
     const sourceText = text(args.sourceText, "Original proposal", 20000);
-    const numbers = new Set(args.assessments.map(a => a.requirementNumber));
-    if (args.assessments.length !== trip.requirements.length || numbers.size !== trip.requirements.length || trip.requirements.some(r => !numbers.has(r.number))) throw new ConvexError("Every requirement needs exactly one assessment.");
-    const assessments = args.assessments.map(a => {
-      const evidence = a.evidence.trim();
-      if (evidence.length > 2000 || (a.status !== "unknown" && !evidence)) throw new ConvexError("Each assessed answer needs proposal evidence (up to 2,000 characters).");
-      if (evidence && !sourceText.includes(evidence)) throw new ConvexError("Evidence must be an exact excerpt from the original proposal.");
-      return { ...a, evidence };
+    const assessments = checkAssessments(args.assessments, trip.requirements, sourceText, {
+      complete: true,
+      requireEvidence: true,
+      evidenceMustAppearInSource: true,
     });
     const offerId = await ctx.db.insert("offers", { ...args, supplierName: text(args.supplierName, "Supplier"), sourceText, currency, assessments, owner: trip.owner });
     await ctx.db.patch("trips", trip._id, { status: "comparing", updatedAt: Date.now() });
@@ -142,5 +140,18 @@ export const selectOffer = mutation({
     if (!offer || offer.tripId !== trip._id || offer.owner !== trip.owner) throw new ConvexError("Offer not found for this trip.");
     await ctx.db.patch("trips", trip._id, { status: "selected", selectedOfferId: offer._id, selectionReason: text(args.reason, "Decision reason", 2000), updatedAt: Date.now() });
     return null;
+  },
+});
+
+// The advisor reads a supplier's attachment through a short-lived URL, and only
+// for an offer on their own brief. Nothing here is publicly addressable.
+export const attachmentUrl = query({
+  args: { offerId: v.id("offers"), storageId: v.id("_storage") },
+  returns: v.union(v.null(), v.string()),
+  handler: async (ctx, args) => {
+    const offer = await ctx.db.get("offers", args.offerId);
+    if (!offer) throw new ConvexError("Offer not found.");
+    await ownedTrip(ctx, offer.tripId);
+    return await ctx.storage.getUrl(args.storageId);
   },
 });

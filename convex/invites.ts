@@ -10,6 +10,13 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import schema, { assessment, priceBasis } from "./schema";
+import {
+  assembleResponseText,
+  attachmentsValidator,
+  checkAssessments,
+  checkAttachments,
+} from "./offerRules";
+import { offerDetails } from "./schema";
 
 // The client generates 32 cryptographically random bytes, encoded as base64url.
 // Format validation cannot prove randomness; never derive tokens from trip IDs.
@@ -218,7 +225,18 @@ export const getByToken = query({
   },
 });
 export const submitByToken = mutation({
-  args: { token: v.string(), sourceText: v.string(), amount: v.number(), currency: v.string(), priceBasis, assessments: v.array(assessment) },
+  args: {
+    token: v.string(),
+    sourceText: v.string(),
+    amount: v.number(),
+    currency: v.string(),
+    priceBasis,
+    // A supplier may answer every requirement, some of them, or none at all:
+    // whatever they send is standardised against the requirements afterwards.
+    assessments: v.optional(v.array(assessment)),
+    details: v.optional(offerDetails),
+    attachments: v.optional(attachmentsValidator),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     const invite = await findInvite(ctx, args.token);
@@ -232,18 +250,74 @@ export const submitByToken = mutation({
     if (!Number.isFinite(args.amount) || args.amount < 0 || args.amount > 1e9) throw new ConvexError("Enter a valid non-negative price.");
     const currency = args.currency.trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency) || !Intl.supportedValuesOf("currency").includes(currency)) throw new ConvexError("Enter a recognized three-letter currency code.");
-    const numbers = new Set(args.assessments.map(a => a.requirementNumber));
-    if (args.assessments.length !== trip.requirements.length || numbers.size !== trip.requirements.length || trip.requirements.some(r => !numbers.has(r.number))) throw new ConvexError("Every requirement needs exactly one assessment.");
-    const assessments = args.assessments.map(a => {
-      const evidence = a.evidence.trim();
-      if (evidence.length > 2000 || (a.status !== "unknown" && !evidence)) throw new ConvexError("Each assessed answer needs proposal evidence.");
-      if (evidence && !sourceText.includes(evidence)) throw new ConvexError("Evidence must be an exact excerpt from the proposal.");
-      return { ...a, evidence };
+    // One document, assembled from everything the supplier gave, so the engine,
+    // the evidence check and the advisor all read the same source.
+    const responseText = assembleResponseText({
+      quote: sourceText,
+      inclusions: args.details?.inclusions,
+      exclusions: args.details?.exclusions,
+      itinerary: args.details?.itinerary,
+      rooms: args.details?.rooms,
+      meals: args.details?.meals,
+      transfers: args.details?.transfers,
+      terms: args.details?.terms,
+      answers: (args.assessments ?? []).map((item) => ({
+        requirementText:
+          trip.requirements.find((r) => r.number === item.requirementNumber)
+            ?.text ?? `Requirement ${item.requirementNumber}`,
+        answer: item.evidence,
+      })),
     });
-    const offerId = await ctx.db.insert("offers", { owner: trip.owner, tripId: trip._id, supplierName: invite.supplierName, sourceText, amount: args.amount, currency, priceBasis: args.priceBasis, assessments });
+    if (responseText.length > 20000)
+      throw new ConvexError("Your response is too long to send. Trim it and try again.");
+    await checkAttachments(ctx, args.attachments);
+    const assessments = checkAssessments(
+      args.assessments,
+      trip.requirements,
+      responseText,
+      {
+        complete: false,
+        requireEvidence: false,
+        evidenceMustAppearInSource: false,
+      },
+    );
+    const details = args.details
+      ? {
+          ...args.details,
+          exclusions: args.details.exclusions?.trim().slice(0, 2000),
+          itinerary: args.details.itinerary?.trim().slice(0, 8000),
+          terms: args.details.terms?.trim().slice(0, 4000),
+          rooms: args.details.rooms?.trim().slice(0, 200),
+        }
+      : undefined;
+    const offerId = await ctx.db.insert("offers", {
+      owner: trip.owner,
+      tripId: trip._id,
+      supplierName: invite.supplierName,
+      sourceText: responseText,
+      amount: args.amount,
+      currency,
+      priceBasis: args.priceBasis,
+      assessments,
+      details,
+      attachments: args.attachments,
+    });
     const now = Date.now();
     await ctx.db.patch("supplierInvites", invite._id, { status: "submitted", offerId, updatedAt: now });
     await ctx.db.patch("trips", trip._id, { status: "comparing", updatedAt: now });
     return null;
+  },
+});
+
+// The supplier has no account, so the upload URL is authorised by the same
+// single-use invitation token that opened the portal, and only while it is open.
+export const createUploadUrl = mutation({
+  args: { token: v.string() },
+  returns: v.object({ url: v.string() }),
+  handler: async (ctx, args) => {
+    const invite = await findInvite(ctx, args.token);
+    if (!invite || invite.status !== "open")
+      throw new ConvexError("This invitation is unavailable or already submitted.");
+    return { url: await ctx.storage.generateUploadUrl() };
   },
 });

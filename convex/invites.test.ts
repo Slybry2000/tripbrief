@@ -10,7 +10,15 @@ import { api } from "./_generated/api";
 const modules = import.meta.glob("./**/*.ts");
 type InviteApi = ApiFromModules<{ invites: typeof invites }>["invites"];
 // Typed references avoid depending on generated files before the local push.
-function mutationRef<N extends "create" | "revoke" | "submitByToken">(name: N) {
+function mutationRef<
+  N extends
+    | "create"
+    | "revoke"
+    | "submitByToken"
+    | "createUploadUrl"
+    | "createFromPartner"
+    | "setEmail",
+>(name: N) {
   return makeFunctionReference<"mutation", FunctionArgs<InviteApi[N]>, FunctionReturnType<InviteApi[N]>>(`invites:${name}`);
 }
 function queryRef<N extends "list" | "getByToken">(name: N) {
@@ -57,12 +65,96 @@ test("foreign users cannot create, list or revoke and revoked/invalid links cann
 });
 test("invalid proposal leaves invitation open and no offer; closed trips reject supplier writes", async () => {
   const { t, owner, tripId } = await setup();
-  await expect(t.mutation(mutationRef("submitByToken"), { ...proposal, assessments: [] })).rejects.toThrow("exactly one");
   await expect(t.mutation(mutationRef("submitByToken"), { ...proposal, amount: -1 })).rejects.toThrow("price");
-  await expect(t.mutation(mutationRef("submitByToken"), { ...proposal, assessments: [{ ...proposal.assessments[0], evidence: "Invented" }, proposal.assessments[1]] })).rejects.toThrow("exact excerpt");
+  await expect(t.mutation(mutationRef("submitByToken"), { ...proposal, assessments: [{ requirementNumber: 99, status: "yes", evidence: "Anything" }] })).rejects.toThrow("not part of this brief");
   expect((await owner.query(api.trips.get, { tripId })).offers).toHaveLength(0);
   expect((await owner.query(queryRef("list"), { tripId }))[0].status).toBe("open");
   await t.run(async ctx => { await ctx.db.patch("trips", tripId, { status: "selected" }); });
   expect(await t.query(queryRef("getByToken"), { token })).toBeNull();
   await expect(t.mutation(mutationRef("submitByToken"), proposal)).rejects.toThrow("closed");
+});
+
+test("a supplier may answer in prose, attach their own documents, and skip the grid", async () => {
+  const { t, owner, tripId } = await setup();
+  const storageId = await t.run(
+    async (ctx) => await ctx.storage.store(new Blob(["Fictional quote"])),
+  );
+  await t.mutation(mutationRef("submitByToken"), {
+    token,
+    sourceText:
+      "We would run this as a relaxed week based in the old town, with breakfast each day.",
+    amount: 2400,
+    currency: "EUR",
+    priceBasis: "per_person" as const,
+    details: {
+      inclusions: ["Accommodation", "Breakfast"],
+      itinerary: "Day one arrival, day two walking.",
+      rooms: "Twin rooms",
+    },
+    attachments: [
+      {
+        storageId,
+        name: "fictional-quote.pdf",
+        size: 14,
+        contentType: "application/pdf",
+      },
+    ],
+  });
+  const { offers } = await owner.query(api.trips.get, { tripId });
+  expect(offers).toHaveLength(1);
+  // Nothing was answered requirement by requirement: the engine standardises it
+  // from the prose and the attachment at the deadline.
+  expect(offers[0].assessments).toEqual([]);
+  expect(offers[0].standardisedAt).toBeUndefined();
+  expect(offers[0].details?.inclusions).toEqual(["Accommodation", "Breakfast"]);
+  expect(offers[0].attachments?.[0].name).toBe("fictional-quote.pdf");
+  expect((await owner.query(queryRef("list"), { tripId }))[0].status).toBe(
+    "submitted",
+  );
+});
+
+test("attachments must be real uploads, are capped, and need an open invitation", async () => {
+  const { t, owner, inviteId } = await setup();
+  const { url } = await t.mutation(mutationRef("createUploadUrl"), { token });
+  expect(url.startsWith("https://")).toBe(true);
+
+  const gone = await t.run(
+    async (ctx) => await ctx.storage.store(new Blob(["gone"])),
+  );
+  await t.run(async (ctx) => await ctx.storage.delete(gone));
+  await expect(
+    t.mutation(mutationRef("submitByToken"), {
+      token,
+      sourceText: "A short fictional quote.",
+      amount: 100,
+      currency: "USD",
+      priceBasis: "total" as const,
+      attachments: [{ storageId: gone, name: "gone.pdf", size: 4 }],
+    }),
+  ).rejects.toThrow("did not finish");
+
+  const ids = await t.run(async (ctx) =>
+    Promise.all(
+      [1, 2, 3, 4, 5, 6].map(() => ctx.storage.store(new Blob(["file"]))),
+    ),
+  );
+  await expect(
+    t.mutation(mutationRef("submitByToken"), {
+      token,
+      sourceText: "A short fictional quote.",
+      amount: 100,
+      currency: "USD",
+      priceBasis: "total" as const,
+      attachments: ids.map((storageId, index) => ({
+        storageId,
+        name: `file-${index}.pdf`,
+        size: 4,
+      })),
+    }),
+  ).rejects.toThrow("at most 5 files");
+
+  await owner.mutation(mutationRef("revoke"), { inviteId });
+  await expect(
+    t.mutation(mutationRef("createUploadUrl"), { token }),
+  ).rejects.toThrow("unavailable");
 });

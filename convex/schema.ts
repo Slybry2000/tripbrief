@@ -18,6 +18,27 @@ export const priceBasis = v.union(
   v.literal("per_night"),
 );
 
+// A supplier may attach the documents they already work with — a quote PDF, a
+// past itinerary, a completed trip — instead of retyping everything.
+export const attachment = v.object({
+  storageId: v.id("_storage"),
+  name: v.string(),
+  size: v.number(),
+  contentType: v.optional(v.string()),
+});
+
+// The parts of a supplier's answer that are not per-requirement. All optional:
+// a supplier who only writes prose and attaches a quote is a valid response.
+export const offerDetails = v.object({
+  inclusions: v.optional(v.array(v.string())),
+  exclusions: v.optional(v.string()),
+  itinerary: v.optional(v.string()),
+  rooms: v.optional(v.string()),
+  meals: v.optional(v.array(v.string())),
+  transfers: v.optional(v.array(v.string())),
+  terms: v.optional(v.string()),
+});
+
 // What the advisor gathers before any supplier is contacted. Every field is
 // optional so a brief can still be created quickly; the arrays are bounded in
 // trips.create. Budget stays with the advisor and is never shown to a supplier.
@@ -89,5 +110,10 @@ export default defineSchema({
     currency: v.string(),
     priceBasis,
     assessments: v.array(assessment),
+    details: v.optional(offerDetails),
+    attachments: v.optional(v.array(attachment)),
+    // Set when the engine has read this response against the requirements.
+    standardisedAt: v.optional(v.number()),
+    standardisedBy: v.optional(v.string()),
   }).index("by_tripId", ["tripId"]),
 });

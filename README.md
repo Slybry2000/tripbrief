@@ -71,8 +71,11 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
 3. Open the Suppliers card: it lists who is quoting, the private link for each
    one, and where each stands. Add a supplier's email address and send the
    invitation from the brief's own inbox.
-4. Open a supplier's link in a separate browser tab and submit their fictional
-   proposal; it appears in the requester's live comparison.
+4. Open a supplier's link in a separate browser tab and answer it the way a real
+   supplier would: their quote, how they would run the trip, their own words on
+   the requirements they want to answer, and any documents they already have —
+   a quote PDF, a sample itinerary, a completed trip. It appears in the
+   requester's live comparison with its attachments.
 5. Optionally use OpenAI to structure an emailed-response fallback.
 6. Compare offers and record a human decision with its reason.
 
