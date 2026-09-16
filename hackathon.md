@@ -611,3 +611,33 @@ empty-list branches are covered by tests (44 now, across 9 files). The combinati
 of an allowed account and a real send was not run again, deliberately: a fresh
 workspace would have spent the last of the account's three mail inboxes, and the
 send path itself was already proven by the earlier live delivery.
+
+### 2026-09-16 - something arriving has to announce itself
+
+Bryan asked whether a trigger was needed when an operator sends a quote. It was,
+and the reason is the shape of the app rather than a missing feature: the
+comparison is a live query, so a quote appears the moment it is submitted — but
+only while somebody is looking at it. A quote that lands on Thursday evening for a
+brief sent on Monday would otherwise wait for someone to happen to open the app.
+
+**What was built.** A quote submitted through an operator's link, and a reply that
+arrived by mail and was filed against a brief, both announce themselves by email.
+Several arrivals inside one sweep are announced together, so a brief sent to five
+operators is one message and not five. The announcement goes from the workspace's
+own mailbox to the workspace's own address: no new service, no second channel, and
+it is the sponsor that already carries everything else doing one more piece of
+real work. It is marked announced only after it actually sends, and a fifteen
+minute sweep catches anything a failed attempt missed — so nothing is announced
+twice and nothing sits silent. Mail that could not be filed is deliberately not
+announced: it is already visible on the home view, and it is not an answer to
+anything.
+
+**Verified live.** A quote submitted against a real brief on the local deployment
+queued exactly one arrival, with the brief's name, the operator's name and a
+readable line — "Alert Check Week — $2,050 net per person, 88% fit". It stayed
+pending because that account is not on the send list, which is the correct
+behaviour and also why no email was sent for it. That check also caught a small
+flaw now fixed: the alert named the operator by its internal slug rather than the
+name it was shortlisted under.
+
+54 tests across 11 files, lint, typecheck and the build pass.

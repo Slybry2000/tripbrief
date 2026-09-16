@@ -9,8 +9,10 @@
  */
 
 import type * as accounts from "../accounts.js";
+import type * as alerting from "../alerting.js";
 import type * as auth from "../auth.js";
 import type * as briefs from "../briefs.js";
+import type * as crons from "../crons.js";
 import type * as http from "../http.js";
 import type * as integrationLimits from "../integrationLimits.js";
 import type * as mailboxes from "../mailboxes.js";
@@ -30,8 +32,10 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   accounts: typeof accounts;
+  alerting: typeof alerting;
   auth: typeof auth;
   briefs: typeof briefs;
+  crons: typeof crons;
   http: typeof http;
   integrationLimits: typeof integrationLimits;
   mailboxes: typeof mailboxes;

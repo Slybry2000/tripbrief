@@ -152,6 +152,10 @@ export const submitByToken = mutation({
       proposalId,
       updatedAt: now,
     });
+    // Tell the advisor, without waiting for them to be looking at the page.
+    await ctx.scheduler.runAfter(0, internal.alerting.sweep, {
+      owner: row.owner,
+    });
     if (brief.status !== "selected")
       await ctx.db.patch("briefs", brief._id, {
         status: "comparing",

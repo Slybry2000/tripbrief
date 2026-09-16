@@ -324,6 +324,9 @@ export default defineSchema({
       v.literal("email_import"),
     ),
     submittedAt: v.number(),
+    // Set once the arrival has been announced to the advisor, so a quote is never
+    // announced twice and never silently missed.
+    announcedAt: v.optional(v.number()),
     standardisedAt: v.optional(v.number()),
     standardisedBy: v.optional(v.string()),
     // The operator's own words, kept when a proposal arrived as an emailed reply
@@ -355,6 +358,7 @@ export default defineSchema({
     text: v.string(),
     messageId: v.string(),
     receivedAt: v.number(),
+    announcedAt: v.optional(v.number()),
   })
     .index("by_briefId", ["briefId"])
     .index("by_owner", ["owner"])

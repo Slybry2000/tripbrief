@@ -1,4 +1,5 @@
 import { env, internalAction, internalMutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
@@ -171,6 +172,9 @@ export const record = internalMutation({
       receivedAt: args.receivedAt,
     });
     if (row) await ctx.db.patch("briefs", row.briefId, { updatedAt: now });
+    // A reply that was filed is something the advisor needs to know about; mail
+    // that could not be filed is already visible on the home view.
+    if (row) await ctx.scheduler.runAfter(0, internal.alerting.sweep, { owner: mailbox.owner });
     return row ? "filed" : "recorded";
   },
 });

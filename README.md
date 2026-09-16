@@ -100,6 +100,24 @@ A message's sender address is trivially forgeable, which is why the thread — n
 the sender — decides where a reply belongs, and why the address fallback is
 labelled as a fallback in the interface.
 
+### When something arrives, you are told
+
+The app is live: a quote submitted in an operator's browser appears in the
+advisor's comparison with no refresh. That is only true while the advisor is
+looking at it, so an arrival announces itself by email as well.
+
+- One departure and two arrivals are announced: a quote submitted through the
+  operator's link, and a reply that arrived by mail and was filed against a brief.
+- **Several arrivals inside one sweep are announced together.** A brief sent to
+  five operators produces one message, not five.
+- The announcement goes from the workspace's own mailbox to its own account
+  address, so it needs no new service and no second channel.
+- It is marked announced only after it actually sends, and a sweep every fifteen
+  minutes catches anything an attempt missed. Nothing is announced twice, and
+  nothing sits silent because one send failed.
+- A trial workspace cannot send, so it is never told — its arrivals stay pending
+  and its counts remain visible in the app.
+
 ## Accounts, and who is allowed to send
 
 A public URL that sends email is a liability unless it can only be done by the
