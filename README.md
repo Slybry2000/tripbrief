@@ -128,6 +128,16 @@ account from the owner's name. So:
   brief, rank operators, hand out private links, read a reply that is pasted in,
   compare proposals, select a trip. It belongs to the browser it was made in.
 - **An account** is email and password, and it keeps the work.
+- **The address is proved.** Sign-up sends a code and the account is unusable
+  until it comes back. That is not ceremony: an account's address is what decides
+  whether it may send email to real operators, so an unproved address would let
+  somebody claim an identity the deployment trusts.
+- **Forgotten passwords are recoverable.** The same code path sends a reset code
+  and the sign-in screen takes a new password against it.
+- Both codes go out through the mail account the product already has, so there is
+  no second service and the sponsor that carries everything else carries these.
+  The codes are long one-time tokens, and each flow's mail says what it is for and
+  what to do if it was not you.
 - **Sending is gated.** Only an account whose address is on the deployment's
   `SEND_ALLOWED_EMAILS` may send. With that list empty, nobody can — which is the
   right default for a deployment that is about to be public. A trial workspace is
@@ -225,6 +235,8 @@ npx convex env set OPENAI_API_KEY …           # OpenAI
 npx convex env set AGENTMAIL_API_KEY …        # AgentMail
 npx convex env set AGENTMAIL_WEBHOOK_SECRET … # the inbound shared secret
 npx convex env set SEND_ALLOWED_EMAILS you@agency.example   # who may send; required
+npx convex env set AUTH_MAIL_FROM …           # optional; sign-in codes come from
+                                              # an inbox the account already has
 npx convex run replies:registerWebhook        # one webhook covers every brief inbox
 npm run deploy
 ```

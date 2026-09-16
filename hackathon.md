@@ -641,3 +641,57 @@ flaw now fixed: the alert named the operator by its internal slug rather than th
 name it was shortlisted under.
 
 54 tests across 11 files, lint, typecheck and the build pass.
+
+### 2026-09-16 - proving the address, and letting a password be recovered
+
+Accounts existed and could not be recovered: forget the password and the workspace
+was gone, and nothing proved an account's address was its own. That second point
+was not tidiness — the address is what decides whether a workspace may email real
+operators, so an unproved address was a way to claim an identity the deployment
+trusts.
+
+Both now exist, and both send their code through the mail account the product
+already has, so the sponsor that carries everything else carries this too. Sign-up
+is gated on the code coming back; the sign-in screen can ask for a reset, take the
+code and set a new password.
+
+**Verified live, and the check found three things.**
+
+- Sign-up returned no session until the code was entered, which is the gate
+  working.
+- The code is a 24-character token, not the six digits the interface was
+  promising. The placeholder was corrected to "paste the code from the email" —
+  a placeholder that describes the wrong thing is how somebody concludes the mail
+  is broken.
+- A first attempt failed with "Could not verify code", correctly: the check had
+  read the *older* verification code out of the inbox instead of the new reset
+  one. That is the failure the check exists to catch, and it now reads only the
+  newest reset mail.
+
+With that fixed the reset ran end to end against the live deployment: code
+requested, code received, code entered with a new password, signed in, and the
+session still correctly refused permission to send because its address is not on
+the send list.
+
+**And the two sponsors that had never run against their live APIs now have been.**
+
+- **Firecrawl** returned nine real published operators for Portugal from three
+  generated queries, including the queries themselves, which is what the network
+  page shows an advisor.
+- **OpenAI** produced a structured draft from an operator's emailed reply: the
+  dates, the net price, the availability, the experiences included, what the
+  operator said it could not provide, and twelve quotes — every one of them
+  verbatim from the reply.
+
+That second run also exposed a defect worth recording. The exact-quote guard was
+too literal: a real reply failed it on an apostrophe and a dash, so the whole
+draft was refused and the feature was unusable against the mail it exists to read.
+Quotes are now compared after normalising whitespace and typography, and a quote
+that still cannot be found is **dropped and named** rather than voiding a draft
+the advisor could otherwise use — the rule from the RFP work: anything
+unsupported is dropped and disclosed. If the model produces evidence and none of
+it can be found, that is wholesale invention and the draft is refused outright.
+The draft review names the dropped fields so the advisor knows exactly what to
+check by hand.
+
+57 tests across 12 files, lint, typecheck and the build pass.

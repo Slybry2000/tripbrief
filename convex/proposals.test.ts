@@ -2,6 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
+import { quoteIsPresent } from "./proposals";
 import schema from "./schema";
 import { demoBrief as brief } from "./fixtures.test";
 
@@ -163,4 +164,25 @@ test("AI drafting refuses to run without a configured key and never writes on it
     }),
   ).rejects.toThrow("not been configured");
   expect((await t.query(api.briefs.get, { briefId }))!.proposals).toEqual([]);
+});
+
+// The quote rule is what keeps a model from putting words in an operator's mouth.
+// It was too literal at first: a real reply failed it on an apostrophe, which is
+// why it now compares after normalising typography — and still refuses a quote
+// that was never written.
+test("a quote is judged on its words, not on the punctuation that carried them", () => {
+  const reply =
+    "We can hold a 4-star property in the Alentejo with a pool.\nTwo are gluten-free - we do that every season.";
+
+  // The same words, however the model re-typed the whitespace or the dashes.
+  expect(quoteIsPresent("We can hold a 4-star property in the Alentejo with a pool.", reply)).toBe(true);
+  expect(quoteIsPresent("Two are gluten-free — we do that\nevery season.", reply)).toBe(true);
+  expect(quoteIsPresent("We can hold   a 4-star property", reply)).toBe(true);
+  expect(quoteIsPresent("Two are gluten-free – we do that every season.", reply)).toBe(true);
+  expect(quoteIsPresent("Two are gluten\u2011free \u2013 we do that every season.".replace("\u2011", "-"), reply)).toBe(true);
+
+  // And a quote that is not there is still refused, which is the whole point.
+  expect(quoteIsPresent("We include private guides every day.", reply)).toBe(false);
+  expect(quoteIsPresent("", reply)).toBe(false);
+  expect(quoteIsPresent("We can hold a 5-star property in the Alentejo with a pool.", reply)).toBe(false);
 });

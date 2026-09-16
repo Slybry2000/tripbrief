@@ -24,6 +24,26 @@ const money = (value: number) =>
   Math.max(0, Math.min(10_000_000, Math.round(value || 0)));
 const iso = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "");
 
+// Quotes are compared after normalising the things a model changes without
+// changing a single word: runs of whitespace, and the curly punctuation that
+// email clients and PDFs introduce. The point of the rule is that the operator
+// really wrote it — not that they typed it with the same apostrophe.
+export function normaliseQuote(value: string) {
+  return value
+    .replace(/[\u2018\u2019\u201A\u201B\u2032]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u2033]/g, '"')
+    .replace(/[\u2013\u2014\u2212]/g, "-")
+    .replace(/\u2026/g, "...")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function quoteIsPresent(quote: string, source: string) {
+  const needle = normaliseQuote(quote);
+  return needle.length > 0 && normaliseQuote(source).includes(needle);
+}
+
 // Every field the operator or the advisor supplies is normalised here. Optional
 // columns are always written with a neutral value rather than omitted, so a
 // revision can clear an earlier claim without a partial-update ambiguity.
@@ -266,6 +286,7 @@ type DraftFields = Infer<typeof draftValidator>;
 type DraftReply = {
   draft: DraftFields;
   evidence: { field: string; quote: string }[];
+  droppedEvidence: string[];
   caveats: string[];
 };
 
@@ -281,6 +302,10 @@ export const draftFromReply = action({
   returns: v.object({
     draft: draftValidator,
     evidence: v.array(v.object({ field: v.string(), quote: v.string() })),
+    // Fields whose quote could not be found in the reply. The draft is still
+    // useful, but the advisor knows exactly which parts to check by hand — the
+    // rule from the RFP work: anything unsupported is dropped and named.
+    droppedEvidence: v.array(v.string()),
     caveats: v.array(v.string()),
   }),
   // The return type is written out because this action calls `api` and
@@ -309,7 +334,7 @@ export const draftFromReply = action({
       apiKey: key,
       model: MODEL,
       developer:
-        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Every item in evidence must be an exact contiguous quote copied from the reply. This is a review draft for a human, never a recommendation.",
+        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Every item in evidence must be copied character for character out of the reply, exactly as written: do not paraphrase, shorten, tidy, correct or join two sentences. This is a review draft for a human, never a recommendation.",
       user: [
         "THE REQUEST",
         `Destination options the operator could propose: ${allowedDestinations
@@ -494,6 +519,7 @@ export function validateDraft(
     : ("Confirmation Required" as const);
 
   const cleanedEvidence: { field: string; quote: string }[] = [];
+  const droppedEvidence: string[] = [];
   for (const item of evidence) {
     if (
       !item ||
@@ -505,11 +531,20 @@ export function validateDraft(
     )
       continue;
     const quote = item.quote.trim();
-    // A quote that is not in the reply is a fabrication, and the whole draft is
-    // refused rather than quietly trimmed.
-    if (quote && !sourceText.includes(quote)) return reject();
-    if (quote) cleanedEvidence.push({ field: text(item.field, 60), quote });
+    if (!quote) continue;
+    const field = text(item.field, 60);
+    if (!quoteIsPresent(quote, sourceText)) {
+      // The model wrote something the operator did not. That quote is never shown
+      // as evidence; the field is reported instead, so the advisor checks it.
+      droppedEvidence.push(field || "an unnamed field");
+      continue;
+    }
+    cleanedEvidence.push({ field, quote });
   }
+
+  // If the model produced evidence and none of it can be found, it is inventing
+  // wholesale and the draft must not be offered at all.
+  if (evidence.length > 0 && cleanedEvidence.length === 0) return reject();
 
   return {
     draft: {
@@ -550,6 +585,7 @@ export function validateDraft(
       operatorNotes: text(str("operatorNotes"), LONG),
     },
     evidence: cleanedEvidence.slice(0, 12),
+    droppedEvidence: [...new Set(droppedEvidence)].slice(0, 12),
     caveats: Array.isArray(caveats)
       ? caveats
           .filter((item): item is string => typeof item === "string")

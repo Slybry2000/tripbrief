@@ -597,45 +597,70 @@ function errorText(cause: unknown, fallback: string) {
 function AdvisorApp() {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
-  const [mode, setMode] = useState<"signUp" | "signIn">("signUp");
+  // One small state machine for the four things that need an address: create an
+  // account, prove it, sign in, or get back in after forgetting the password.
+  const [mode, setMode] = useState<"signUp" | "signIn" | "verify" | "reset" | "resetCode">("signUp");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // A failed sign-in should say what to do about it, not repeat the provider's
-  // internal name for the failure.
-  const submit = async () => {
-    setError(""); setBusy(true);
-    try {
-      await signIn("password", { email: email.trim().toLowerCase(), password, flow: mode });
-    } catch (cause) {
-      const raw = cause instanceof Error ? cause.message : "";
-      setError(
-        /InvalidSecret|invalid secret/i.test(raw)
-          ? "That password does not match. Try again, or create an account."
-          : /InvalidAccountId|not found/i.test(raw)
-            ? "There is no account with that email yet."
-            : /TooManyFailedAttempts/i.test(raw)
-              ? "Too many attempts. Wait a minute and try again."
-              : /already exists|already registered/i.test(raw)
-                ? "That email already has an account — sign in instead."
-                : "That did not work. Check the email and password, and mind the 8-character minimum.",
-      );
-    } finally { setBusy(false); }
+  const plainError = (cause: unknown) => {
+    const raw = cause instanceof Error ? cause.message : "";
+    if (/InvalidSecret|invalid secret/i.test(raw)) return "That password does not match. Try again, or use the reset link below.";
+    if (/InvalidAccountId|not found/i.test(raw)) return "There is no account with that email yet.";
+    if (/InvalidCode|invalid code/i.test(raw)) return "That code is not right, or it has expired. Ask for a new one.";
+    if (/TooManyFailedAttempts/i.test(raw)) return "Too many attempts. Wait a minute and try again.";
+    if (/already exists|already registered|AccountAlreadyExists/i.test(raw)) return "That email already has an account — sign in instead.";
+    if (/password/i.test(raw) && /short|length|8/i.test(raw)) return "Please use at least 8 characters for the password.";
+    return "That did not work. Check the address and try again.";
   };
+
+  const submit = async () => {
+    setError(""); setNotice(""); setBusy(true);
+    const address = email.trim().toLowerCase();
+    try {
+      if (mode === "signUp") {
+        await signIn("password", { email: address, password, flow: "signUp" });
+        // Verification is required, so the account is not usable until the code
+        // comes back. Saying so is the difference between a wait and a bug.
+        setMode("verify"); setCode("");
+        setNotice(`We sent a code to ${address}. It expires in fifteen minutes.`);
+      } else if (mode === "verify") {
+        await signIn("password", { email: address, code: code.trim(), flow: "email-verification" });
+      } else if (mode === "signIn") {
+        await signIn("password", { email: address, password, flow: "signIn" });
+      } else if (mode === "reset") {
+        await signIn("password", { email: address, flow: "reset" });
+        setMode("resetCode"); setCode(""); setPassword("");
+        setNotice(`If ${address} has an account, a reset code is on its way.`);
+      } else {
+        await signIn("password", { email: address, code: code.trim(), newPassword: password, flow: "reset-verification" });
+      }
+    } catch (cause) { setError(plainError(cause)); }
+    finally { setBusy(false); }
+  };
+
+  const go = (next: typeof mode) => { setMode(next); setError(""); setNotice(""); setCode(""); };
 
   if (isLoading) return <Splash label="Opening the workspace…" />;
   if (!isAuthenticated)
     return <main className="app-shell"><section className="portal-login"><div className="portal-login-card"><span className="portal-logo">TB</span><p className="eyebrow">TRIPBRIEF · ITO SOURCING</p><h1>Incoming operator finder</h1><p>Start with what the client wants. Discover the destinations that fit, qualify incoming operators by their own capability records, and ask the shortlist to confirm what they would actually operate.</p>
-      <label>Email<input type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@agency.example" /></label>
-      <label>Password<input type="password" autoComplete={mode === "signUp" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} /></label>
+      {(mode === "verify" || mode === "resetCode") && <label>{mode === "verify" ? "The code we emailed you" : "The reset code" }<input autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} placeholder="paste the code from the email" /></label>}
+      {(mode === "resetCode") && <label>New password<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>}
+      {(mode === "signUp" || mode === "signIn") && <label>Email<input type="email" inputMode="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@agency.example" /></label>}
+      {(mode === "signUp" || mode === "signIn" || mode === "reset") && <label>Password<input type="password" autoComplete={mode === "signUp" ? "new-password" : "current-password"} value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void submit(); }} /></label>}
+      {notice && <p className="login-notice">{notice}</p>}
       {error && <p role="alert" className="login-error">{error}</p>}
-      <button className="primary full" disabled={busy || !email.includes("@") || password.length < 8} onClick={() => void submit()}>{busy ? "Working…" : mode === "signUp" ? "Create account →" : "Sign in →"}</button>
-      <button className="login-switch" onClick={() => { setMode(mode === "signUp" ? "signIn" : "signUp"); setError(""); }}>{mode === "signUp" ? "I already have an account" : "Create an account instead"}</button>
+      <button className="primary full" disabled={busy || !email.includes("@") || ((mode === "signUp" || mode === "signIn" || mode === "resetCode") && password.length < 8) || ((mode === "verify" || mode === "resetCode") && code.trim().length < 4)} onClick={() => void submit()}>{busy ? "Working…" : mode === "signUp" ? "Create account →" : mode === "verify" ? "Confirm the code →" : mode === "signIn" ? "Sign in →" : mode === "reset" ? "Send a reset code →" : "Set the new password →"}</button>
+      {mode === "signIn" && <button className="login-switch" onClick={() => go("reset")}>Forgot your password?</button>}
+      {(mode === "signUp" || mode === "signIn") && <button className="login-switch" onClick={() => go(mode === "signUp" ? "signIn" : "signUp")}>{mode === "signUp" ? "I already have an account" : "Create an account instead"}</button>}
+      {(mode === "verify" || mode === "reset" || mode === "resetCode") && <button className="login-switch" onClick={() => go("signIn")}>Back to signing in</button>}
       <div className="login-divider"><span>or</span></div>
       <button className="secondary full" onClick={() => { void signIn("anonymous").catch(() => setError("Could not open the workspace. Please try again.")); }}>Explore with a trial workspace</button>
-      <small>A trial workspace belongs to this browser and keeps everything except sending: it can build a brief, rank operators, hand out links and compare proposals. Creating an account keeps your work and is what lets TripBrief send a request on your behalf.</small>
+      <small>A trial workspace belongs to this browser and keeps everything except sending: it can build a brief, rank operators, hand out links and compare proposals. An account keeps your work, and proving your address is what lets TripBrief send a request in your name.</small>
     </div></section></main>;
   return <Workspace />;
 }
@@ -960,7 +985,8 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
     {notice && <div className="inline-success"><strong>Recorded</strong><span>{notice}</span></div>}
     {replies.length > 0 && <div className="inbox-list">{replies.map((message) => <article key={message._id}><div><small>{new Date(message.receivedAt).toLocaleString()} · {message.fromEmail}</small><h3>{message.subject || "(no subject)"}</h3><p>{message.text.slice(0, 240)}{message.text.length > 240 ? "…" : ""}</p></div><button className="primary" disabled={busy} onClick={() => void draft(message.operatorSlug ?? waiting[0]?.operatorSlug ?? "", message.text)}>Draft a proposal from this →</button></article>)}</div>}
     {waiting.map((row) => <article className="reply-compose" key={row._id}><div><h3>{row.operatorName}</h3><p>{row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "No request sent yet — the link is the other way in."}</p></div><label>Paste the reply<input value={slug === row.operatorSlug ? text : ""} placeholder="Paste what the operator wrote…" onChange={(event) => { setSlug(row.operatorSlug); setText(event.target.value); setResult(null); }} /></label><button className="secondary" disabled={busy || (slug !== row.operatorSlug) || text.trim().length < 20} onClick={() => void draft(row.operatorSlug, text)}>{busy && slug === row.operatorSlug ? "Drafting…" : "Draft the proposal"}</button></article>)}
-    {result && <div className="draft-review"><div className="section-heading split-heading"><div><p className="eyebrow">REVIEW DRAFT · {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}</p><h2>{result.draft.programName || "Untitled program"}</h2><p>The model read the reply and filled this in. Every quote below is copied from the reply; anything the reply did not say is left at zero or empty. Correct it, then record it.</p></div><span className="status-badge">{result.draft.finalFit}% final fit · {money(result.draft.netPricePerPerson)} net</span></div><div className="form-grid three"><label>Program name<input value={result.draft.programName} onChange={(event) => setResult({ ...result, draft: { ...result.draft, programName: event.target.value } })} /></label><label>Net price / person<input type="number" value={result.draft.netPricePerPerson} onChange={(event) => setResult({ ...result, draft: { ...result.draft, netPricePerPerson: Number(event.target.value) } })} /></label><label>Final proposed fit<input type="number" min="0" max="100" value={result.draft.finalFit} onChange={(event) => setResult({ ...result, draft: { ...result.draft, finalFit: Number(event.target.value) } })} /></label><label className="wide">Operator notes<textarea rows={3} value={result.draft.operatorNotes} onChange={(event) => setResult({ ...result, draft: { ...result.draft, operatorNotes: event.target.value } })} /></label></div><div className="result-detail-grid"><TagList title="Experiences it says it includes" values={result.draft.experiencesIncluded} /><TagList title="Requirements it says it meets" values={result.draft.requirementsMet} /><TagList title="It says it cannot provide" values={result.draft.cannotProvide} tone="missing" /></div>{result.evidence.length > 0 && <div className="evidence-list"><strong>Quoted from the reply</strong>{result.evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}{result.caveats.length > 0 && <div className="method-note"><strong>The model flagged</strong>{result.caveats.map((caveat) => <span key={caveat}>{caveat}</span>)}</div>}<div className="sticky-action"><span>Recording attaches this proposal to {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}, with the reply kept as its source.</span><button className="primary" disabled={busy} onClick={() => void record()}>Record this proposal</button></div></div>}
+    {result && <div className="draft-review"><div className="section-heading split-heading"><div><p className="eyebrow">REVIEW DRAFT · {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}</p><h2>{result.draft.programName || "Untitled program"}</h2><p>The model read the reply and filled this in. Every quote below is copied from the reply; anything the reply did not say is left at zero or empty. Correct it, then record it.</p></div><span className="status-badge">{result.draft.finalFit}% final fit · {money(result.draft.netPricePerPerson)} net</span></div><div className="form-grid three"><label>Program name<input value={result.draft.programName} onChange={(event) => setResult({ ...result, draft: { ...result.draft, programName: event.target.value } })} /></label><label>Net price / person<input type="number" value={result.draft.netPricePerPerson} onChange={(event) => setResult({ ...result, draft: { ...result.draft, netPricePerPerson: Number(event.target.value) } })} /></label><label>Final proposed fit<input type="number" min="0" max="100" value={result.draft.finalFit} onChange={(event) => setResult({ ...result, draft: { ...result.draft, finalFit: Number(event.target.value) } })} /></label><label className="wide">Operator notes<textarea rows={3} value={result.draft.operatorNotes} onChange={(event) => setResult({ ...result, draft: { ...result.draft, operatorNotes: event.target.value } })} /></label></div><div className="result-detail-grid"><TagList title="Experiences it says it includes" values={result.draft.experiencesIncluded} /><TagList title="Requirements it says it meets" values={result.draft.requirementsMet} /><TagList title="It says it cannot provide" values={result.draft.cannotProvide} tone="missing" /></div>{result.droppedEvidence.length > 0 && <div className="inline-warning"><strong>Check these by hand</strong><span>The model claimed these and then quoted something the operator did not write, so the quotes were dropped:</span>{result.droppedEvidence.map((field) => <span key={field}>· {field}</span>)}</div>}
+        {result.evidence.length > 0 && <div className="evidence-list"><strong>Quoted from the reply</strong>{result.evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}{result.caveats.length > 0 && <div className="method-note"><strong>The model flagged</strong>{result.caveats.map((caveat) => <span key={caveat}>{caveat}</span>)}</div>}<div className="sticky-action"><span>Recording attaches this proposal to {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}, with the reply kept as its source.</span><button className="primary" disabled={busy} onClick={() => void record()}>Record this proposal</button></div></div>}
   </section>;
 }
 

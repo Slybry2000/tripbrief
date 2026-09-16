@@ -102,6 +102,7 @@ h1, h2, h3, p { overflow-wrap: anywhere; }
 .portal-login-card input { width: 100%; }
 .login-switch { border: 0; background: transparent; color: var(--green); text-decoration: underline; margin-top: 6px; font-size: .9rem; }
 .login-error { color: var(--red); margin: 10px 0 0; }
+.login-notice { color: var(--green-dark); background: var(--mint-2); border: 1px solid #cfe4dc; border-radius: 10px; padding: 10px 12px; margin: 12px 0 0; font-size: .9rem; }
 .login-divider { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; color: var(--muted); font-size: .8rem; }
 .login-divider::before, .login-divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
 .dashboard-hero h1 { max-width: 800px; font-size: clamp(2.8rem, 5vw, 4.6rem); line-height: 1.03; margin: 0 0 22px; }

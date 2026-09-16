@@ -12,6 +12,9 @@ const app = defineApp({
     // Who may send real email. Empty means nobody, which is the safe default for
     // a public deployment.
     SEND_ALLOWED_EMAILS: v.optional(v.string()),
+    // Optional: the address sign-in codes are sent from. Without it, the
+    // deployment uses an inbox the mail account already has.
+    AUTH_MAIL_FROM: v.optional(v.string()),
     // The public address the app is served from. A response link has to point at
     // wherever the operator can actually open it: the deployment's own site URL in
     // production, and the local dev server when the backend is running locally.
