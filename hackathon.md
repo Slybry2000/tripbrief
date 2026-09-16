@@ -90,6 +90,9 @@ findings are corrections to this log's earlier claims, not new features:
   ("Sign in required"); `https://hip-minnow-543.convex.site/` returns 404. Every
   browser walkthrough recorded here was performed in a session already signed in
   as the owner, which is why this went unnoticed.
+  *(Corrected 2026-09-16: true when written. The `convex.site` address returned
+  404 that morning because no frontend was hosted there yet; it was hosting the
+  public frontend by the afternoon. See the entries below.)*
 - **AgentMail neither sends nor receives.** `convex/inboxes.ts` provisions an
   inbox per brief and `convex/http.ts` registers only auth routes; there is no
   send path, no inbound webhook and no message handling. Firecrawl performs a
@@ -131,3 +134,31 @@ health information); who can see it; and that deletion is by request because the
 preview has no delete control yet. The note states in its own text that it was
 written by the operator, not a lawyer, and is not legal advice. Tests, lint and
 the production build pass; the note is confirmed present in the deployed bundle.
+
+### 2026-09-16 - the review that produced the plan
+Backed the work up before touching it — tag `pre-ceo-review-20260916`, branch
+`codex/backup-pre-ceo-review-20260916`, and a full working-tree copy outside the
+repository — then ran the entry through an approval gate and an independent
+review. The gate's verdict on the plan of record was **BLOCKED**, and the review
+found three questions the earlier decision sheet had not asked.
+
+What the review changed here, with no product code affected:
+
+- The plan of record now records the seven decisions the operator settled on
+  2026-09-16 as settled, instead of listing them as still open.
+- Its scope section no longer promises the mature intake and the supplier roster
+  unconditionally: that material is private client work, this repository is
+  public, and the question of reusing it is now an explicit open decision rather
+  than an assumption inside a promise.
+- The demo video and the public post are named as required closing steps of this
+  phase rather than deferred extras, because the rules require both. See the
+  correction above: the operator had not yet accepted a date for them.
+- Corrected one stale line in the first 2026-09-16 entry above, which said the
+  `convex.site` address returned 404. It did that morning; it has served the
+  public frontend since the afternoon.
+
+The review's own gates and open questions are recorded privately, not in this
+public log. Nothing here marks anything implemented, measured or accepted: the
+email sponsor still neither sends nor receives, the schema still has no deadline,
+no batch grading, no client role and no vendor record, and there is still no
+demo video, social post or submitted entry.
