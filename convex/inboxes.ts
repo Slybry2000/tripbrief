@@ -4,17 +4,18 @@ import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
 
-const inboxResult = v.object({ email: v.string() });
+const inboxResult = v.object({ email: v.string(), inboxId: v.string() });
 
 export const provision = action({
   args: { tripId: v.id("trips") },
   returns: inboxResult,
-  handler: async (ctx, args): Promise<{ email: string }> => {
+  handler: async (ctx, args): Promise<{ email: string; inboxId: string }> => {
     const owner = await getAuthUserId(ctx);
     if (!owner) throw new ConvexError("Please sign in.");
     const { trip }: { trip: Doc<"trips">; offers: Doc<"offers">[] } =
       await ctx.runQuery(api.trips.get, { tripId: args.tripId });
-    if (trip.agentMailInboxEmail) return { email: trip.agentMailInboxEmail };
+    if (trip.agentMailInboxEmail && trip.agentMailInboxId)
+      return { email: trip.agentMailInboxEmail, inboxId: trip.agentMailInboxId };
     if (!env.AGENTMAIL_API_KEY)
       throw new ConvexError("Trip inboxes have not been configured.");
     await ctx.runMutation(internal.integrationLimits.consumeInbox, {
@@ -47,7 +48,7 @@ export const provision = action({
       inboxId: inbox.inboxId,
       email: inbox.email,
     });
-    return { email: inbox.email };
+    return { email: inbox.email, inboxId: inbox.inboxId };
   },
 });
 

@@ -17,7 +17,8 @@ The intended sponsor roles are:
 - Convex: database, server functions, workflows, and live updates.
 - Firecrawl: research supplied partner websites and attach cited evidence.
 - OpenAI: structure proposal text and identify comparable facts with citations.
-- AgentMail: give each brief its own inbox for future supplier-reply routing.
+- AgentMail: each brief gets its own inbox, and that inbox sends each supplier
+  their private response link.
 
 Firecrawl has been tested in the deployed backend; OpenAI and AgentMail have been
 tested with fictional local data. OpenAI returns review-only requirement
@@ -61,14 +62,19 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
 ## Demo path
 
 1. Start a private trial workspace and create a fictional group-travel brief.
-2. Search public supplier websites with Firecrawl and save a prospective partner.
-3. Create a secure response link for a fictional supplier and open it in a
-   separate browser tab—no supplier account is required.
-4. Submit the supplier's fictional proposal through its dedicated portal and
-   watch it appear in the requester's live comparison.
-5. Optionally create the brief's AgentMail inbox, research prospects with
-   Firecrawl, or use OpenAI to structure an emailed-response fallback.
+2. Search public supplier websites with Firecrawl and add prospects to the
+   shortlist. Shortlisting a partner also creates that partner's own response
+   link — one per supplier, no account for them.
+3. Open the Suppliers card: it lists who is quoting, the private link for each
+   one, and where each stands. Add a supplier's email address and send the
+   invitation from the brief's own inbox.
+4. Open a supplier's link in a separate browser tab and submit their fictional
+   proposal; it appears in the requester's live comparison.
+5. Optionally use OpenAI to structure an emailed-response fallback.
 6. Compare offers and record a human decision with its reason.
+
+Sending is always a deliberate click on one named supplier. Nothing is mailed
+automatically, and no message can go to more than one address.
 
 ## Submission gates
 

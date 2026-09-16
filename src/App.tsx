@@ -5,6 +5,7 @@ import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
 import { PartnerResearch } from "./PartnerResearch";
 import { SupplierPortal } from "./SupplierPortal";
+import { newCapabilityToken, supplierLink } from "./capability";
 function formText(data: FormData, name: string): string {
   const value = data.get(name);
   return typeof value === "string" ? value : "";
@@ -287,7 +288,7 @@ function Trip({ id }: { id: Id<"trips"> }) {
           </>
         )}
       </div>
-      <SupplierInvites tripId={id} />
+      <Suppliers tripId={id} />
       <PartnerResearch key={id} tripId={id} />
       <details className="admin-import">
         <summary>Import an emailed supplier response (fallback)</summary>
@@ -403,78 +404,72 @@ function getSupplierToken(): string {
   }
 }
 
-function newCapabilityToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  const encoded = btoa(String.fromCharCode(...bytes));
-  return encoded.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
-
-function supplierLink(token: string): string {
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.hash = "";
-  url.hash = `respond=${encodeURIComponent(token)}`;
-  return url.toString();
-}
-
-function SupplierInvites({ tripId }: { tripId: Id<"trips"> }) {
+// Suppliers are the researched shortlist, not names typed from nothing. Each one
+// gets a private response link, and the trip's own inbox sends it.
+function Suppliers({ tripId }: { tripId: Id<"trips"> }) {
   const invites = useQuery(api.invites.list, { tripId });
-  const create = useMutation(api.invites.create);
+  const partners = useQuery(api.partners.list, { tripId });
+  const createFromPartner = useMutation(api.invites.createFromPartner);
+  const createManual = useMutation(api.invites.create);
+  const setEmail = useMutation(api.invites.setEmail);
+  const sendInvitation = useAction(api.outbound.sendInvitation);
   const revoke = useMutation(api.invites.revoke);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
-  const [latestLink, setLatestLink] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState("");
+  const message = (cause: unknown, fallback: string) =>
+    cause instanceof Error && cause.message ? cause.message : fallback;
+  const waiting = (partners ?? []).filter(
+    (partner) => !(invites ?? []).some((i) => i.partnerId === partner._id),
+  );
 
   return (
     <div className="card invite-card">
-      <p className="eyebrow">SUPPLIER RESPONSES</p>
-      <h2>Invite suppliers to answer</h2>
-      <p>Each supplier gets a private link to view the brief and submit their own proposal. Their answers flow directly into your comparison.</p>
-      <form
-        className="invite-form"
-        onSubmit={(event) => {
-          event.preventDefault();
-          const form = event.currentTarget;
-          const data = new FormData(form);
-          const supplierName = formText(data, "inviteSupplier").trim();
-          const token = newCapabilityToken();
-          setBusy(true);
-          setError("");
-          setCopied(false);
-          void create({ tripId, supplierName, token })
-            .then(() => {
-              setLatestLink(supplierLink(token));
-              form.reset();
-            })
-            .catch((cause: unknown) =>
-              setError(cause instanceof Error ? cause.message : "Could not create the supplier invitation."),
-            )
-            .finally(() => setBusy(false));
-        }}
-      >
-        <label>
-          Supplier name
-          <input name="inviteSupplier" required maxLength={160} placeholder="Example: Harbor House Hotel" />
-        </label>
-        <button disabled={busy}>{busy ? "Creating link…" : "Create response link"}</button>
-      </form>
-      {latestLink && (
-        <div className="share-link">
-          <label>
-            Share this secure link with the supplier
-            <input value={latestLink} readOnly onFocus={(event) => event.currentTarget.select()} />
-          </label>
+      <p className="eyebrow">SUPPLIERS</p>
+      <h2>Who is quoting</h2>
+      <p>
+        Suppliers come from the shortlist you build above. Each one gets their
+        own private link, and the brief&rsquo;s own inbox sends it for you.
+      </p>
+      {waiting.length > 0 && (
+        <>
+          <p>
+            <small>
+              {waiting.length} shortlisted{" "}
+              {waiting.length === 1 ? "partner has" : "partners have"} no
+              response link yet.
+            </small>
+          </p>
           <button
-            type="button"
+            disabled={Boolean(busy)}
             onClick={() => {
-              void navigator.clipboard.writeText(latestLink).then(() => setCopied(true));
+              setBusy("links");
+              setError("");
+              void (async () => {
+                for (const partner of waiting) {
+                  try {
+                    await createFromPartner({
+                      tripId,
+                      partnerId: partner._id,
+                      token: newCapabilityToken(),
+                    });
+                  } catch (cause) {
+                    setError(
+                      message(
+                        cause,
+                        `Could not create a link for ${partner.title}.`,
+                      ),
+                    );
+                  }
+                }
+              })().finally(() => setBusy(""));
             }}
           >
-            {copied ? "Copied" : "Copy link"}
+            {busy === "links"
+              ? "Creating links…"
+              : `Create ${waiting.length} response ${waiting.length === 1 ? "link" : "links"} →`}
           </button>
-        </div>
+        </>
       )}
       {error && <p role="alert">{error}</p>}
       <div className="invite-list">
@@ -482,35 +477,112 @@ function SupplierInvites({ tripId }: { tripId: Id<"trips"> }) {
           <div key={invite._id}>
             <span>
               <strong>{invite.supplierName}</strong>
-              <span className={`invite-status ${invite.status}`}>{invite.status}</span>
+              <span className={`invite-status ${invite.status}`}>
+                {invite.status}
+              </span>
+              {invite.sentAt ? (
+                <small>
+                  Invitation sent {new Date(invite.sentAt).toLocaleDateString()}
+                </small>
+              ) : invite.email ? (
+                <small>Link ready for {invite.email} — not sent yet</small>
+              ) : (
+                <small>Link ready — add an email address to send it</small>
+              )}
+              {invite.sendError && (
+                <small role="alert">{invite.sendError}</small>
+              )}
             </span>
-            {invite.status === "open" && (
+            <span className="supplier-link">
+              <input
+                readOnly
+                aria-label={`Response link for ${invite.supplierName}`}
+                value={supplierLink(invite.token)}
+                onFocus={(event) => event.currentTarget.select()}
+              />
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => {
+                  setError("");
+                  void navigator.clipboard
+                    .writeText(supplierLink(invite.token))
+                    .then(() => setCopied(invite._id))
+                    .catch(() =>
+                      setError(
+                        "Copy failed. Select the link and copy it manually.",
+                      ),
+                    );
+                }}
+              >
+                {copied === invite._id ? "Copied" : "Copy link"}
+              </button>
+            </span>
+            {invite.status === "open" && !invite.sentAt && (
               <span className="invite-actions">
-                <button
-                  type="button"
-                  className="quiet-button"
-                  onClick={() => {
-                    setError("");
-                    void navigator.clipboard
-                      .writeText(supplierLink(invite.token))
-                      .then(() => setCopied(true))
-                      .catch(() => setError("Copy failed. Create a fresh link and select it manually."));
-                  }}
-                >
-                  Copy response link
-                </button>
+                {invite.email ? (
+                  <button
+                    type="button"
+                    disabled={busy === invite._id}
+                    onClick={() => {
+                      setBusy(invite._id);
+                      setError("");
+                      void sendInvitation({ inviteId: invite._id })
+                        .catch((cause: unknown) =>
+                          setError(
+                            message(cause, "The invitation could not be sent."),
+                          ),
+                        )
+                        .finally(() => setBusy(""));
+                    }}
+                  >
+                    {busy === invite._id
+                      ? "Sending…"
+                      : `Send invitation to ${invite.email}`}
+                  </button>
+                ) : (
+                  <form
+                    className="supplier-email"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const data = new FormData(event.currentTarget);
+                      setBusy(invite._id);
+                      setError("");
+                      void setEmail({
+                        inviteId: invite._id,
+                        email: formText(data, "supplierEmail"),
+                      })
+                        .catch((cause: unknown) =>
+                          setError(
+                            message(cause, "Could not save that email address."),
+                          ),
+                        )
+                        .finally(() => setBusy(""));
+                    }}
+                  >
+                    <input
+                      name="supplierEmail"
+                      type="email"
+                      required
+                      maxLength={254}
+                      aria-label={`Email address for ${invite.supplierName}`}
+                      placeholder="supplier@example.com"
+                    />
+                    <button disabled={busy === invite._id}>Save email</button>
+                  </form>
+                )}
                 <button
                   type="button"
                   className="quiet-button danger-button"
-                  disabled={busy}
+                  disabled={Boolean(busy)}
                   onClick={() => {
-                    setBusy(true);
+                    setBusy(invite._id);
                     setError("");
                     void revoke({ inviteId: invite._id })
                       .catch((cause: unknown) =>
-                        setError(cause instanceof Error ? cause.message : "Could not revoke this link."),
+                        setError(message(cause, "Could not revoke this link.")),
                       )
-                      .finally(() => setBusy(false));
+                      .finally(() => setBusy(""));
                   }}
                 >
                   Revoke
@@ -519,8 +591,53 @@ function SupplierInvites({ tripId }: { tripId: Id<"trips"> }) {
             )}
           </div>
         ))}
-        {invites?.length === 0 && <small>No suppliers invited yet.</small>}
+        {invites?.length === 0 && (
+          <small>
+            No suppliers yet. Search for partners above, add them to the
+            shortlist, then create their response links here.
+          </small>
+        )}
       </div>
+      <details>
+        <summary>Add a supplier that search did not find</summary>
+        <form
+          className="invite-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = event.currentTarget;
+            const data = new FormData(form);
+            const email = formText(data, "newSupplierEmail").trim();
+            setBusy("manual");
+            setError("");
+            void createManual({
+              tripId,
+              supplierName: formText(data, "newSupplierName").trim(),
+              token: newCapabilityToken(),
+              ...(email ? { email } : {}),
+            })
+              .then(() => form.reset())
+              .catch((cause: unknown) =>
+                setError(message(cause, "Could not add that supplier.")),
+              )
+              .finally(() => setBusy(""));
+          }}
+        >
+          <label>
+            Supplier name
+            <input
+              name="newSupplierName"
+              required
+              maxLength={160}
+              placeholder="Example: Harbor House Hotel"
+            />
+          </label>
+          <label>
+            Email address (optional for now)
+            <input name="newSupplierEmail" type="email" maxLength={254} />
+          </label>
+          <button disabled={busy === "manual"}>Add supplier</button>
+        </form>
+      </details>
     </div>
   );
 }

@@ -135,6 +135,32 @@ preview has no delete control yet. The note states in its own text that it was
 written by the operator, not a lawyer, and is not legal advice. Tests, lint and
 the production build pass; the note is confirmed present in the deployed bundle.
 
+### 2026-09-16 - suppliers come from the shortlist, and the inbox sends
+Replaced the trip's inert supplier card with a working supplier roster
+(`src/App.tsx`, `src/PartnerResearch.tsx`, `convex/invites.ts`,
+`convex/outbound.ts`, `convex/inboxes.ts`, `convex/schema.ts`):
+
+- Shortlisting a researched partner now also creates that partner's single-use
+  response link (`invites.createFromPartner`), and the Suppliers card can create
+  the missing links for a whole shortlist in one action. A supplier is a row on
+  a roster rather than a name typed from scratch; adding one by hand is still
+  possible for a supplier the search did not find.
+- The trip inbox now sends: `outbound.sendInvitation` mails that supplier their
+  own link from the brief's own AgentMail inbox, with an idempotency key so a
+  retry cannot send twice, and the requirement count and destination in the
+  message rather than the client's private brief. The message states that the
+  trip inbox is the only sender and that no traveller detail is included.
+- Sending is a deliberate click on one named supplier. Nothing is automatic and
+  no call can reach more than one address. A failed send records its reason on
+  the row instead of failing silently.
+- The supplier's email is captured separately from the link, validated, and
+  locked once the invitation has been sent.
+
+Six new tests cover the shortlist-to-link path, cross-brief partner refusal,
+email validation and locking, and the invitation message's contents; 23 tests,
+lint and the production build pass, and the new card is confirmed present in the
+deployed bundle. No email has been sent to any real supplier.
+
 ### 2026-09-16 - the review that produced the plan
 Backed the work up before touching it — tag `pre-ceo-review-20260916`, branch
 `codex/backup-pre-ceo-review-20260916`, and a full working-tree copy outside the

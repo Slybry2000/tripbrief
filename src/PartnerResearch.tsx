@@ -3,11 +3,14 @@ import { useAction, useMutation, useQuery } from "convex/react";
 import { ConvexError } from "convex/values";
 import { api } from "../convex/_generated/api";
 import type { Id } from "../convex/_generated/dataModel";
+import { newCapabilityToken } from "./capability";
 
 export function PartnerResearch({ tripId }: { tripId: Id<"trips"> }) {
   const search = useAction(api.research.search);
   const save = useMutation(api.partners.save);
+  const createFromPartner = useMutation(api.invites.createFromPartner);
   const partners = useQuery(api.partners.list, { tripId });
+  const invites = useQuery(api.invites.list, { tripId });
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -77,16 +80,25 @@ export function PartnerResearch({ tripId }: { tripId: Id<"trips"> }) {
             disabled={
               busy || partners?.some((partner) => partner.url === result.url)
             }
+            // Shortlisting a partner is also the moment they become a supplier
+            // with a response link — that is what the shortlist is for.
             onClick={() => {
               setBusy(true);
               setError("");
               void save({ tripId, ...result })
+                .then((partnerId) =>
+                  createFromPartner({
+                    tripId,
+                    partnerId,
+                    token: newCapabilityToken(),
+                  }),
+                )
                 .catch((cause: unknown) => {
                   setError(
                     cause instanceof ConvexError &&
                       typeof cause.data === "string"
                       ? cause.data
-                      : "Could not save partner.",
+                      : "Could not shortlist this partner.",
                   );
                 })
                 .finally(() => setBusy(false));
@@ -99,20 +111,35 @@ export function PartnerResearch({ tripId }: { tripId: Id<"trips"> }) {
         </article>
       ))}
       <h3>Saved partner shortlist</h3>
+      <p>
+        <small>
+          Shortlisting a partner also gives them a private response link,
+          ready in the Suppliers card below.
+        </small>
+      </p>
       {partners === undefined ? (
         <p>Loading shortlist…</p>
       ) : partners.length === 0 ? (
         <p>No partners shortlisted yet.</p>
       ) : (
-        partners.map((partner) => (
-          <article key={partner._id}>
-            <a href={partner.url} target="_blank" rel="noopener noreferrer">
-              {partner.title}
-            </a>
-            <p>{partner.description}</p>
-            <small>Research lead only · no invitation sent</small>
-          </article>
-        ))
+        partners.map((partner) => {
+          const invite = invites?.find((i) => i.partnerId === partner._id);
+          return (
+            <article key={partner._id}>
+              <a href={partner.url} target="_blank" rel="noopener noreferrer">
+                {partner.title}
+              </a>
+              <p>{partner.description}</p>
+              <small>
+                {invite
+                  ? invite.sentAt
+                    ? "Invitation sent from the brief's inbox"
+                    : "Response link ready · not sent yet"
+                  : "Shortlisted · response link not created yet"}
+              </small>
+            </article>
+          );
+        })
       )}
     </section>
   );

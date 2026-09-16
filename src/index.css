@@ -291,6 +291,35 @@ td p {
   background: #e1efdb;
   color: #38672f;
 }
+.invite-list > div > span:first-child {
+  flex-wrap: wrap;
+  flex: 0 1 34%;
+  min-width: 0;
+}
+.invite-list > div > span:first-child small {
+  display: block;
+  flex-basis: 100%;
+  color: #5c6b62;
+}
+.supplier-link {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.supplier-link input {
+  flex: 1 1 auto;
+  min-width: 120px;
+  font-size: 12px;
+  padding: 8px 10px;
+}
+.supplier-email {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.supplier-email input {
+  min-width: 180px;
+  padding: 8px 10px;
+}
 .admin-import {
   margin: 28px 0;
   background: transparent;

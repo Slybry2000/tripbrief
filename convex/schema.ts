@@ -23,6 +23,13 @@ export default defineSchema({
   supplierInvites: defineTable({
     token: v.string(), tripId: v.id("trips"), owner: v.string(), supplierName: v.string(),
     status: v.union(v.literal("open"), v.literal("submitted"), v.literal("revoked")),
+    // A supplier on the roster either comes from the researched shortlist or is
+    // added by hand; the email is what the trip inbox sends the link to.
+    partnerId: v.optional(v.id("partners")),
+    email: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    providerMessageId: v.optional(v.string()),
+    sendError: v.optional(v.string()),
     offerId: v.optional(v.id("offers")), createdAt: v.number(), updatedAt: v.number(),
   }).index("by_token", ["token"]).index("by_tripId", ["tripId"]),
   partners: defineTable({
