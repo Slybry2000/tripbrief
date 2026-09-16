@@ -253,6 +253,40 @@ first of the month lands under the right weekday. Nine new tests cover those,
 including a Sunday-start month, a leap-length February and a range that spans a
 clock change. 38 tests, lint and the production build pass.
 
+### 2026-09-16 - intake rebuilt on the group-trip form's judgment
+The intake now carries the approach from the group-trip intake built and
+blind-tested earlier in this project for private client work, with none of that
+work's branding, copy or pricing (`src/IntakeForm.tsx`, `src/intakeOptions.ts`,
+`convex/schema.ts`, `convex/trips.ts`). Eight steps:
+
+1. **Who brings the travellers** — a fit check before anything is collected. One
+   or two travellers are the wrong lane: no requirement list exists for
+   suppliers to quote against, so the form stops and collects nothing.
+2. **Where and when** — destination, group size, and a ticket-style calendar.
+3. **The group** — a short prose answer plus ages, room plan and needs.
+4. **A good day** — a prose answer plus interests, pace, setting and how the trip
+   should run.
+5. **Money and limits** — budget band, currency, what it covers, and the
+   guardrails a supplier must avoid.
+6. **What matters** — the requirement list, generated from the answers above and
+   edited by the advisor.
+7. **Assumptions** — everything the advisor left open becomes an explicit
+   statement a supplier can price, each with its own Change path, rather than
+   another question. Editing any earlier answer withdraws the approval, so a
+   supplier never prices an assumption that has since been replaced.
+8. **Review and save** — the brief separates three things that are usually mixed
+   together: what the advisor confirmed, what is assumed and accepted, and what
+   is open before booking and is deliberately not a pricing blocker. It also
+   states what every supplier must return.
+
+The guardrails are the other carried-over judgment: anything a supplier must
+avoid becomes a requirement in their own list, so it cannot be quietly proposed.
+The rules live in a pure module — assumptions, open items, guardrails-as-
+requirements, the lane check and the validation that refuses a thin brief — with
+eleven tests, including that an assumption is never phrased as a question and
+that the budget never leaks into a requirement. 46 tests, lint and the
+production build pass.
+
 ### 2026-09-16 - checkpoint taken before the day's changes
 Backed the build up before anything was altered: a git tag, a branch and a full
 working-tree copy outside the repository, with the suite re-run against the

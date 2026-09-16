@@ -67,6 +67,10 @@ uses a separate Convex deployment with server-side secrets and shared-use quotas
    answers, so the group's needs become questions a supplier can answer.
    Travel dates are picked on a ticket-style calendar: click the arrival day,
    then the day the trip ends.
+   The intake opens with a fit check (this is a group tool, and one or two
+   travellers are told so before anything is collected), and it turns whatever
+   the advisor leaves open into visible pricing assumptions to accept or change
+   rather than more questions.
 2. Search public supplier websites with Firecrawl and add prospects to the
    shortlist. Shortlisting a partner also creates that partner's own response
    link — one per supplier, no account for them.

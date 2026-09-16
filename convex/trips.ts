@@ -40,6 +40,11 @@ function validChips(values: string[] | undefined) {
   );
 }
 function validProfile(profile: {
+  lane?: string;
+  groupStory?: string;
+  goodDay?: string;
+  boundaries?: string;
+  guardrails?: string[];
   groupType?: string;
   ages?: string;
   rooms?: string;
@@ -53,9 +58,12 @@ function validProfile(profile: {
   budgetBand?: string;
   budgetCurrency?: string;
   budgetCovers?: string[];
+  assumptions?: string[];
+  assumptionsAccepted?: boolean;
 } | undefined) {
   if (!profile) return true;
   const singles = [
+    profile.lane,
     profile.groupType,
     profile.ages,
     profile.rooms,
@@ -68,11 +76,21 @@ function validProfile(profile: {
   if (singles.some((value) => value !== undefined && (value.trim().length === 0 || value.length > 120)))
     return false;
   if (profile.mustDo !== undefined && profile.mustDo.length > 2000) return false;
+  const prose = [profile.groupStory, profile.goodDay, profile.boundaries];
+  if (prose.some((value) => value !== undefined && value.length > 4000))
+    return false;
+  if (
+    profile.assumptions &&
+    (profile.assumptions.length > 12 ||
+      profile.assumptions.some((item) => item.length === 0 || item.length > 300))
+  )
+    return false;
   return (
     validChips(profile.needs) &&
     validChips(profile.interests) &&
     validChips(profile.styles) &&
-    validChips(profile.budgetCovers)
+    validChips(profile.budgetCovers) &&
+    validChips(profile.guardrails)
   );
 }
 

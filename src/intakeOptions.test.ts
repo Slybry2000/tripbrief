@@ -1,39 +1,140 @@
 import { expect, test } from "vitest";
-import { suggestRequirements, type Profile } from "./intakeOptions";
+import {
+  bookingOpenItems,
+  emptyProfile,
+  isIndividualLane,
+  pricingAssumptions,
+  suggestRequirements,
+  supplierMustReturn,
+  validateIntake,
+  type Profile,
+} from "./intakeOptions";
 
-const empty: Profile = { needs: [], interests: [], styles: [], budgetCovers: [] };
+const filled: Profile = {
+  ...emptyProfile(),
+  lane: "community",
+  groupStory: "A walking club of sixteen members, led by their chair.",
+  goodDay: "A short walk, one local stop, and a long table in the evening.",
+  dateFlexibility: "Flexible by a few days",
+  rooms: "Twin rooms",
+  budgetBand: "2,500 to 4,000 per person",
+  budgetCurrency: "USD",
+  budgetCovers: ["Accommodation", "Meals", "Transfers"],
+  assumptionsAccepted: true,
+};
 
-test("every answer the group gives becomes a requirement a supplier can answer", () => {
-  const suggestions = suggestRequirements(
+test("one or two travellers are the wrong lane and nothing is collected", () => {
+  expect(isIndividualLane("individual")).toBe(true);
+  expect(isIndividualLane("community")).toBe(false);
+  const errors = validateIntake({
+    destination: "Lisbon",
+    startDate: "2026-11-10",
+    endDate: "2026-11-13",
+    travellers: 12,
+    profile: { ...filled, lane: "individual" },
+  });
+  expect(errors.join(" ")).toContain("group tool");
+});
+
+test("what the advisor left open becomes an assumption, not another question", () => {
+  const sparse = pricingAssumptions({ ...emptyProfile(), lane: "community" }, 16);
+  const text = sparse.join(" ");
+  expect(text).toContain("working dates");
+  expect(text).toContain("shared twin rooms");
+  expect(text).toContain("indicative price");
+  expect(text).toContain("land only");
+  expect(text).toContain("16 travellers");
+  // Never an interrogative: an assumption is a statement a supplier can price.
+  expect(text).not.toContain("?");
+});
+
+test("answers that were given do not become assumptions", () => {
+  const text = pricingAssumptions(filled, 16).join(" ");
+  expect(text).not.toContain("shared twin rooms");
+  expect(text).not.toContain("indicative price");
+  expect(text).not.toContain("one-day move");
+  expect(text).toContain("16 travellers");
+});
+
+test("accessibility and dietary needs turn into priced assumptions", () => {
+  const text = pricingAssumptions(
     {
-      ...empty,
+      ...filled,
       needs: ["Step-free access", "Dietary requirements"],
-      interests: ["History", "Food and wine"],
-      styles: ["Private transfers"],
-      pace: "Relaxed",
-      budgetCovers: ["Accommodation", "Meals"],
     },
     14,
+  ).join(" ");
+  expect(text).toContain("step-free accommodation without a supplement");
+  expect(text).toContain("vegetarian, vegan and gluten-aware");
+});
+
+test("open items are separated from anything a supplier needs in order to price", () => {
+  const items = bookingOpenItems({
+    ...filled,
+    boundaries: "The exact dietary list follows before booking.",
+  });
+  expect(items[0]).toContain("headcount");
+  expect(items.join(" ")).toContain("Dietary and allergy roster");
+  // Nothing here is a price blocker, and the brief says so.
+  expect(bookingOpenItems(filled).length).toBeGreaterThanOrEqual(2);
+});
+
+test("guardrails become requirements so a supplier cannot quietly propose them", () => {
+  const requirements = suggestRequirements(
+    { ...filled, guardrails: ["Steep paths or stair-heavy days", "Very early starts"] },
+    16,
   ).split("\n");
-  expect(suggestions).toContain("Step-free or accessible guest rooms");
-  expect(suggestions).toContain("Meals that meet the group's dietary requirements");
-  expect(suggestions).toContain("A private group transfer from the arrival point");
-  expect(suggestions).toContain("Rooming for 14 people as one group");
-  expect(suggestions).toContain("No more than one fixed activity per day");
-  expect(suggestions).not.toContain("Access to a pool, spa or similar");
+  expect(requirements).toContain("Avoid: steep paths or stair-heavy days");
+  expect(requirements).toContain("Avoid: very early starts");
+  expect(requirements).toContain("Rooming for 16 people as one group");
 });
 
-test("an empty intake still produces one honest requirement", () => {
-  expect(suggestRequirements(empty, 0)).toBe(
-    "A written quote covering the dates and the group size",
-  );
+test("nothing named in the requirements may leak the budget", () => {
+  const requirements = suggestRequirements(filled, 16);
+  expect(requirements.toLowerCase()).not.toContain("4,000");
+  expect(requirements.toLowerCase()).not.toContain("budget");
 });
 
-test("the budget is never turned into a requirement a supplier sees", () => {
-  const suggestions = suggestRequirements(
-    { ...empty, budgetBand: "Under 1,500 per person", budgetCurrency: "USD" },
-    8,
-  );
-  expect(suggestions.toLowerCase()).not.toContain("1,500");
-  expect(suggestions.toLowerCase()).not.toContain("budget");
+test("the brief tells every supplier exactly what to return", () => {
+  const lines = supplierMustReturn(16);
+  expect(lines[0]).toContain("16 travellers");
+  expect(lines.join(" ")).toContain("Inclusions, exclusions");
+  expect(lines.join(" ")).toContain("met, partly met, or unavailable");
+  expect(lines.join(" ")).toContain("cancellation terms");
+});
+
+test("a thin answer is caught before it reaches a supplier", () => {
+  const errors = validateIntake({
+    destination: "Lisbon",
+    startDate: "2026-11-10",
+    endDate: "2026-11-13",
+    travellers: 16,
+    profile: { ...emptyProfile(), lane: "community" },
+  });
+  expect(errors.join(" ")).toContain("Describe the group");
+  expect(errors.join(" ")).toContain("good day");
+  expect(errors.join(" ")).toContain("pricing assumptions");
+});
+
+test("a complete brief passes with no errors", () => {
+  expect(
+    validateIntake({
+      destination: "Northern Portugal",
+      startDate: "2026-11-10",
+      endDate: "2026-11-16",
+      travellers: 16,
+      profile: filled,
+    }),
+  ).toEqual([]);
+});
+
+test("a group smaller than three is refused", () => {
+  const errors = validateIntake({
+    destination: "Lisbon",
+    startDate: "2026-11-10",
+    endDate: "2026-11-13",
+    travellers: 2,
+    profile: filled,
+  });
+  expect(errors.join(" ")).toContain("starts at three");
 });

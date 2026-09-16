@@ -43,6 +43,11 @@ export const offerDetails = v.object({
 // optional so a brief can still be created quickly; the arrays are bounded in
 // trips.create. Budget stays with the advisor and is never shown to a supplier.
 export const tripProfile = v.object({
+  lane: v.optional(v.string()),
+  groupStory: v.optional(v.string()),
+  goodDay: v.optional(v.string()),
+  boundaries: v.optional(v.string()),
+  guardrails: v.optional(v.array(v.string())),
   groupType: v.optional(v.string()),
   ages: v.optional(v.string()),
   rooms: v.optional(v.string()),
@@ -56,6 +61,10 @@ export const tripProfile = v.object({
   budgetBand: v.optional(v.string()),
   budgetCurrency: v.optional(v.string()),
   budgetCovers: v.optional(v.array(v.string())),
+  // The assumptions the advisor accepted, recorded with the brief so the basis
+  // of a later quote is not a matter of memory.
+  assumptions: v.optional(v.array(v.string())),
+  assumptionsAccepted: v.optional(v.boolean()),
 });
 
 export default defineSchema({

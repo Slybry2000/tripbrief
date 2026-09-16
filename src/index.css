@@ -653,6 +653,73 @@ pre {
   margin-left: auto;
   color: #4c5b54;
 }
+.choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 22px;
+}
+.choice {
+  display: grid;
+  gap: 6px;
+  text-align: left;
+  padding: 18px;
+  background: #fff;
+  color: #19372f;
+  border: 1px solid #ced8c9;
+  border-radius: 6px;
+  font-weight: 500;
+}
+.choice strong {
+  font-size: 15px;
+}
+.choice span {
+  font-size: 13px;
+  color: #5c6b62;
+}
+.choice:hover {
+  border-color: #254f40;
+  background: #f3f6f0;
+}
+.choice[aria-pressed="true"] {
+  border-color: #254f40;
+  box-shadow: inset 0 0 0 1px #254f40;
+}
+.assumptions {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0;
+}
+.assumptions li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid #e0e4db;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.assumptions li span {
+  flex: 1;
+}
+.accept {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 14px;
+  background: #edf1e7;
+  border: 1px solid #ced8c9;
+  border-radius: 6px;
+  font-weight: 600;
+}
+.accept input {
+  width: auto;
+}
+.intake-body.narrow {
+  max-width: 560px;
+  margin: 60px auto;
+}
 @media (max-width: 860px) {
   .intake {
     grid-template-columns: 1fr;
