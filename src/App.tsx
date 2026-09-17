@@ -564,9 +564,121 @@ function PartnerRequest({ request, profile, quote }: { request: TripRequest; pro
     <section><h2>What we are asking you to return</h2><p className="form-help">A complete proposal, not a headline price: the program you would actually operate, the dates you can hold, what is included and what is not, the net price and its assumptions, your deposit and cancellation terms, and an answer to every requirement above.</p><div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div></section></section><section><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></section></div></section>;
 }
 
-function ProposalBuilder({ request, proposal, setProposal, submit }: { request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void; submit: () => void }) {
+// An operator should not have to retype the trip it already sells. It can hand
+// over the page on its own site, or the document it sends agencies, and the form
+// comes back filled in — to be checked, never trusted. A page we fetched can be
+// quote-checked against its own text; a document we only passed to the model
+// cannot, and the panel says which of the two it is holding.
+type ImportedDraft = {
+  draft: Record<string, unknown>;
+  evidence: { field: string; quote: string }[];
+  droppedEvidence: string[];
+  quoteCheck: boolean;
+  caveats: string[];
+};
+
+// A draft is a starting point, not an overwrite: a field the model left empty
+// keeps whatever the operator had already typed.
+function mergeImportedDraft(draft: Record<string, unknown>, current: OperatorProposal): OperatorProposal {
+  const filled = <T,>(value: T | null | undefined, fallback: T): T =>
+    value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0) ? fallback : value;
+  const figure = (value: unknown, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+  return {
+    ...current,
+    programName: filled(draft.programName as string, current.programName),
+    destinationId: filled(draft.destinationSlug as string, current.destinationId),
+    startDate: filled(draft.startDate as string, current.startDate),
+    endDate: filled(draft.endDate as string, current.endDate),
+    nights: figure(draft.nights, current.nights),
+    availability: filled(draft.availability as OperatorProposal["availability"], current.availability),
+    groupSizeAccepted: figure(draft.groupSizeAccepted, current.groupSizeAccepted),
+    hotelLevel: filled(draft.hotelLevel as string, current.hotelLevel),
+    hotelNotes: filled(draft.hotelNotes as string, current.hotelNotes),
+    transportation: filled(draft.transportation as string[], current.transportation),
+    experiencesIncluded: filled(draft.experiencesIncluded as string[], current.experiencesIncluded),
+    requirementsMet: filled(draft.requirementsMet as string[], current.requirementsMet),
+    changesOrAdditions: filled(draft.changesOrAdditions as string[], current.changesOrAdditions),
+    cannotProvide: filled(draft.cannotProvide as string[], current.cannotProvide),
+    finalFit: figure(draft.finalFit, current.finalFit),
+    netPricePerPerson: figure(draft.netPricePerPerson, current.netPricePerPerson),
+    currency: filled(draft.currency as string, current.currency),
+    pricingAssumptions: filled(draft.pricingAssumptions as string, current.pricingAssumptions),
+    depositPercent: figure(draft.depositPercent, current.depositPercent),
+    depositDueDaysBefore: figure(draft.depositDueDaysBefore, current.depositDueDaysBefore),
+    finalHeadcountDaysBefore: figure(draft.finalHeadcountDaysBefore, current.finalHeadcountDaysBefore),
+    finalPaymentDaysBefore: figure(draft.finalPaymentDaysBefore, current.finalPaymentDaysBefore),
+    travelerNamesDaysBefore: figure(draft.travelerNamesDaysBefore, current.travelerNamesDaysBefore),
+    roomReleaseDaysBefore: figure(draft.roomReleaseDaysBefore, current.roomReleaseDaysBefore),
+    operatorNotes: filled(draft.operatorNotes as string, current.operatorNotes),
+  };
+}
+
+function ImportPanel({ token, request, proposal, setProposal }: { token: string; request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void }) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+  const [evidence, setEvidence] = useState<{ field: string; quote: string }[]>([]);
+  const [dropped, setDropped] = useState<string[]>([]);
+  const readPage = useAction(api.operatorImport.draftFromUrl);
+  const readDocument = useAction(api.operatorImport.draftFromDocument);
+  const askForUpload = useMutation(api.operatorImport.uploadUrl);
+  // The model may only choose a destination the agency actually asked about.
+  const options = (request.selectedDestinationIds.length ? request.selectedDestinationIds : destinations.map((item) => item.id))
+    .map((id) => ({ slug: id, name: destinationName(id) }));
+
+  const apply = (result: ImportedDraft, source: string) => {
+    setProposal(mergeImportedDraft(result.draft ?? {}, proposal));
+    setEvidence(result.evidence ?? []);
+    setDropped(result.droppedEvidence ?? []);
+    setNote(
+      result.quoteCheck
+        ? `Filled in from ${source}. The quotes it rests on are below, copied out of your own material — check them, then correct anything wrong or missing before you submit.`
+        : `Filled in from ${source}. We could not check this one against its source, so treat every field as unchecked: correct anything wrong or missing before you submit.`,
+    );
+  };
+
+  const readPageNow = async () => {
+    setBusy("page"); setError(""); setNote(""); setEvidence([]); setDropped([]);
+    try {
+      apply(await readPage({ token, url: url.trim(), destinations: options }), "your page");
+    } catch (cause) {
+      setError(errorText(cause, "That page could not be read. Nothing below was changed."));
+    } finally { setBusy(""); }
+  };
+
+  const readFile = async (file: File) => {
+    setBusy("document"); setError(""); setNote(""); setEvidence([]); setDropped([]);
+    try {
+      const target = await askForUpload({ token });
+      const uploaded = await fetch(target, { method: "POST", body: file });
+      if (!uploaded.ok) throw new Error("That document could not be uploaded.");
+      const { storageId } = await uploaded.json();
+      apply(await readDocument({ token, storageId, filename: file.name, destinations: options }), "your document");
+    } catch (cause) {
+      setError(errorText(cause, "That document could not be read. Nothing below was changed."));
+    } finally { setBusy(""); }
+  };
+
+  return <div className="form-card">
+    <h2>Already have this trip written down?</h2>
+    <p className="form-help">Point us at the page on your own site, or upload the document you already send agencies, and this form fills itself in. It is a starting point, not a submission: nothing below is sent until you press the button at the bottom, and everything stays yours to correct.</p>
+    {error && <div className="inline-warning"><strong>That did not work</strong><span>{error}</span></div>}
+    {note && <div className="inline-success"><strong>Filled in</strong><span>{note}</span></div>}
+    {dropped.length > 0 && <div className="inline-warning"><strong>Check these by hand</strong><span>The draft named these and then quoted something that is not in your material, so those quotes were dropped:</span>{dropped.map((field) => <span key={field}>· {field}</span>)}</div>}
+    {evidence.length > 0 && <div className="evidence-list"><strong>Quoted from your material</strong>{evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}
+    <div className="form-grid three">
+      <label className="wide">A page on your own site<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://youragency.com/trips/…" /></label>
+      <label className="wide">The document you send agencies<input type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" disabled={Boolean(busy)} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readFile(file); }} /></label>
+    </div>
+    <div className="sticky-action"><span>{busy === "page" ? "Reading your page…" : busy === "document" ? "Reading your document…" : "A full https address for the trip itself, or a PDF or text file up to 12 MB."}</span><button className="primary" disabled={Boolean(busy) || !url.trim().startsWith("https://")} onClick={() => void readPageNow()}>Read my page →</button></div>
+  </div>;
+}
+
+function ProposalBuilder({ request, proposal, setProposal, token, submit }: { request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void; token: string; submit: () => void }) {
   const toggle = (key: "transportation" | "experiencesIncluded" | "requirementsMet", item: string) => setProposal({ ...proposal, [key]: proposal[key].includes(item) ? proposal[key].filter((value) => value !== item) : [...proposal[key], item] });
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell the agency exactly what you will provide.</h1><p>This becomes the offer your agency compares and the source for operational deadlines after selection.</p></div><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{destinations.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}>{hotelTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><div className="form-card"><h2>Fit, changes, and gaps</h2><div className="form-grid three"><label>Final proposed fit<input type="number" min="0" max="100" value={proposal.finalFit} onChange={(event) => setProposal({ ...proposal, finalFit: Number(event.target.value) })} /></label><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>)}</div></div><div className="quote-summary"><div><small>PROPOSED NET</small><strong>{money(proposal.netPricePerPerson)}</strong></div><div><small>TARGET RETAIL</small><strong>{money(request.targetRetailPricePerPerson)}</strong></div><div><small>EST. MARGIN</small><strong>{(((request.targetRetailPricePerPerson - proposal.netPricePerPerson) / request.targetRetailPricePerPerson) * 100).toFixed(1)}%</strong></div><button className="primary" onClick={submit}>Submit Full Proposal →</button></div></section>;
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell the agency exactly what you will provide.</h1><p>This becomes the offer your agency compares and the source for operational deadlines after selection.</p></div><ImportPanel token={token} request={request} proposal={proposal} setProposal={setProposal} /><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{destinations.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}>{hotelTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><div className="form-card"><h2>Fit, changes, and gaps</h2><div className="form-grid three"><label>Final proposed fit<input type="number" min="0" max="100" value={proposal.finalFit} onChange={(event) => setProposal({ ...proposal, finalFit: Number(event.target.value) })} /></label><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>)}</div></div><div className="quote-summary"><div><small>PROPOSED NET</small><strong>{money(proposal.netPricePerPerson)}</strong></div><div><small>TARGET RETAIL</small><strong>{money(request.targetRetailPricePerPerson)}</strong></div><div><small>EST. MARGIN</small><strong>{(((request.targetRetailPricePerPerson - proposal.netPricePerPerson) / request.targetRetailPricePerPerson) * 100).toFixed(1)}%</strong></div><button className="primary" onClick={submit}>Submit Full Proposal →</button></div></section>;
 }
 
 function Submitted({ goBack, label = "Back to the request →" }: { goBack: () => void; label?: string }) {
@@ -1062,7 +1174,7 @@ function OperatorApp({ token }: { token: string }) {
   const content = view === "workspace" ? (request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />)
     : view === "profile" ? <ProfileEditor profile={profile} setProfile={setProfile} save={() => void save()} />
     : view === "request" && request ? <PartnerRequest request={request} profile={profile} quote={() => go("quote")} />
-    : view === "quote" && request && draft ? <ProposalBuilder request={request} proposal={draft} setProposal={setDraft} submit={() => void send()} />
+    : view === "quote" && request && draft ? <ProposalBuilder request={request} proposal={draft} setProposal={setDraft} token={token} submit={() => void send()} />
     : view === "submitted" ? <Submitted goBack={() => go("workspace")} label="Back to the request →" />
     : request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />;
 

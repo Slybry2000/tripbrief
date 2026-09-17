@@ -1,11 +1,10 @@
 import {
   action,
   env,
-  internal,
   internalQuery,
   mutation,
-  type ActionCtx,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { structuredResponse } from "./openai";
 import { draftSchema, validateDraft } from "./proposals";
@@ -25,7 +24,14 @@ const MAX_SOURCE = 60_000;
 const MAX_FILE_BYTES = 12 * 1024 * 1024;
 
 export function cleanSourceUrl(value: string) {
-  const url = new URL(value.trim());
+  // A half-typed address is a mistake to explain, not a crash: anything that is
+  // not a whole https address comes back null and the action says what to do.
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
   if (url.protocol !== "https:") return null;
   if (url.username || url.password) return null;
   return url.href;
@@ -86,15 +92,34 @@ export const forToken = internalQuery({
 const developer =
   "You read an incoming tour operator's own trip material and fill in a structured proposal for a travel agency. Use only what the material states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when it is not stated. Every item in evidence must be copied character for character out of the material, exactly as written: do not paraphrase, shorten, tidy or join sentences. This is a draft for a human to check, never a recommendation.";
 
+// The brief the operator was sent, as the drafting step needs it. An action has
+// no database, so the link is resolved to this shape first.
+type DraftBrief = {
+  nights: number;
+  travelerCount: number;
+  minimumViableTravelers: number;
+  desiredExperiences: string[];
+  importantRequirements: string[];
+  transportationNeeds: string[];
+  accessibilityNeeds: string[];
+  targetRetailPricePerPerson: number;
+};
+
+// The return type is written out because these actions call `internal` for their
+// own link lookup, and the generated types import this module: without the
+// annotation TypeScript reports a circular inference instead of a real error.
+type ImportedDraft = ReturnType<typeof validateDraft>;
+
 async function fill(
-  ctx: ActionCtx,
+  brief: DraftBrief,
   material: { text: string } | { filename: string; dataUrl: string },
   destinations: { slug: string; name: string }[],
   openai: string,
-) {
+): Promise<ImportedDraft> {
+  const allowed = destinations.slice(0, 12);
   const request = [
     "THE REQUEST FROM THE AGENCY",
-    `Destination options: ${destinations.map((item) => `${item.slug} (${item.name})`).join(", ")}`,
+    `Destination options: ${allowed.map((item) => `${item.slug} (${item.name})`).join(", ")}`,
     `Nights requested: ${brief.nights}`,
     `Travellers: ${brief.travelerCount} (minimum viable ${brief.minimumViableTravelers})`,
     `Experiences requested: ${brief.desiredExperiences.join(", ")}`,
@@ -113,13 +138,13 @@ async function fill(
         ? `${request}\n${material.text}`
         : `${request}\n(Read the attached document.)`,
     schemaName: "operator_proposal_draft",
-    schema: draftSchema(brief, destinations.map((item) => item.slug)),
+    schema: draftSchema(brief, allowed.map((item) => item.slug)),
     ...("dataUrl" in material
       ? { file: { filename: material.filename, dataUrl: material.dataUrl } }
       : {}),
   });
   const sourceText = "text" in material ? material.text : "";
-  return validateDraft(raw, sourceText, brief, destinations, {
+  return validateDraft(raw, sourceText, brief, allowed, {
     verifiable: "text" in material,
   });
 }
@@ -128,7 +153,7 @@ async function fill(
 export const draftFromUrl = action({
   args: { token: v.string(), url: v.string(), destinations: v.array(v.object({ slug: v.string(), name: v.string() })) },
   returns: v.any(),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ImportedDraft> => {
     const url = cleanSourceUrl(args.url);
     if (!url)
       throw new ConvexError(
@@ -142,7 +167,7 @@ export const draftFromUrl = action({
     const firecrawl = env.FIRECRAWL_API_KEY?.trim();
     if (!firecrawl) throw new ConvexError("Page reading has not been configured.");
 
-    await ctx.runMutation(internal.integrationLimits.consumeAnalysis, {
+    await ctx.runMutation(internal.integrationLimits.consumeAnalysisForLink, {
       briefId: brief._id,
     });
     const page = await fetch("https://api.firecrawl.dev/v2/scrape", {
@@ -164,7 +189,7 @@ export const draftFromUrl = action({
       throw new ConvexError(
         "That page had no readable trip text. Try the page for the trip itself, or upload the document.",
       );
-    return await fill(ctx, brief, { text: markdown.slice(0, MAX_SOURCE) }, args.destinations, openai);
+    return await fill(brief, { text: markdown.slice(0, MAX_SOURCE) }, args.destinations, openai);
   },
 });
 
@@ -177,8 +202,12 @@ export const draftFromDocument = action({
     destinations: v.array(v.object({ slug: v.string(), name: v.string() })),
   },
   returns: v.any(),
-  handler: async (ctx, args) => {
-    const { brief } = await requestForToken(ctx, args.token);
+  handler: async (ctx, args): Promise<ImportedDraft> => {
+    const link = await ctx.runQuery(internal.operatorImport.forToken, {
+      token: args.token,
+    });
+    if (!link) throw new ConvexError("This response link is no longer active.");
+    const brief = link.brief;
     const openai = env.OPENAI_API_KEY?.trim();
     if (!openai) throw new ConvexError("AI drafting has not been configured.");
     const file = await ctx.storage.get(args.storageId);
@@ -191,11 +220,10 @@ export const draftFromDocument = action({
     for (const byte of bytes) binary += String.fromCharCode(byte);
     const dataUrl = `data:${type};base64,${btoa(binary)}`;
 
-    await ctx.runMutation(internal.integrationLimits.consumeAnalysis, {
+    await ctx.runMutation(internal.integrationLimits.consumeAnalysisForLink, {
       briefId: brief._id,
     });
     return await fill(
-      ctx,
       brief,
       { filename: args.filename.slice(0, 120), dataUrl },
       args.destinations,

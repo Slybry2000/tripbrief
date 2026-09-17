@@ -19,6 +19,7 @@ import type * as integrationLimits from "../integrationLimits.js";
 import type * as mailboxes from "../mailboxes.js";
 import type * as network from "../network.js";
 import type * as openai from "../openai.js";
+import type * as operatorImport from "../operatorImport.js";
 import type * as outbound from "../outbound.js";
 import type * as proposals from "../proposals.js";
 import type * as replies from "../replies.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   mailboxes: typeof mailboxes;
   network: typeof network;
   openai: typeof openai;
+  operatorImport: typeof operatorImport;
   outbound: typeof outbound;
   proposals: typeof proposals;
   replies: typeof replies;

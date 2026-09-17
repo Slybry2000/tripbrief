@@ -67,6 +67,28 @@ export const consumeAnalysis = internalMutation({
   },
 });
 
+// The operator's own import runs without an account: the request link it was
+// given is the credential. The quota still belongs to the brief's workspace,
+// which is the account paying for the providers, so it is spent on that owner's
+// behalf rather than skipped. Internal, so a client can only reach it through a
+// call that has already checked the link.
+export const consumeAnalysisForLink = internalMutation({
+  args: { briefId: v.id("briefs") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const brief = await ctx.db.get("briefs", args.briefId);
+    if (!brief) throw new ConvexError("Brief not found.");
+    await spend(
+      ctx,
+      brief.owner,
+      "analysisUser",
+      "analysisGlobal",
+      "AI drafting limit reached. Please try again later.",
+    );
+    return null;
+  },
+});
+
 export const consumeResearch = internalMutation({
   args: { briefId: v.id("briefs") },
   returns: v.null(),
