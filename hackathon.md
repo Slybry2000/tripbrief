@@ -721,3 +721,58 @@ the public address served the build from before the pivot. That gap is closed.
 Remaining for submission: the demo video (the existing project brief still
 describes the pre-pivot product and has never been rendered), the public build post
 tagging the four sponsors, and the submission itself.
+
+### 2026-09-16 - the operator's half of the promise
+
+The last feature built on this day was the reading: hand over a page on your own
+site, or the trip document you already send agencies, and a draft comes back. It
+was committed, and **nothing in the app could call it.** An operator opening its
+link still had to retype the trip it already sells.
+
+That is closed now, and closing it turned up four defects that had never run:
+
+- **`fill()` referenced a brief it was never given**, and the document path called
+  a function that does not exist. Neither had ever executed, because nothing could
+  reach them.
+- **`internal` was imported from the wrong generated module.**
+- **The shared quota check demanded a signed-in user.** An operator holds a link,
+  not an account, so every live import would have failed with "Please sign in" —
+  the first real run of the page import is what found it. The analysis quota still
+  belongs to the brief's workspace, which is the account paying for Firecrawl and
+  OpenAI, and is now spent on that workspace's behalf by an internal mutation that
+  only a link-checked caller can reach.
+- **A half-typed address crashed instead of being explained.**
+
+The reason all four survived a green build is worth recording: `npm run typecheck`
+only ever covered `src` and the tooling config. **The `convex` directory was never
+typechecked by the repository's own gate** — which is how a file that does not
+compile got committed. Regenerating the API bindings puts `convex/operatorImport.ts`
+back in the program, so `tsc` sees it from here on, and `npx convex dev` reports the
+rest (it typechecks the test files too; those have a known, pre-existing
+implicit-`any` gap that is not part of this change).
+
+| Ran for real | Result |
+|---|---|
+| A published operator page (Intrepid, Indonesia), through Firecrawl to OpenAI | quote-checked draft, 3 quotes copied out of the page, and the six fields it could not quote **named** rather than trusted |
+| An uploaded programme document, straight to storage | net 1,285 USD per person, 25% deposit, 14/45-day payment deadlines, 11 quotes — marked **unchecked**, because a document cannot be quoted back |
+| A token that is not a link | refused: "This response link is no longer active." |
+| A half-typed address | refused in words, before spending a scrape |
+
+In the interface the panel sits at the top of the proposal form and the draft
+fills the form the operator was going to fill in anyway: a field the model left
+empty keeps whatever was already typed, a page says its quotes can be checked, and
+a document says plainly that nothing was verified. Nothing is submitted until the
+operator presses the button at the bottom.
+
+59 tests across 13 files, lint, typecheck and the build pass. Deployed to
+`hip-minnow-543` and uploaded, `origin/master` at `3a492fa`, and the live address
+serves this build.
+
+**Still open.** Submission needs the demo video (the project at
+`videos/tripbrief-demo` still briefs the pre-pivot product and has never been
+rendered), the public build post tagging the four sponsors, and the submission
+itself. On the product side, two things from the earlier critique remain: the
+operator's proposal is still the older shape rather than an answer to the brief's
+numbered requirements R1..Rn (which is what would make the comparison a coverage
+matrix), and the sample trips are still wanted to lock rate tiers, rooming rules,
+seasonality and the standard inclusions list instead of guessing them.
