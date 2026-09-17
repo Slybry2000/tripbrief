@@ -776,3 +776,43 @@ operator's proposal is still the older shape rather than an answer to the brief'
 numbered requirements R1..Rn (which is what would make the comparison a coverage
 matrix), and the sample trips are still wanted to lock rate tiers, rooming rules,
 seasonality and the standard inclusions list instead of guessing them.
+
+### 2026-09-16 - the location list belongs to the workspace
+
+Step 2 offered six locations, read from a JSON file shipped with the frontend.
+That is a shortlist, not a discovery page, and nothing the agency ever did could
+change it.
+
+It is now the workspace's own list, built from three sources:
+
+- **The starter catalog** — the agency's own reference knowledge, and six places
+  became twenty-one, spanning every region a wellness group is likely to ask
+  about, each with its own strengths and planning notes.
+- **The places its operators serve**, read from the network, so onboarding an
+  operator in a new country puts that country on this page without anyone editing
+  a file.
+- **A location the advisor adds by hand**, for the client who asks for somewhere
+  the network has never been. Adding it also selects it for the brief, because
+  that is why it was added; finding operators there is step 3's job, and the page
+  says so rather than leaving an empty shortlist unexplained.
+
+Two rules keep the growth honest rather than merely bigger:
+
+- **A place nobody has assessed is not a 0% fit.** It is labelled *Not assessed
+  yet* and ranked below the places that actually score, because 0% is a judgement
+  nobody made. An advisor's own ticks on a location they added are their
+  assessment, and only theirs.
+- **Only a place the advisor added can be removed.** One the network covers is a
+  fact about the operators, and deleting it here would hide an operator from the
+  matching that reads the same list. Every card says where it came from, and how
+  many operators serve it.
+
+The brief's twelve-location ceiling, enforced silently on save until now, is said
+out loud when a thirteenth is selected. The published destination baselines moved
+with the catalog: for the demo wellness brief the ranking is Bali 100, Thailand
+98, then Costa Rica, Portugal, Sri Lanka and Mexico at 88-90, with the cold and
+desert destinations at the bottom.
+
+New table `destinations` (`owner, slug, name, country, strengths`) deployed with
+its index. 65 tests across 15 files, lint, typecheck and the build pass. Commit
+`b6173eb`, pushed, and the public address serves it.
