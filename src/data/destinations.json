@@ -189,5 +189,376 @@
       "Weak fit for a beach-focused request",
       "Less naturally wellness-led than Bali or Costa Rica"
     ]
+  },
+  {
+    "id": "vietnam",
+    "name": "Vietnam",
+    "country": "Vietnam",
+    "climates": ["warm", "tropical"],
+    "experienceStrengths": {
+      "wellness": 3,
+      "yoga": 3,
+      "meditation": 3,
+      "spa": 3,
+      "healthy_food": 4,
+      "beach": 4,
+      "culture": 5,
+      "history": 4,
+      "light_adventure": 4,
+      "hiking": 3,
+      "nature": 4,
+      "cooking": 5,
+      "wildlife": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Strong on food, culture, coastline and value; wellness is available but is rarely the headline.",
+    "watchOuts": [
+      "North and south need separate trips or long internal flights",
+      "Weather differs sharply between regions in the same month"
+    ]
+  },
+  {
+    "id": "japan",
+    "name": "Japan",
+    "country": "Japan",
+    "climates": ["mild", "cool"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "yoga": 3,
+      "meditation": 4,
+      "spa": 4,
+      "hot_springs": 5,
+      "healthy_food": 5,
+      "culture": 5,
+      "history": 5,
+      "hiking": 4,
+      "nature": 4,
+      "cooking": 4,
+      "luxury_resort": 5,
+      "private_group_experiences": 4,
+      "wildlife": 2
+    },
+    "description": "Quiet luxury, onsen, temple stays and food; excellent for a slow, structured group trip.",
+    "watchOuts": [
+      "Costs run high for groups outside the cities",
+      "Spring and autumn need booking a year ahead"
+    ]
+  },
+  {
+    "id": "sri-lanka",
+    "name": "Sri Lanka",
+    "country": "Sri Lanka",
+    "climates": ["warm", "tropical"],
+    "experienceStrengths": {
+      "wellness": 5,
+      "yoga": 5,
+      "meditation": 5,
+      "spa": 5,
+      "healthy_food": 4,
+      "beach": 4,
+      "culture": 5,
+      "history": 4,
+      "nature": 4,
+      "wildlife": 4,
+      "cooking": 4,
+      "hiking": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Ayurveda, tea country, temples and coast: the strongest wellness value outside Bali and Thailand.",
+    "watchOuts": [
+      "Ground transfers between regions are long",
+      "The monsoon moves around the island, so route choice matters"
+    ]
+  },
+  {
+    "id": "nepal",
+    "name": "Nepal",
+    "country": "Nepal",
+    "climates": ["mild", "cool"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "yoga": 4,
+      "meditation": 5,
+      "hiking": 5,
+      "adventure": 4,
+      "nature": 5,
+      "culture": 5,
+      "history": 4,
+      "luxury_resort": 3,
+      "private_group_experiences": 4
+    },
+    "description": "Meditation and mountain walking, with the valley's heritage and retreat centres.",
+    "watchOuts": [
+      "Altitude and trekking grade must suit the group",
+      "Comfort level drops away from Kathmandu and Pokhara"
+    ]
+  },
+  {
+    "id": "bhutan",
+    "name": "Bhutan",
+    "country": "Bhutan",
+    "climates": ["cool", "mild"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "meditation": 5,
+      "culture": 5,
+      "history": 4,
+      "hiking": 4,
+      "nature": 5,
+      "luxury_resort": 5,
+      "private_group_experiences": 4
+    },
+    "description": "Monasteries, valleys and low-volume luxury; a natural fit for a contemplative group.",
+    "watchOuts": [
+      "The daily sustainable development fee is charged per traveller",
+      "Guide and itinerary rules make it the least flexible destination here"
+    ]
+  },
+  {
+    "id": "kerala",
+    "name": "Kerala",
+    "country": "India",
+    "climates": ["warm", "tropical"],
+    "experienceStrengths": {
+      "wellness": 5,
+      "yoga": 5,
+      "meditation": 5,
+      "spa": 5,
+      "healthy_food": 4,
+      "culture": 5,
+      "nature": 4,
+      "cooking": 4,
+      "beach": 3,
+      "wildlife": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Classical ayurveda and yoga in the backwaters, with strong retreat infrastructure.",
+    "watchOuts": [
+      "Monsoon season runs June to August",
+      "Ayurvedic programmes usually need seven nights minimum"
+    ]
+  },
+  {
+    "id": "morocco",
+    "name": "Morocco",
+    "country": "Morocco",
+    "climates": ["warm", "mild"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "yoga": 3,
+      "spa": 4,
+      "hot_springs": 4,
+      "culture": 5,
+      "history": 5,
+      "cooking": 5,
+      "healthy_food": 4,
+      "nature": 4,
+      "light_adventure": 4,
+      "hiking": 4,
+      "luxury_resort": 5,
+      "private_group_experiences": 4
+    },
+    "description": "Riads, hammams, markets and the mountains: a short-haul option with real cultural depth.",
+    "watchOuts": [
+      "Summer heat in Marrakech and the desert limits daytime activity",
+      "Ramadan changes what is open and when"
+    ]
+  },
+  {
+    "id": "peru",
+    "name": "Peru",
+    "country": "Peru",
+    "climates": ["mild", "cool"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "yoga": 4,
+      "meditation": 5,
+      "hiking": 5,
+      "adventure": 4,
+      "nature": 5,
+      "culture": 5,
+      "history": 5,
+      "cooking": 4,
+      "healthy_food": 4,
+      "luxury_resort": 4,
+      "private_group_experiences": 4
+    },
+    "description": "Sacred Valley retreats, walking and Andean culture, with a strong wellness-tourism base in Cusco.",
+    "watchOuts": [
+      "Altitude affects the first two days and the group's pace",
+      "Inca Trail permits sell out months ahead"
+    ]
+  },
+  {
+    "id": "mexico",
+    "name": "Mexico",
+    "country": "Mexico",
+    "climates": ["warm", "tropical"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "yoga": 5,
+      "meditation": 4,
+      "spa": 5,
+      "hot_springs": 3,
+      "healthy_food": 4,
+      "beach": 5,
+      "culture": 5,
+      "history": 5,
+      "cooking": 5,
+      "nature": 4,
+      "luxury_resort": 5,
+      "private_group_experiences": 5,
+      "wildlife": 3
+    },
+    "description": "Yoga and spa resorts on both coasts, with Maya heritage and food for the rest of the week.",
+    "watchOuts": [
+      "Hurricane season runs June to November on the Caribbean side",
+      "Resort areas can feel insulated from the country"
+    ]
+  },
+  {
+    "id": "iceland",
+    "name": "Iceland",
+    "country": "Iceland",
+    "climates": ["cool"],
+    "experienceStrengths": {
+      "wellness": 4,
+      "spa": 4,
+      "hot_springs": 5,
+      "hiking": 4,
+      "nature": 5,
+      "adventure": 4,
+      "light_adventure": 3,
+      "luxury_resort": 5,
+      "private_group_experiences": 4
+    },
+    "description": "Geothermal bathing, glaciers and clean air; a short flight for a restorative, outdoor-led week.",
+    "watchOuts": [
+      "Weather changes fast enough to move an itinerary",
+      "Winter daylight is short and driving is limited"
+    ]
+  },
+  {
+    "id": "croatia",
+    "name": "Croatia",
+    "country": "Croatia",
+    "climates": ["mild", "warm"],
+    "experienceStrengths": {
+      "beach": 5,
+      "culture": 5,
+      "history": 4,
+      "cooking": 4,
+      "wine": 4,
+      "nature": 4,
+      "wellness": 3,
+      "yoga": 3,
+      "spa": 3,
+      "hiking": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Island coast, old towns and wine; wellness is secondary to food, water and scenery.",
+    "watchOuts": [
+      "July and August are crowded and expensive on the islands",
+      "Group moves between islands depend on ferries"
+    ]
+  },
+  {
+    "id": "spain",
+    "name": "Spain",
+    "country": "Spain",
+    "climates": ["mild", "warm"],
+    "experienceStrengths": {
+      "culture": 5,
+      "history": 5,
+      "cooking": 5,
+      "wine": 4,
+      "beach": 4,
+      "hiking": 4,
+      "wellness": 3,
+      "yoga": 3,
+      "spa": 4,
+      "fitness": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Food, wine, walking and coast, with a wide spread of price points for groups.",
+    "watchOuts": [
+      "August heat makes inland cities hard work",
+      "Coastal resorts and quiet countryside suit different groups"
+    ]
+  },
+  {
+    "id": "turkey",
+    "name": "Turkey",
+    "country": "Turkey",
+    "climates": ["mild", "warm"],
+    "experienceStrengths": {
+      "culture": 5,
+      "history": 5,
+      "cooking": 5,
+      "beach": 4,
+      "spa": 5,
+      "hot_springs": 4,
+      "wellness": 4,
+      "nature": 4,
+      "hiking": 3,
+      "luxury_resort": 5,
+      "private_group_experiences": 5
+    },
+    "description": "Hammams and hot springs plus deep history; strong value for a large group.",
+    "watchOuts": [
+      "Coast and Cappadocia need an internal flight",
+      "Summer heat on the Aegean coast is intense"
+    ]
+  },
+  {
+    "id": "kenya",
+    "name": "Kenya",
+    "country": "Kenya",
+    "climates": ["warm", "mild"],
+    "experienceStrengths": {
+      "wildlife": 5,
+      "nature": 5,
+      "culture": 4,
+      "adventure": 4,
+      "wellness": 3,
+      "yoga": 3,
+      "spa": 3,
+      "beach": 3,
+      "luxury_resort": 4,
+      "private_group_experiences": 4
+    },
+    "description": "Safari and coast, increasingly sold as a restorative week rather than a checklist.",
+    "watchOuts": [
+      "Park fees add up quickly per traveller per day",
+      "Long game drives are a poor fit for low-mobility travellers"
+    ]
+  },
+  {
+    "id": "fiji",
+    "name": "Fiji",
+    "country": "Fiji",
+    "climates": ["tropical", "warm"],
+    "experienceStrengths": {
+      "beach": 5,
+      "spa": 5,
+      "wellness": 4,
+      "yoga": 4,
+      "nature": 4,
+      "culture": 4,
+      "wildlife": 3,
+      "luxury_resort": 5,
+      "family_travel": 4,
+      "private_group_experiences": 5
+    },
+    "description": "Island resorts built for groups, with spa and water-based days and little travel between stops.",
+    "watchOuts": [
+      "Long haul from North America or Europe",
+      "Cyclone season runs November to April"
+    ]
   }
 ]

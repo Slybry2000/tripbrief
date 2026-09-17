@@ -14,6 +14,7 @@ import type * as auth from "../auth.js";
 import type * as authMail from "../authMail.js";
 import type * as briefs from "../briefs.js";
 import type * as crons from "../crons.js";
+import type * as destinations from "../destinations.js";
 import type * as http from "../http.js";
 import type * as integrationLimits from "../integrationLimits.js";
 import type * as mailboxes from "../mailboxes.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   authMail: typeof authMail;
   briefs: typeof briefs;
   crons: typeof crons;
+  destinations: typeof destinations;
   http: typeof http;
   integrationLimits: typeof integrationLimits;
   mailboxes: typeof mailboxes;

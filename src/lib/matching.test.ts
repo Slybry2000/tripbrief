@@ -27,7 +27,7 @@ import type {
 } from "./types";
 
 const request = requestSeed as TripRequest;
-const destinations = destinationSeed as Destination[];
+const destinations = destinationSeed as unknown as Destination[];
 const partners: Partner[] = seedOperators.map((operator) => ({
   id: operator.slug,
   name: operator.name,
@@ -90,6 +90,10 @@ const rank = (tripRequest: TripRequest, limited = true) =>
     )
     .sort((a, b) => b.match.score - a.match.score);
 
+// The baseline covers the whole starter catalog, in file order. It grew when the
+// catalog did (six places to twenty-one), which is the one kind of change these
+// numbers are supposed to register: the ranking for this brief is now Bali 100,
+// Thailand 98, then Costa Rica, Portugal, Sri Lanka and Mexico at 88-90.
 test("the default brief's destination scores match the published baseline", () => {
   const actual = destinations.map((destination) => [
     destination.name,
@@ -102,6 +106,21 @@ test("the default brief's destination scores match the published baseline", () =
     ["Portugal", 90],
     ["Greece", 88],
     ["Tuscany", 65],
+    ["Vietnam", 83],
+    ["Japan", 63],
+    ["Sri Lanka", 88],
+    ["Nepal", 45],
+    ["Bhutan", 35],
+    ["Kerala", 85],
+    ["Morocco", 65],
+    ["Peru", 55],
+    ["Mexico", 88],
+    ["Iceland", 28],
+    ["Croatia", 58],
+    ["Spain", 58],
+    ["Turkey", 53],
+    ["Kenya", 48],
+    ["Fiji", 62],
   ]);
 });
 

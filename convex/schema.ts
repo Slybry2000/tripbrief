@@ -247,7 +247,23 @@ export default defineSchema({
     .index("by_token", ["token"])
     .index("by_owner_and_operatorSlug", ["owner", "operatorSlug"]),
 
-  briefs: defineTable({
+// The places an advisor put on the list themselves, for a client who asks for
+// somewhere the network has not reached yet. The starter catalog is the agency's
+// own reference knowledge and lives in the interface; the places the network
+// covers are read from the operators, so only what a person added is stored here.
+destinations: defineTable({
+  owner: v.string(),
+  slug: v.string(),
+  name: v.string(),
+  country: v.string(),
+  // What the advisor says this place is genuinely strong for, in the same
+  // vocabulary the brief uses. Empty is allowed: it means "not assessed yet",
+  // which is a different statement from "a poor fit".
+  strengths: v.array(v.string()),
+  updatedAt: v.number(),
+}).index("by_owner_and_slug", ["owner", "slug"]),
+
+briefs: defineTable({
     owner: v.string(),
     ...briefFields.fields,
     status: briefStatus,

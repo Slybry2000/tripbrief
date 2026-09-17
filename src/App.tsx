@@ -7,12 +7,26 @@ import type { Id } from "../convex/_generated/dataModel";
 import destinationSeed from "./data/destinations.json";
 import requestSeed from "./data/demo-request.json";
 import programSeed from "./data/programs.json";
-import { buildWorkbackSchedule, calculateDestinationMatch, calculateOperatorMatch, calculateProposalMargin, calculateTargetNet, calculateTripMatch, servesSelectedDestinations } from "./lib/matching";
+import { buildWorkbackSchedule, calculateOperatorMatch, calculateProposalMargin, calculateTargetNet, calculateTripMatch, servesSelectedDestinations } from "./lib/matching";
 import type { Destination, OperatorMatch, OperatorProfile, OperatorProposal, Partner, ReadyMadeTrip, TripRequest } from "./lib/types";
 import { newCapabilityToken, readResponseToken, responseLink } from "./capability";
 import { buildRequirements, hardNoList, missingMusts, TIER_LABEL } from "./lib/requirements";
+import { isAssessed, mergeDestinations, rankDestinations, type DestinationEntry, type DestinationListing } from "./lib/destinations";
 
-const destinations = destinationSeed as Destination[];
+// The catalog is JSON, so its per-entry strength tables infer as a union of
+// shapes; through `unknown` because the file's own type is what we mean.
+const destinationCatalog = destinationSeed as unknown as Destination[];
+
+// The list an advisor chooses from is not a constant: it is the catalog above,
+// plus the places this workspace's operators actually serve, plus the places the
+// advisor added for a client who asked for somewhere the network has not reached.
+// The matching engine reads it synchronously, so the live rows are merged in here
+// the same way the operator network is.
+let destinations: DestinationEntry[] = destinationCatalog.map((item) => ({ ...item, fromNetwork: false, addedByYou: false, operatorCount: 0 }));
+
+function cacheDestinations(rows: DestinationListing[]) {
+  destinations = mergeDestinations(destinationCatalog, rows);
+}
 const defaultRequest = requestSeed as TripRequest;
 
 // Ready-made programs and destinations are reference data: they never change
@@ -315,14 +329,123 @@ function BriefForm({ request, setRequest, next }: { request: TripRequest; setReq
   </section>;
 }
 
+// Where a place came from, in one line. The three sources behave differently:
+// the catalog is given, the network is a fact about the operators on file, and
+// an addition is a decision the advisor made.
+function locationSource(entry: DestinationEntry) {
+  const parts: string[] = [];
+  if (entry.operatorCount > 0) parts.push(`${entry.operatorCount} operator${entry.operatorCount === 1 ? "" : "s"} in your network`);
+  else if (entry.fromNetwork) parts.push("In your network, no operators on file yet");
+  if (entry.addedByYou) parts.push("added by you");
+  if (!parts.length) parts.push("starter catalog");
+  return parts.join(", ");
+}
+
 function DestinationDiscovery({ request, setRequest, next }: { request: TripRequest; setRequest: (value: TripRequest) => void; next: () => void }) {
-  const ranked = destinations.map((destination) => ({ destination, score: calculateDestinationMatch(request, destination) })).sort((a, b) => b.score - a.score);
+  const addLocation = useMutation(api.destinations.add);
+  const removeLocation = useMutation(api.destinations.remove);
+  const [filter, setFilter] = useState("");
+  const [picking, setPicking] = useState(false);
+  const [name, setName] = useState("");
+  const [country, setCountry] = useState("");
+  const [strengths, setStrengths] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState("");
+
+  const ranked = rankDestinations(request, destinations);
+  const needle = filter.trim().toLowerCase();
+  const visible = needle
+    ? ranked.filter(({ destination }) => `${destination.name} ${destination.country}`.toLowerCase().includes(needle))
+    : ranked;
+  const fromNetwork = destinations.filter((entry) => entry.operatorCount > 0).length;
+  const added = destinations.filter((entry) => entry.addedByYou).length;
+
   const toggleDestination = (destinationId: string) => {
+    // The brief carries twelve locations at most, and the rule is enforced when
+    // it is saved. Saying so here is the difference between a refusal and a
+    // selection that quietly disappears.
+    if (!request.selectedDestinationIds.includes(destinationId) && request.selectedDestinationIds.length >= 12) {
+      setError("A brief carries twelve locations at most. Deselect one before adding another.");
+      return;
+    }
     const selectedDestinationIds = request.selectedDestinationIds.includes(destinationId) ? request.selectedDestinationIds.filter((id) => id !== destinationId) : [...request.selectedDestinationIds, destinationId];
     setRequest({ ...request, selectedDestinationIds, selectedPartnerIds: [], selectedProposalId: null });
   };
   const selectedNames = request.selectedDestinationIds.map(destinationName);
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 2 · DESTINATION DISCOVERY & SELECTION</p><h1>Which locations is the customer interested in?</h1><p>Use the discovery scores as guidance, then select one or more locations the customer wants the agency to pursue. Only ITOs serving those locations will be considered next.</p></div><div className="destination-discovery-grid selectable-destinations">{ranked.map(({ destination, score }, index) => { const strengths = request.desiredExperiences.filter((item) => (destination.experienceStrengths[item] ?? 0) >= 4); const selected = request.selectedDestinationIds.includes(destination.id); return <article className={`destination-discovery-card ${selected ? "selected" : ""}`} key={destination.id}><span className="destination-rank">#{index + 1}</span><label className={`destination-select ${selected ? "checked" : ""}`}><input type="checkbox" checked={selected} onChange={() => toggleDestination(destination.id)} /><span>{selected ? "✓ Selected" : "+ Select location"}</span></label><div><p>{destination.country}</p><h2>{destination.name}</h2><span>{destination.description}</span></div><Score value={score} caption="Destination Fit" /><TagList title="Strong for this brief" values={strengths} /><div className="watchouts"><strong>Planning notes</strong>{destination.watchOuts.map((note) => <span key={note}>• {note}</span>)}</div></article>; })}</div><div className="method-note"><strong>Nothing is requested automatically.</strong><span>This selection only narrows the ITO shortlist. The advisor chooses the operators separately and review the request before sending it.</span></div><div className="sticky-action"><span>{selectedNames.length ? <><strong>{selectedNames.length}</strong> selected: {selectedNames.join(", ")}</> : "Select at least one customer-approved location."}</span><button className="primary" disabled={!selectedNames.length} onClick={next}>Find ITOs in Selected Locations <span>→</span></button></div></section>;
+
+  // Adding a location is how the agency answers a client who asks for somewhere
+  // the network has never been. Finding the operators there is the next step, and
+  // the page says so rather than leaving an empty shortlist unexplained.
+  const add = async () => {
+    setError(""); setNote("");
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setBusy(true);
+    try {
+      const created = await addLocation({ name: trimmed, country: country.trim(), strengths });
+      setNote(`${created.name} is on the list, and selected for this brief.`);
+      setName(""); setCountry(""); setStrengths([]); setPicking(false);
+      if (!request.selectedDestinationIds.includes(created.slug)) toggleDestination(created.slug);
+    } catch (cause) { setError(errorText(cause, "That location could not be added.")); }
+    finally { setBusy(false); }
+  };
+
+  const drop = async (slug: string, label: string) => {
+    setError(""); setNote("");
+    try {
+      await removeLocation({ slug });
+      if (request.selectedDestinationIds.includes(slug)) toggleDestination(slug);
+      setNote(`${label} is off your list.`);
+    } catch (cause) { setError(errorText(cause, "That location could not be removed.")); }
+  };
+
+  return <section className="workflow-section">
+    <div className="section-heading"><p className="eyebrow">STEP 2 · DESTINATION DISCOVERY & SELECTION</p><h1>Which locations is the customer interested in?</h1><p>Use the discovery scores as guidance, then select one or more locations the customer wants the agency to pursue. Only ITOs serving those locations will be considered next.</p></div>
+
+    <div className="form-card">
+      <h2>{destinations.length} locations to choose from</h2>
+      <p className="form-help">{fromNetwork} of them have an operator in your network, {added} you added yourself, and the rest are the starter catalog. A location the network has never been to is still a location you can win: add it here, then find operators there in the next step.</p>
+      {error && <div className="inline-warning"><strong>That did not work</strong><span>{error}</span></div>}
+      {note && <div className="inline-success"><strong>On the list</strong><span>{note}</span></div>}
+      <div className="form-grid three"><label className="wide">Find a location<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Country or place name" /></label></div>
+      <div className="sticky-action">
+        <span>{picking ? "A name, its country, and what it is genuinely strong for." : "Every place the client might accept, scored against this brief wherever we can score it."}</span>
+        <button className="secondary" onClick={() => { setPicking(!picking); setError(""); }}>{picking ? "Close" : "+ Add a location"}</button>
+      </div>
+      {picking && <div className="form-grid three">
+        <label>Location name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Vietnam" /></label>
+        <label>Country<input value={country} onChange={(event) => setCountry(event.target.value)} placeholder="Vietnam" /></label>
+      </div>}
+      {picking && <fieldset><legend>What is it genuinely strong for?</legend><div className="choice-grid compact">{experiences.map((item) => <Choice key={item} item={item} checked={strengths.includes(item)} onChange={() => setStrengths(strengths.includes(item) ? strengths.filter((value) => value !== item) : [...strengths, item])} />)}</div><p className="form-help">Tick only what you know. Anything left unticked is unassessed, which is not the same as a poor fit.</p></fieldset>}
+      {picking && <div className="sticky-action"><span>Adding a location contacts nobody. It only widens the list this brief is choosing from.</span><button className="primary" disabled={busy || !name.trim()} onClick={() => void add()}>{busy ? "Adding..." : "Add this location"}</button></div>}
+    </div>
+
+    <div className="destination-discovery-grid selectable-destinations">
+      {visible.map(({ destination, score }, index) => {
+        const strengthsForBrief = request.desiredExperiences.filter((item) => (destination.experienceStrengths[item] ?? 0) >= 4);
+        const selected = request.selectedDestinationIds.includes(destination.id);
+        return <article className={`destination-discovery-card ${selected ? "selected" : ""}`} key={destination.id}>
+          <span className="destination-rank">#{index + 1}</span>
+          <label className={`destination-select ${selected ? "checked" : ""}`}><input type="checkbox" checked={selected} onChange={() => toggleDestination(destination.id)} /><span>{selected ? "Selected" : "+ Select location"}</span></label>
+          <div>
+            <p>{destination.country || "Country not recorded"}</p>
+            <h2>{destination.name}</h2>
+            {destination.description && <span>{destination.description}</span>}
+            <small>{locationSource(destination)}</small>
+            {destination.addedByYou && <button className="link-button" onClick={() => void drop(destination.id, destination.name)}>Remove from my list</button>}
+          </div>
+          {isAssessed(destination) ? <Score value={score} caption="Destination Fit" /> : <div className="score"><strong>&mdash;</strong><small>Not assessed yet</small></div>}
+          <TagList title="Strong for this brief" values={strengthsForBrief} />
+          <div className="watchouts"><strong>Planning notes</strong>{destination.watchOuts.length ? destination.watchOuts.map((item) => <span key={item}>{item}</span>) : <span>No planning notes yet</span>}</div>
+        </article>;
+      })}
+    </div>
+    {visible.length === 0 && <div className="method-note"><strong>{destinations.length} locations are on the list, none of them matching that search.</strong><span>Clear the box, or add what the client asked for as a new location.</span></div>}
+
+    <div className="method-note"><strong>Nothing is requested automatically.</strong><span>This selection only narrows the ITO shortlist. The advisor chooses the operators separately and review the request before sending it.</span></div>
+    <div className="sticky-action"><span>{selectedNames.length ? <><strong>{selectedNames.length}</strong> selected: {selectedNames.join(", ")}</> : "Select at least one customer-approved location."}</span><button className="primary" disabled={!selectedNames.length} onClick={next}>Find ITOs in Selected Locations <span>{"\u2192"}</span></button></div>
+  </section>;
 }
 
 function CapabilityBreakdown({ match }: { match: OperatorMatch }) {
@@ -784,6 +907,7 @@ type DraftReply = FunctionReturnType<typeof api.proposals.draftFromReply>;
 function Workspace() {
   const network = useQuery(api.network.list);
   const account = useQuery(api.accounts.me);
+  const destinationRows = useQuery(api.destinations.list);
   const briefList = useQuery(api.briefs.list);
   // `null` means "open the newest brief"; "none" means the advisor explicitly
   // asked for a new one and nothing has been stored yet.
@@ -811,6 +935,9 @@ function Workspace() {
   // The operator network is one live read at the root, cached under the names the demo's
   // matching engine already uses, so every ranking view sees the current records.
   if (network) cacheNetwork(network);
+  // Same for the locations: the catalog, the network's places and the advisor's
+  // own additions become one list here.
+  if (destinationRows) cacheDestinations(destinationRows);
 
   // A workspace starts with the studio's fictional network. The mutation is
   // idempotent, so one call on load is enough and a later call costs nothing.
