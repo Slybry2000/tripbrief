@@ -214,6 +214,8 @@ export const get = query({
           operatorNotes: v.string(),
           requirementAnswers: v.array(requirementAnswer),
           simulated: v.boolean(),
+          // The operator's own words when the proposal came from an email.
+          sourceText: v.string(),
         }),
       ),
     }),
@@ -285,6 +287,7 @@ export const get = query({
         operatorNotes: proposal.operatorNotes,
         requirementAnswers: proposal.requirementAnswers ?? [],
         simulated: proposal.simulated === true,
+        sourceText: proposal.sourceText ?? "",
       })),
     };
   },

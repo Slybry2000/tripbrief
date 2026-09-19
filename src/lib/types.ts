@@ -240,6 +240,8 @@ export type OperatorProposal = {
   requirementAnswers: RequirementAnswer[];
   // True when a model wrote the reply as the operator, in demo mode.
   simulated?: boolean;
+  // The operator's own words, when the proposal came from an email.
+  sourceText?: string;
 };
 
 export type RequirementAnswerValue = "yes" | "partly" | "no";

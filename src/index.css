@@ -779,3 +779,8 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
 /* Each brief on the home list carries its own open and delete. */
 .brief-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .delete-confirm { color: var(--red); font-size: .85rem; margin-top: 6px; }
+
+/* An operator's whole reply, opened in place. */
+.full-reply { margin-top: 10px; }
+.full-reply summary { cursor: pointer; color: var(--green-dark); font-weight: 600; font-size: .85rem; }
+.full-reply-text { white-space: pre-wrap; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); font-size: .85rem; line-height: 1.5; max-height: 480px; overflow-y: auto; }
