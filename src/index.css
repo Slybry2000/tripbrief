@@ -780,7 +780,46 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
 .brief-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
 .delete-confirm { color: var(--red); font-size: .85rem; margin-top: 6px; }
 
-/* An operator's whole reply, opened in place. */
-.full-reply { margin-top: 10px; }
-.full-reply summary { cursor: pointer; color: var(--green-dark); font-weight: 600; font-size: .85rem; }
-.full-reply-text { white-space: pre-wrap; margin-top: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); font-size: .85rem; line-height: 1.5; max-height: 480px; overflow-y: auto; }
+/* ------------------------------------------------------------------------
+   The reply reader: one operator's reply, full size, over the page.
+   ------------------------------------------------------------------------ */
+.read-reply { margin-top: 12px; width: 100%; }
+.reply-reader { position: fixed; inset: 0; margin: auto; overflow: hidden; padding: 0; border: 0; border-radius: 16px; width: min(900px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 48px); box-shadow: 0 24px 80px rgba(16, 40, 35, .28); color: var(--ink); background: var(--white); }
+.reply-reader::backdrop { background: rgba(17, 36, 32, .55); }
+.reader-shell { display: flex; flex-direction: column; max-height: calc(100vh - 48px); min-width: 0; }
+.reader-body { min-height: 0; overflow-x: hidden; }
+.reader-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; padding: 22px 28px 16px; border-bottom: 1px solid var(--line); }
+.reader-head h2 { margin: 4px 0 2px; font-size: 1.6rem; }
+.reader-head small { color: var(--muted); }
+.reader-nav { display: flex; gap: 8px; flex-wrap: wrap; }
+.reader-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1px; background: var(--line); border-bottom: 1px solid var(--line); }
+.reader-facts > div { background: var(--mint-2); padding: 12px 20px; display: grid; gap: 4px; }
+.reader-facts small { font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.reader-facts strong { font-size: 1.02rem; font-variant-numeric: tabular-nums; }
+.reader-counts { display: flex; gap: 6px; flex-wrap: wrap; }
+.reader-body { overflow-y: auto; padding: 22px 28px 28px; font-size: 1rem; line-height: 1.65; }
+.reader-body > p { max-width: 72ch; margin: 0 0 14px; }
+.reader-body h4 { margin: 22px 0 10px; font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--green-dark); }
+.reader-answers { list-style: none; margin: 0 0 18px; padding: 0; display: grid; gap: 8px; }
+.reader-answers li { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: start; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); }
+.reader-answers li.partly { background: #fffaf0; border-color: #ead3a6; }
+.reader-answers li.no { background: var(--red-bg); border-color: #f0d5cf; }
+.reader-answers li p { margin: 2px 0 0; color: var(--ink); font-size: .95rem; }
+.reader-answer-id { font-weight: 700; color: var(--green-dark); font-variant-numeric: tabular-nums; padding-top: 1px; }
+.reader-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .75rem; font-weight: 700; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+.reader-chip.yes { background: var(--mint); color: var(--green-dark); }
+.reader-chip.partly { background: var(--gold-bg); color: var(--gold); }
+.reader-chip.no { background: var(--red-bg); color: var(--red); }
+.reader-simulated-note { color: var(--muted); font-style: italic; font-size: .85rem; }
+.reader-foot { padding: 14px 28px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; background: var(--mint-2); }
+@media (max-width: 620px) {
+  .reader-head, .reader-body, .reader-foot { padding-left: 16px; padding-right: 16px; }
+  .reader-answers li { grid-template-columns: 36px 1fr; }
+  .reader-answers li .reader-chip { grid-column: 2; justify-self: start; }
+}
+.reader-differs { margin-bottom: 18px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.reader-differs h4 { margin-top: 0; color: var(--gold); }
+.reader-all-met { color: var(--green-dark); font-weight: 600; margin: 0 0 16px; }
+.reader-differs { margin-bottom: 18px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.reader-differs h4 { margin-top: 0; color: var(--gold); }
+.reader-all-met { color: var(--green-dark); font-weight: 600; margin: 0 0 16px; }
