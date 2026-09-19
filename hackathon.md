@@ -13,7 +13,7 @@
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
-- **Last updated:** 2026-09-16
+- **Last updated:** 2026-09-19
 
 ## Log
 
@@ -899,3 +899,24 @@ addresses; three requests were sent through the stand-in inbox, and three
 simulated replies came back as real emails within fifty seconds. The top-ranked
 operator covered 100%, the others 98% and 97%, each with the honest difference in
 the grid. 80 tests across 17 files, lint, typecheck and build pass.
+
+### 2026-09-19 - 0d1b3a1, 042d40f, 72cace8 and the app redesign
+
+- **Delete a brief from the home list** (`0d1b3a1`): each brief has its own
+  Delete, which asks once, by name, and removes the brief with every proposal and
+  reply it produced. Operators stay in the network.
+- **Read an operator's full reply** (`042d40f`, `72cace8`): the brief bundle now
+  carries each proposal's source words. A reply opens in a full-size reader: the
+  facts on top (dates, net, coverage, availability, answer counts), then the
+  requirements it does not fully meet, then the whole email with the R1..Rn
+  answers as a colour-coded list. Previous and next step through every reply;
+  the draft action sits in the reader for a reply not yet in the comparison.
+- **Mobile-first app shell**: a slim top bar with the screen title and an
+  account menu; on a phone, a bottom tab bar (Briefs, New brief, Operators,
+  Links), a one-line step bar with back, one pinned action per step above the
+  tabs, a full-screen reply reader, and comparison cards with labelled values.
+  The home screen leads with the advisor's briefs. New palette and type
+  (Newsreader, Figtree) in a calm, warm register, and long dashes removed from
+  the interface copy. Checked with phone- and desktop-size screenshots of the
+  whole flow, from a new trial workspace to simulated replies and the comparison.
+  80 tests, lint, typecheck and build pass.
