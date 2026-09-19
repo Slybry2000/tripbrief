@@ -19,6 +19,15 @@ const app = defineApp({
     // wherever the operator can actually open it: the deployment's own site URL in
     // production, and the local dev server when the backend is running locally.
     SITE_URL: v.optional(v.string()),
+    // Demo mode is on unless this is exactly "off". In demo mode no request ever
+    // reaches a real operator: it goes to the stand-in inbox below, and a model
+    // answers as the operator. Locked on for the hackathon.
+    DEMO_MODE: v.optional(v.string()),
+    // The shared inbox demo requests are sent from.
+    DEMO_AGENCY_INBOX: v.optional(v.string()),
+    // The stand-in inbox that receives every demo request in place of the real
+    // operator's address.
+    DEMO_OPERATOR_INBOX: v.optional(v.string()),
   },
 });
 app.use(rateLimiter);

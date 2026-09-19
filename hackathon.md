@@ -861,3 +861,41 @@ all eighteen requirements and submitted; a real operator email was drafted by th
 live OpenAI model into five quoted requirement answers with the right start date;
 the grid and the schedule rendered from both. 74 tests across 16 files, lint,
 typecheck and the build pass.
+
+### 2026-09-19 - real places, real operators, and demo mode
+
+The network and the places are now real. Only the replies are simulated, and
+they say so.
+
+- **A location is typed, not described.** The advisor types a country (with
+  suggestions as they type) and Firecrawl reads published travel sources about it.
+  A model scores it against the brief's vocabulary, names its climate and its
+  planning cautions, and the card cites the sources. A place is researched once
+  and shared as a cache.
+- **Operators are real companies.** Firecrawl searches for incoming tour operators
+  and DMCs in each approved location, reads each company's own site, and keeps
+  only a company's own website. Directories, marketplaces and mass-market brands
+  are dropped. The contact address is taken from the operator's own pages, never
+  from the model. Found operators are cached across workspaces, so the first search
+  for a place takes about a minute and every later one is instant. A new workspace
+  no longer loads the fictional starter network.
+- **Demo mode, locked on.** No request reaches a real operator. Each request is a
+  real AgentMail email from a shared agency inbox to a stand-in inbox, and a model
+  replies as that operator 20 to 50 seconds later. The strongest-ranked operator
+  meets every numbered requirement. Every other one differs on one or two, chosen
+  from realistic deviations (dates, singles, price, an inclusion, a hotel night,
+  access, an early start). The reply is a real email back to the agency inbox. It
+  is filed on the exact request it answers, because every demo operator shares one
+  stand-in address, and it fills the requirement grid with each answer quoted from
+  the email. Replies are labelled as simulated everywhere.
+- Operators found on the web rarely publish net rates, so an unknown rate now
+  scores as neutral commercial fit rather than as a mismatch.
+- Quotas were resized for judging: a brief to five operators costs five sends and
+  five model replies.
+
+Verified on the local deployment: Vietnam and Laos were looked up from the web;
+six real Bali operators and seven real Thai DMCs were found with published
+addresses; three requests were sent through the stand-in inbox, and three
+simulated replies came back as real emails within fifty seconds. The top-ranked
+operator covered 100%, the others 98% and 97%, each with the honest difference in
+the grid. 80 tests across 17 files, lint, typecheck and build pass.

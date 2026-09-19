@@ -8,12 +8,14 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 // Quotas exist so one workspace, or one busy demo, cannot exhaust a shared
 // provider credential. Every limit has a per-user entry and an app-wide backstop.
 const limiter = new RateLimiter(components.rateLimiter, {
-  analysisUser: { kind: "fixed window", rate: 5, period: HOUR },
-  analysisGlobal: { kind: "fixed window", rate: 50, period: DAY },
-  researchUser: { kind: "fixed window", rate: 5, period: HOUR },
-  researchGlobal: { kind: "fixed window", rate: 40, period: DAY },
-  sendUser: { kind: "fixed window", rate: 10, period: HOUR },
-  sendGlobal: { kind: "fixed window", rate: 60, period: DAY },
+  // Sized for judging: one brief to five operators costs five sends and five
+  // model replies in demo mode, and a judge may run it more than once.
+  analysisUser: { kind: "fixed window", rate: 30, period: HOUR },
+  analysisGlobal: { kind: "fixed window", rate: 400, period: DAY },
+  researchUser: { kind: "fixed window", rate: 12, period: HOUR },
+  researchGlobal: { kind: "fixed window", rate: 150, period: DAY },
+  sendUser: { kind: "fixed window", rate: 20, period: HOUR },
+  sendGlobal: { kind: "fixed window", rate: 200, period: DAY },
   // Mailboxes are not rationed here: the workspace keeps a small fixed pool
   // (`MAILBOX_LIMIT`), which is a hard ceiling rather than a rate, so a rate
   // limiter would only get in the way of reusing one.
@@ -117,6 +119,26 @@ export const consumeSend = internalMutation({
       "sendGlobal",
       "Sending limit reached. Please try again later.",
     );
+    return null;
+  },
+});
+
+// The same quotas, charged to a workspace directly. Used where there is no brief
+// yet (looking up a place, finding operators for it) and by work the server does
+// on the workspace's behalf (a demo operator's reply).
+export const consumeForOwner = internalMutation({
+  args: {
+    owner: v.string(),
+    kind: v.union(v.literal("research"), v.literal("analysis"), v.literal("send")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.kind === "research")
+      await spend(ctx, args.owner, "researchUser", "researchGlobal", "Web research limit reached. Please try again later.");
+    else if (args.kind === "analysis")
+      await spend(ctx, args.owner, "analysisUser", "analysisGlobal", "AI drafting limit reached. Please try again later.");
+    else
+      await spend(ctx, args.owner, "sendUser", "sendGlobal", "Sending limit reached. Please try again later.");
     return null;
   },
 });

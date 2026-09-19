@@ -112,6 +112,9 @@ export function assessOperatorTiming(request: TripRequest, profile: OperatorProf
 function commercialScore(request: TripRequest, profile: OperatorProfile) {
   const target = calculateTargetNet(request);
   const { typicalNetMin, typicalNetMax } = profile.commercial;
+  // An operator found on the web rarely publishes its net rates. Unknown is
+  // scored in the middle rather than as a mismatch.
+  if (typicalNetMax <= 0) return 50;
   if (target >= typicalNetMin && target <= typicalNetMax) return 100;
   const distance = target < typicalNetMin ? typicalNetMin - target : target - typicalNetMax;
   const ratio = distance / Math.max(target, 1);

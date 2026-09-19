@@ -10,12 +10,25 @@ export type DestinationListing = {
   source: "network" | "added";
   strengths: string[];
   operatorCount: number;
+  // What published sources say about a place the advisor looked up.
+  profile?: {
+    name: string;
+    country: string;
+    description: string;
+    climates: string[];
+    experienceStrengths: Record<string, number>;
+    watchOuts: string[];
+    sources: { title: string; url: string }[];
+    researchedAt: number;
+  };
 };
 
 export type DestinationEntry = Destination & {
   fromNetwork: boolean;
   addedByYou: boolean;
   operatorCount: number;
+  // The published pages a looked-up place's profile was read from.
+  sources?: { title: string; url: string }[];
 };
 
 // An assessment is what makes a place scoreable against a brief. Without one the
@@ -44,14 +57,17 @@ export function mergeDestinations(
       // The catalog knows a place better than its slug does.
       name: known?.name ?? row.name,
       country: known?.country ?? row.country,
-      climates: known?.climates ?? [],
-      // An advisor's own assessment counts as a strong fit, because they are the
-      // one who has been there. Nobody else's guess goes in here.
+      // A place the advisor looked up is described by the sources it was read
+      // from, which the card names, so that profile wins over the catalog's. An
+      // older addition carries only the advisor's own ticks, counted as strong.
+      climates: row.profile?.climates ?? known?.climates ?? [],
       experienceStrengths:
+        row.profile?.experienceStrengths ??
         known?.experienceStrengths ??
         Object.fromEntries(row.strengths.map((key) => [key, 5])),
-      description: known?.description ?? "",
-      watchOuts: known?.watchOuts ?? [],
+      description: row.profile?.description ?? known?.description ?? "",
+      watchOuts: row.profile?.watchOuts ?? known?.watchOuts ?? [],
+      ...(row.profile ? { sources: row.profile.sources } : {}),
       fromNetwork: row.source === "network" || row.operatorCount > 0,
       addedByYou: row.source === "added",
       operatorCount: row.operatorCount,

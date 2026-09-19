@@ -11,6 +11,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
 import { operatorCapability, operatorRecord } from "./schema";
 import { seedOperatorProfiles, seedOperators } from "./seedData";
+import { demoMode } from "./demo";
 
 // ---------------------------------------------------------------------------
 // Bounds. Everything an operator types reaches the shared capability record, so
@@ -436,6 +437,9 @@ export const ensureWorkspace = mutation({
       .withIndex("by_owner_and_slug", (q) => q.eq("owner", owner))
       .take(1);
     if (existing.length) return { added: 0 };
+    // In demo mode a workspace's network is real operators found on the web, so
+    // the fictional starter network is not loaded.
+    if (demoMode().on) return { added: 0 };
     await dropUnowned(ctx);
     const now = Date.now();
     for (const record of seedOperators) {

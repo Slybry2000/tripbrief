@@ -238,6 +238,8 @@ export type OperatorProposal = {
   operatorNotes: string;
   // The operator's answer to each numbered requirement, keyed by requirement key.
   requirementAnswers: RequirementAnswer[];
+  // True when a model wrote the reply as the operator, in demo mode.
+  simulated?: boolean;
 };
 
 export type RequirementAnswerValue = "yes" | "partly" | "no";

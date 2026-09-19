@@ -175,6 +175,7 @@ export const get = query({
           sentAt: v.optional(v.number()),
           sendError: v.optional(v.string()),
           proposalId: v.optional(v.id("proposals")),
+          deliveredTo: v.optional(v.string()),
         }),
       ),
       proposals: v.array(
@@ -212,6 +213,7 @@ export const get = query({
           ),
           operatorNotes: v.string(),
           requirementAnswers: v.array(requirementAnswer),
+          simulated: v.boolean(),
         }),
       ),
     }),
@@ -248,6 +250,7 @@ export const get = query({
         sentAt: row.sentAt,
         sendError: row.sendError,
         proposalId: row.proposalId,
+        deliveredTo: row.deliveredTo,
       })),
       proposals: proposals.map((proposal) => ({
         _id: proposal._id,
@@ -281,6 +284,7 @@ export const get = query({
         cancellationTerms: proposal.cancellationTerms,
         operatorNotes: proposal.operatorNotes,
         requirementAnswers: proposal.requirementAnswers ?? [],
+        simulated: proposal.simulated === true,
       })),
     };
   },
@@ -441,6 +445,8 @@ export const setShortlist = mutation({
         operatorSlug: v.string(),
         operatorName: v.string(),
         capabilityToken: v.string(),
+        // Position in the capability ranking, 1 being the strongest match.
+        rank: v.optional(v.number()),
       }),
     ),
   },
@@ -486,6 +492,7 @@ export const setShortlist = mutation({
           operatorName: operator.operatorName.slice(0, 160),
           capabilityToken: operator.capabilityToken,
           status: "open",
+          ...(operator.rank !== undefined ? { rank: Math.max(1, Math.round(operator.rank)) } : {}),
           createdAt: now,
           updatedAt: now,
         });
@@ -493,6 +500,7 @@ export const setShortlist = mutation({
       }
       // An operator that has already answered keeps its row — and its answer.
       await ctx.db.patch("briefOperators", existing._id, {
+        ...(operator.rank !== undefined ? { rank: Math.max(1, Math.round(operator.rank)) } : {}),
         operatorName: operator.operatorName.slice(0, 160),
         updatedAt: now,
       });

@@ -2,6 +2,7 @@ import { env, internalQuery, query, type QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Id } from "./_generated/dataModel";
+import { demoMode } from "./demo";
 
 // Who a workspace is, and what it is allowed to do.
 
@@ -80,6 +81,8 @@ export const permissionFor = internalQuery({
   }),
   handler: async (ctx, args) => {
     const account = await accountOf(ctx, args.owner);
+    // In demo mode nothing reaches a real operator, so anyone may send.
+    if (demoMode().on) return { allowed: true, reason: "", email: account.email, isTrial: account.isAnonymous };
     return evaluate(account, allowedSenders());
   },
 });
@@ -94,18 +97,23 @@ export const me = query({
       isTrial: v.boolean(),
       canSend: v.boolean(),
       reason: v.string(),
+      // Demo mode: every request goes to a stand-in inbox and a model answers as
+      // the operator. The interface says so wherever a send happens.
+      demo: v.boolean(),
     }),
   ),
   handler: async (ctx) => {
     const owner = await getAuthUserId(ctx);
     if (!owner) return null;
     const account = await accountOf(ctx, owner);
+    const demo = demoMode().on;
     const permission = evaluate(account, allowedSenders());
     return {
       email: account.email,
       isTrial: account.isAnonymous,
-      canSend: permission.allowed,
-      reason: permission.reason,
+      canSend: demo || permission.allowed,
+      reason: demo ? "" : permission.reason,
+      demo,
     };
   },
 });

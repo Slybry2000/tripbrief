@@ -40,6 +40,18 @@ A ready-made program is supporting evidence, never an entry requirement. An
 operator with no program is matched on identical terms and labelled *Custom /
 À la carte*.
 
+## Demo mode (on for the hackathon)
+
+Destinations and operators are real: a location is looked up from published
+travel sources, and operators are real incoming tour operators and DMCs found by
+Firecrawl, with the contact address their own site publishes. **No request ever
+reaches them.** Every request is a real email to a stand-in inbox, and a model
+answers as the operator. The strongest match meets every requirement; the others
+differ on one or two. Replies are labelled as simulated. Demo mode is on unless
+`DEMO_MODE=off`, and it needs `DEMO_AGENCY_INBOX` and `DEMO_OPERATOR_INBOX`. Warm
+the operator cache for a place ahead of a demo with
+`npx convex run --prod webOperators:prewarm '{"destinationSlug":"bali","destinationName":"Bali"}'`.
+
 ## Two kinds of private link
 
 An operator needs no account. It has a link, and a link is a capability: 32 random

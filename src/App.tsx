@@ -7,6 +7,7 @@ import type { Id } from "../convex/_generated/dataModel";
 import destinationSeed from "./data/destinations.json";
 import requestSeed from "./data/demo-request.json";
 import programSeed from "./data/programs.json";
+import countryNames from "./data/countries.json";
 import { buildWorkbackSchedule, calculateOperatorMatch, calculateProposalMargin, calculateTargetNet, calculateTripMatch, servesSelectedDestinations } from "./lib/matching";
 import type { Destination, OperatorMatch, OperatorProfile, OperatorProposal, OperatorTiming, Partner, ReadyMadeTrip, RequirementAnswer, RequirementAnswerValue, ServiceArea, TripRequest } from "./lib/types";
 import { newCapabilityToken, readResponseToken, responseLink } from "./capability";
@@ -230,7 +231,7 @@ const FIELD_LABEL: Record<string, string> = { programName: "Program name", desti
 const fieldLabel = (field: string) => FIELD_LABEL[field] ?? titleCase(field.replace(/([a-z])([A-Z])/g, "$1 $2"));
 const operatorSourceLabel = (slug: string) => {
   const source = networkBySlug.get(slug)?.source;
-  return source === "seed" ? "Sample operator · fictional" : source === "researched" ? "Found on the web · added by you" : "Added by you";
+  return source === "seed" ? "Sample operator · fictional" : source === "researched" ? "Real operator · found on the web" : "Added by you";
 };
 const partnerName = (slug: string) => partners.find((item) => item.id === slug)?.name ?? titleCase(slug);
 const destinationName = (id: string) => destinations.find((item) => item.id === id)?.name ?? titleCase(id);
@@ -250,7 +251,14 @@ function operatorRanking(request: TripRequest, profileOverride?: OperatorProfile
   }).filter((item) => !selectedLocationsOnly || servesSelectedDestinations(request, item.profile)).sort((a, b) => b.match.score - a.match.score || a.partner.name.localeCompare(b.partner.name));
 }
 
-type Account = { email: string; isTrial: boolean; canSend: boolean; reason: string };
+type Account = { email: string; isTrial: boolean; canSend: boolean; reason: string; demo: boolean };
+
+// Where a found operator's own site lives, for a link a person can check.
+const domainOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
+
+// One line per location being searched for real operators, shown on step 3 and
+// on the network page. "working" while Firecrawl reads the sites.
+type FindStatus = Record<string, { state: "working" | "done" | "failed"; message: string }>;
 
 function BrandHeader({ activeView, setActiveView, newBrief, reset, signOut, account }: { activeView: AppView; setActiveView: (value: AppView) => void; newBrief: () => void; reset: () => void; signOut: () => void; account: Account | null | undefined }) {
   return <header className="topbar operator-topbar">
@@ -271,8 +279,9 @@ function UnfiledMail() {
   return <section className="resume-briefs"><div className="section-heading"><p className="eyebrow">MAIL</p><h2>Mail that could not be filed</h2><p>These arrived in one of the workspace's mail inboxes from an address no request on file was sent to, so they are held here rather than attached to a guess.</p></div><div className="inbox-list">{messages.map((message) => <article key={message._id}><div><small>{new Date(message.receivedAt).toLocaleString()} · {message.fromEmail}</small><h3>{message.subject || "(no subject)"}</h3><p>{message.text.slice(0, 240)}{message.text.length > 240 ? "…" : ""}</p></div></article>)}</div></section>;
 }
 
-function DemoNotice() {
-  return <aside className="demo-notice"><span>i</span>This workspace starts with a fictional operator network, for evaluation. Replace it with your own operators before you send anything to a real supplier. Sending is always one deliberate click on one named operator.</aside>;
+function DemoNotice({ demo }: { demo: boolean }) {
+  if (demo) return <aside className="demo-notice"><span>i</span>Demo mode is on. Destinations and operators are real, found on the web with the contact addresses their own sites publish. No request ever reaches them: every request goes to TripBrief's stand-in inbox, and an AI writes each operator's reply.</aside>;
+  return <aside className="demo-notice"><span>i</span>Sending is always one deliberate click on one named operator, to the address on its record.</aside>;
 }
 
 function WorkflowProgress({ view, go }: { view: AppView; go: (value: AppView) => void }) {
@@ -309,8 +318,8 @@ function Score({ value, caption = "Capability Match" }: { value: number; caption
 // The counter never counts anything the network does not hold: it is read from
 // the same live query the matcher uses, so adding a researched operator or a
 // destination changes it.
-function Dashboard({ start, portal, briefs, open }: { start: () => void; portal: () => void; briefs: { _id: Id<"briefs">; name: string; status: string; travelerCount: number; nights: number; selectedDestinations: string[] }[]; open: (id: Id<"briefs">, status: string) => void }) {
-  return <><section className="dashboard-hero operator-hero v2-hero"><div><p className="eyebrow">TRIPBRIEF · ITO SOURCING &amp; OPERATIONS</p><h1>From client needs to the right local operator—and a trip that can actually operate.</h1><p className="hero-copy">Discover suitable destinations, qualify incoming operators by their profile capabilities, then ask shortlisted operators to confirm dates, availability, and the trip they would actually provide.</p><div className="hero-actions"><button className="primary" onClick={start}>Start With Client Needs <span>→</span></button><button className="secondary" onClick={portal}>Operator links &amp; capability records</button></div></div><div className="hero-model"><div><small>1</small><strong>Client needs</strong><span>Destination can stay open</span></div><b>→</b><div><small>2</small><strong>Capable ITO shortlist</strong><span>Profile match only</span></div><b>→</b><div><small>3</small><strong>Confirmed proposals</strong><span>Dates and availability come from the ITO</span></div><b>→</b><div><small>4</small><strong>Workback plan</strong><span>Deadlines tied to departure</span></div></div></section><section className="metrics"><article className="metric-card"><span className="metric-value">{partners.length}</span><h2>ITO profiles in the network</h2><p>Structured supplier-product data</p></article><article className="metric-card"><span className="metric-value">{destinations.length}</span><h2>Destination knowledge sets</h2><p>Discovery before operator selection</p></article><article className="metric-card"><span className="metric-value">6</span><h2>Visible match dimensions</h2><p>Timing confirmed after request</p></article><article className="metric-card"><span className="metric-value">8</span><h2>Connected workflow steps</h2><p>Needs through workback schedule</p></article></section>{briefs.length > 0 && <section className="resume-briefs"><div className="section-heading"><p className="eyebrow">YOUR BRIEFS</p><h2>Continue where the request stopped</h2><p>Every brief, its shortlist, its private operator links and every proposal that has come back are stored. Open one to pick the workflow up at the step it reached.</p></div><div className="link-list">{briefs.map((item) => <article key={item._id}><div><h2>{item.name}</h2><p>{item.status === "selected" ? "Trip and operator selected" : item.status === "comparing" ? "Proposals received — ready to compare" : item.status === "sent" ? "Requests sent — waiting for proposals" : "Draft brief"} · {item.travelerCount} travellers · {item.nights} nights{item.selectedDestinations.length ? ` · ${item.selectedDestinations.map(destinationName).join(", ")}` : ""}</p></div><button className="primary" onClick={() => open(item._id, item.status)}>Open this brief →</button></article>)}</div></section>}<UnfiledMail /><DemoNotice /></>;
+function Dashboard({ start, portal, briefs, open, demo }: { start: () => void; portal: () => void; briefs: { _id: Id<"briefs">; name: string; status: string; travelerCount: number; nights: number; selectedDestinations: string[] }[]; open: (id: Id<"briefs">, status: string) => void; demo: boolean }) {
+  return <><section className="dashboard-hero operator-hero v2-hero"><div><p className="eyebrow">TRIPBRIEF · ITO SOURCING &amp; OPERATIONS</p><h1>From client needs to the right local operator—and a trip that can actually operate.</h1><p className="hero-copy">Discover suitable destinations, qualify incoming operators by their profile capabilities, then ask shortlisted operators to confirm dates, availability, and the trip they would actually provide.</p><div className="hero-actions"><button className="primary" onClick={start}>Start With Client Needs <span>→</span></button><button className="secondary" onClick={portal}>Operator links &amp; capability records</button></div></div><div className="hero-model"><div><small>1</small><strong>Client needs</strong><span>Destination can stay open</span></div><b>→</b><div><small>2</small><strong>Capable ITO shortlist</strong><span>Profile match only</span></div><b>→</b><div><small>3</small><strong>Confirmed proposals</strong><span>Dates and availability come from the ITO</span></div><b>→</b><div><small>4</small><strong>Workback plan</strong><span>Deadlines tied to departure</span></div></div></section><section className="metrics"><article className="metric-card"><span className="metric-value">{partners.length}</span><h2>ITO profiles in the network</h2><p>Structured supplier-product data</p></article><article className="metric-card"><span className="metric-value">{destinations.length}</span><h2>Destination knowledge sets</h2><p>Discovery before operator selection</p></article><article className="metric-card"><span className="metric-value">6</span><h2>Visible match dimensions</h2><p>Timing confirmed after request</p></article><article className="metric-card"><span className="metric-value">8</span><h2>Connected workflow steps</h2><p>Needs through workback schedule</p></article></section>{briefs.length > 0 && <section className="resume-briefs"><div className="section-heading"><p className="eyebrow">YOUR BRIEFS</p><h2>Continue where the request stopped</h2><p>Every brief, its shortlist, its private operator links and every proposal that has come back are stored. Open one to pick the workflow up at the step it reached.</p></div><div className="link-list">{briefs.map((item) => <article key={item._id}><div><h2>{item.name}</h2><p>{item.status === "selected" ? "Trip and operator selected" : item.status === "comparing" ? "Proposals received — ready to compare" : item.status === "sent" ? "Requests sent — waiting for proposals" : "Draft brief"} · {item.travelerCount} travellers · {item.nights} nights{item.selectedDestinations.length ? ` · ${item.selectedDestinations.map(destinationName).join(", ")}` : ""}</p></div><button className="primary" onClick={() => open(item._id, item.status)}>Open this brief →</button></article>)}</div></section>}<UnfiledMail /><DemoNotice demo={demo} /></>;
 }
 
 function BriefForm({ request, setRequest, next }: { request: TripRequest; setRequest: (value: TripRequest) => void; next: () => void }) {
@@ -355,19 +364,17 @@ function locationSource(entry: DestinationEntry) {
   const parts: string[] = [];
   if (entry.operatorCount > 0) parts.push(`${entry.operatorCount} operator${entry.operatorCount === 1 ? "" : "s"} in your network`);
   else if (entry.fromNetwork) parts.push("In your network, no operators on file yet");
-  if (entry.addedByYou) parts.push("added by you");
+  if (entry.addedByYou) parts.push(entry.sources?.length ? "looked up on the web" : "added by you");
   if (!parts.length) parts.push("starter catalog");
   return parts.join(", ");
 }
 
 function DestinationDiscovery({ request, setRequest, next }: { request: TripRequest; setRequest: (value: TripRequest) => void; next: () => void }) {
-  const addLocation = useMutation(api.destinations.add);
+  const lookUp = useAction(api.places.research);
   const removeLocation = useMutation(api.destinations.remove);
   const [filter, setFilter] = useState("");
   const [picking, setPicking] = useState(false);
   const [name, setName] = useState("");
-  const [country, setCountry] = useState("");
-  const [strengths, setStrengths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -393,20 +400,20 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
   };
   const selectedNames = request.selectedDestinationIds.map(destinationName);
 
-  // Adding a location is how the agency answers a client who asks for somewhere
-  // the network has never been. Finding the operators there is the next step, and
-  // the page says so rather than leaving an empty shortlist unexplained.
+  // The advisor types a place and nothing else. Firecrawl reads published travel
+  // sources about it, and what it is good for, its climate and what to plan
+  // around are filled in from them, sources attached.
   const add = async () => {
     setError(""); setNote("");
     const trimmed = name.trim();
     if (!trimmed) return;
     setBusy(true);
     try {
-      const created = await addLocation({ name: trimmed, country: country.trim(), strengths });
-      setNote(`${created.name} is on the list, and selected for this brief.`);
-      setName(""); setCountry(""); setStrengths([]); setPicking(false);
+      const created = await lookUp({ name: trimmed });
+      setNote(`${created.name} is on the list, filled in from published travel sources, and selected for this brief.`);
+      setName(""); setPicking(false);
       if (!request.selectedDestinationIds.includes(created.slug)) toggleDestination(created.slug);
-    } catch (cause) { setError(errorText(cause, "That location could not be added.")); }
+    } catch (cause) { setError(errorText(cause, "That location could not be looked up.")); }
     finally { setBusy(false); }
   };
 
@@ -424,7 +431,7 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
 
     <div className="form-card">
       <h2>{destinations.length} locations to choose from</h2>
-      <p className="form-help">{fromNetwork} of them have an operator in your network, {added} you added yourself, and the rest are the starter catalog. A location the network has never been to is still a location you can win: add it here, then find operators there from the ITO Network page.</p>
+      <p className="form-help">{fromNetwork} of them have an operator in your network, {added} you added yourself, and the rest are the starter catalog. A location the network has never been to is still a location you can win: add it here, and step 3 finds real operators there.</p>
       {error && <div className="inline-warning"><strong>That did not work</strong><span>{error}</span></div>}
       {note && <div className="inline-success"><strong>On the list</strong><span>{note}</span></div>}
       <div className="form-grid three"><label className="wide">Find a location<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Country or place name" /></label></div>
@@ -432,12 +439,8 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
         <span>{picking ? "A name, its country, and what it is genuinely strong for." : "Every place the client might accept, scored against this brief wherever we can score it."}</span>
         <button className="secondary" onClick={() => { setPicking(!picking); setError(""); }}>{picking ? "Close" : "+ Add a location"}</button>
       </div>
-      {picking && <div className="form-grid three">
-        <label>Location name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="Vietnam" /></label>
-        <label>Country<input value={country} onChange={(event) => setCountry(event.target.value)} placeholder="Vietnam" /></label>
-      </div>}
-      {picking && <fieldset><legend>What is it genuinely strong for?</legend><div className="choice-grid compact">{experiences.map((item) => <Choice key={item} item={item} checked={strengths.includes(item)} onChange={() => setStrengths(strengths.includes(item) ? strengths.filter((value) => value !== item) : [...strengths, item])} />)}</div><p className="form-help">Tick only what you know. Anything left unticked is unassessed, which is not the same as a poor fit.</p></fieldset>}
-      {picking && <div className="sticky-action"><span>Adding a location contacts nobody. It only widens the list this brief is choosing from.</span><button className="primary" disabled={busy || !name.trim()} onClick={() => void add()}>{busy ? "Adding..." : "Add this location"}</button></div>}
+      {picking && <div className="form-grid three"><label className="wide">Country or place<input list="country-names" value={name} autoFocus onChange={(event) => setName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && name.trim()) void add(); }} placeholder="Start typing: Vietnam, Peru, Japan…" /></label><datalist id="country-names">{(countryNames).map((item) => <option key={item} value={item} />)}</datalist></div>}
+      {picking && <div className="sticky-action"><span>{busy ? `Reading published travel sources about ${name.trim()}… about twenty seconds.` : "Pick a country from the list, or type any place. Nothing else to fill in: the web does the rest."}</span><button className="primary" disabled={busy || !name.trim()} onClick={() => void add()}>{busy ? "Looking it up…" : "Look it up and add"}</button></div>}
     </div>
 
     <div className="destination-discovery-grid selectable-destinations">
@@ -451,7 +454,7 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
             <p>{destination.country || "Country not recorded"}</p>
             <h2>{destination.name}</h2>
             {destination.description && <span>{destination.description}</span>}
-            <small>{locationSource(destination)}</small>
+            <small>{locationSource(destination)}</small>{destination.sources && destination.sources.length > 0 && <small className="source-line">From {destination.sources.slice(0, 3).map((item) => <a key={item.url} href={item.url} target="_blank" rel="noreferrer">{domainOf(item.url)}</a>).reduce<React.ReactNode[]>((all, link, index) => index ? [...all, ", ", link] : [link], [])}</small>}
             {destination.addedByYou && <button className="link-button" onClick={() => void drop(destination.id, destination.name)}>Remove from my list</button>}
           </div>
           {isAssessed(destination) ? <Score value={score} caption="Destination Fit" /> : <div className="score"><strong>&mdash;</strong><small>Not assessed yet</small></div>}
@@ -478,12 +481,18 @@ function TimingConfirmationPanel({ item }: { item: RankedOperator }) {
 
 function OperatorResultCard({ item, rank }: { item: RankedOperator; rank: number }) {
   const missing = [...item.match.missingServices, ...item.match.missingOperations];
-  return <article className="operator-result-card"><span className="operator-rank">#{rank}</span><div className="operator-result-head"><div><p>{item.profile.serviceAreas.map((area) => `${area.country} · ${area.regions.join(", ")}`).join(" | ")}</p><h2>{item.partner.name}</h2><span>{operatorSourceLabel(item.partner.id)}</span></div><Score value={item.match.score} /></div><CapabilityBreakdown match={item.match} /><TimingConfirmationPanel item={item} /><div className="result-detail-grid"><TagList title="Strong match" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Missing or needs confirmation" values={missing.slice(0, 8)} tone={missing.length ? "missing" : "match"} /></div>{item.bestTrip ? <div className="supporting-program"><div><small>OPTIONAL EXISTING PROGRAM</small><strong>{item.bestTrip.name}</strong><span>{item.bestTripScore}% trip similarity · useful context only</span></div><b>Does not affect capability rank</b></div> : <div className="supporting-program custom"><div><small>CUSTOM / À LA CARTE</small><strong>No ready-made program listed</strong><span>Operator can recommend a program from scratch.</span></div><b>Equal matching treatment</b></div>}</article>;
+  return <article className="operator-result-card"><span className="operator-rank">#{rank}</span><div className="operator-result-head"><div><p>{item.profile.serviceAreas.map((area) => `${area.country} · ${area.regions.join(", ")}`).join(" | ")}</p><h2>{item.partner.name}</h2><span>{operatorSourceLabel(item.partner.id)}{operatorWebsite(item.partner.id) && <> · <a href={operatorWebsite(item.partner.id)} target="_blank" rel="noreferrer">{domainOf(operatorWebsite(item.partner.id))}</a></>}{item.partner.contactEmail && <> · {item.partner.contactEmail}</>}</span></div><Score value={item.match.score} /></div><CapabilityBreakdown match={item.match} /><TimingConfirmationPanel item={item} /><div className="result-detail-grid"><TagList title="Strong match" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Missing or needs confirmation" values={missing.slice(0, 8)} tone={missing.length ? "missing" : "match"} /></div>{item.bestTrip ? <div className="supporting-program"><div><small>OPTIONAL EXISTING PROGRAM</small><strong>{item.bestTrip.name}</strong><span>{item.bestTripScore}% trip similarity · useful context only</span></div><b>Does not affect capability rank</b></div> : <div className="supporting-program custom"><div><small>CUSTOM / À LA CARTE</small><strong>No ready-made program listed</strong><span>Operator can recommend a program from scratch.</span></div><b>Equal matching treatment</b></div>}</article>;
 }
 
-function OperatorResults({ request, profile, next }: { request: TripRequest; profile: OperatorProfile; next: () => void }) {
+function FindRealOperators({ places, status, find }: { places: string[]; status: FindStatus; find: (slugs: string[]) => void }) {
+  if (!places.length) return null;
+  return <div className="find-real"><div><p className="eyebrow">REAL OPERATORS, FROM THE WEB</p><p>Firecrawl searches published websites for incoming tour operators and destination management companies, reads each company's own site, and keeps the contact address it publishes. The first search for a place takes about a minute; after that it is instant.</p></div><ul>{places.map((slug) => { const line = status[slug]; const serving = partners.filter((partner) => partner.destinations.includes(slug)).length; return <li key={slug} className={line?.state ?? ""}><strong>{destinationName(slug)}</strong><span>{line?.state === "working" ? "Searching the web and reading operator sites…" : line?.message || `${serving} operator${serving === 1 ? "" : "s"} in your network`}</span><button className="secondary" disabled={line?.state === "working"} onClick={() => find([slug])}>{line?.state === "working" ? "Searching…" : serving ? "Find more" : "Find operators"}</button></li>; })}</ul></div>;
+}
+
+function OperatorResults({ request, profile, next, findStatus, find }: { request: TripRequest; profile: OperatorProfile; next: () => void; findStatus: FindStatus; find: (slugs: string[]) => void }) {
   const ranked = operatorRanking(request, profile, true);
-  return <section className="workflow-section wide-section"><div className="section-heading"><p className="eyebrow">STEP 3 · MATCHING INCOMING TOUR OPERATORS</p><h1>Which ITO profiles are capable enough to ask?</h1><p>Showing only operators that serve the customer-selected locations: <strong>{request.selectedDestinationIds.map(destinationName).join(", ")}</strong>. Capability Match ranks those operators using information already in their profiles; requested dates and live availability remain unconfirmed.</p></div><div className="scoring-contract"><strong>Capability Match</strong><span>35% experiences</span><span>20% operations</span><span>15% destination</span><span>10% group</span><span>10% accommodation</span><span>10% commercial</span><em>Request timing awaits ITO response</em></div><div className="result-section-title"><div><span className="status-dot viable" /><div><h2>Capability-ranked ITOs for selected locations</h2><p>{ranked.length} operators serve at least one selected location. Shortlist the ones whose profile capabilities justify preparing a request.</p></div></div></div><div className="operator-results">{ranked.map((item, index) => <OperatorResultCard key={item.partner.id} item={item} rank={index + 1} />)}</div><div className="sticky-action"><span><strong>{ranked.length}</strong> matching profiles · no request has been prepared or sent</span><button className="primary" onClick={next}>Choose Partners <span>→</span></button></div></section>;
+  const searching = request.selectedDestinationIds.some((slug) => findStatus[slug]?.state === "working");
+  return <section className="workflow-section wide-section"><div className="section-heading"><p className="eyebrow">STEP 3 · MATCHING INCOMING TOUR OPERATORS</p><h1>Which ITO profiles are capable enough to ask?</h1><p>Showing only operators that serve the customer-selected locations: <strong>{request.selectedDestinationIds.map(destinationName).join(", ")}</strong>. Capability Match ranks those operators using what their own websites say; requested dates and live availability remain unconfirmed.</p></div><FindRealOperators places={request.selectedDestinationIds} status={findStatus} find={find} />{ranked.length === 0 && <div className="method-note"><strong>{searching ? "Finding real operators…" : "No operators here yet."}</strong><span>{searching ? "They appear below as each company's site is read." : "Use Find operators above to search the web for this location."}</span></div>}<div className="scoring-contract"><strong>Capability Match</strong><span>35% experiences</span><span>20% operations</span><span>15% destination</span><span>10% group</span><span>10% accommodation</span><span>10% commercial</span><em>Request timing awaits ITO response</em></div><div className="result-section-title"><div><span className="status-dot viable" /><div><h2>Capability-ranked ITOs for selected locations</h2><p>{ranked.length} operators serve at least one selected location. Shortlist the ones whose profile capabilities justify preparing a request.</p></div></div></div><div className="operator-results">{ranked.map((item, index) => <OperatorResultCard key={item.partner.id} item={item} rank={index + 1} />)}</div><div className="sticky-action"><span><strong>{ranked.length}</strong> matching profiles · no request has been prepared or sent</span><button className="primary" onClick={next}>Choose Partners <span>→</span></button></div></section>;
 }
 
 function ChoosePartners({ request, profile, setRequest, next }: { request: TripRequest; profile: OperatorProfile; setRequest: (value: TripRequest) => void; next: () => void }) {
@@ -502,17 +511,18 @@ function requestItems(request: TripRequest, item: RankedOperator) {
   return items;
 }
 
-function TripRequestReview({ request, profile, send, canSend }: { request: TripRequest; profile: OperatorProfile; send: () => void; canSend: boolean }) {
+function TripRequestReview({ request, profile, send, canSend, demo }: { request: TripRequest; profile: OperatorProfile; send: () => void; canSend: boolean; demo: boolean }) {
   const selected = operatorRanking(request, profile, true).filter((item) => request.selectedPartnerIds.includes(item.partner.id));
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 5 · SEND TRIP REQUEST</p><h1>One core brief, with operator-specific questions.</h1><p>This is the first time each ITO is asked to judge the requested timing. Existing programs may be referenced as context, but every operator must reply with dates and availability it can stand behind.</p></div><div className="brief-strip v2"><div><strong>{request.name}</strong><span>{request.travelerCount} target · {request.minimumViableTravelers} minimum viable · {request.nights} nights</span></div><div><small>TRAVEL WINDOW TO CONFIRM</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET OPERATOR NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="bespoke-request-list">{selected.map((item) => <article key={item.partner.id}><div className="request-recipient"><span>TO</span><div><h2>{item.partner.name}</h2><p>{item.profile.locations.map(destinationName).join(", ")}</p></div><Score value={item.match.score} /></div><TagList title="Profile already supports" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Please answer in the proposal" values={requestItems(request, item)} tone="missing" />{item.bestTrip ? <p className="reference-trip"><strong>Optional reference:</strong> {item.bestTrip.name} appears {item.bestTripScore}% similar. Confirm what changes, availability, and pricing are required.</p> : <p className="reference-trip"><strong>Custom request:</strong> No existing program is required. Recommend the trip you would actually operate.</p>}</article>)}</div><div className="send-box"><div><strong>{canSend ? `Send to ${selected.length} operator${selected.length === 1 ? "" : "s"}` : `${selected.length} private operator link${selected.length === 1 ? "" : "s"} ready`}</strong><p>{canSend ? "Each operator with an address above gets its own email from your workspace inbox. An operator without an address answers through its private link." : "This trial workspace does not send email. Open each operator's link above to answer as that operator, then come back to see the proposal arrive."}</p></div><button className="primary" onClick={send}>{canSend ? "Send Trip Requests" : "Continue to Responses"} <span>→</span></button></div></section>;
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 5 · SEND TRIP REQUEST</p><h1>One core brief, with operator-specific questions.</h1><p>This is the first time each ITO is asked to judge the requested timing. Existing programs may be referenced as context, but every operator must reply with dates and availability it can stand behind.</p></div><div className="brief-strip v2"><div><strong>{request.name}</strong><span>{request.travelerCount} target · {request.minimumViableTravelers} minimum viable · {request.nights} nights</span></div><div><small>TRAVEL WINDOW TO CONFIRM</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET OPERATOR NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="bespoke-request-list">{selected.map((item) => <article key={item.partner.id}><div className="request-recipient"><span>TO</span><div><h2>{item.partner.name}</h2><p>{item.profile.locations.map(destinationName).join(", ")}</p></div><Score value={item.match.score} /></div><TagList title="Profile already supports" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Please answer in the proposal" values={requestItems(request, item)} tone="missing" />{item.bestTrip ? <p className="reference-trip"><strong>Optional reference:</strong> {item.bestTrip.name} appears {item.bestTripScore}% similar. Confirm what changes, availability, and pricing are required.</p> : <p className="reference-trip"><strong>Custom request:</strong> No existing program is required. Recommend the trip you would actually operate.</p>}</article>)}</div><div className="send-box"><div><strong>{demo ? `Send to ${selected.length} operator${selected.length === 1 ? "" : "s"} (demo mode)` : canSend ? `Send to ${selected.length} operator${selected.length === 1 ? "" : "s"}` : `${selected.length} private operator link${selected.length === 1 ? "" : "s"} ready`}</strong><p>{demo ? "Each request is a real email, delivered to TripBrief's stand-in inbox instead of the operator. An AI answers as each operator within about a minute, and the answers fill the comparison on their own." : canSend ? "Each operator with an address above gets its own email from your workspace inbox. An operator without an address answers through its private link." : "This trial workspace does not send email. Open each operator's link above to answer as that operator, then come back to see the proposal arrive."}</p></div><button className="primary" onClick={send}>{canSend ? "Send Trip Requests" : "Continue to Responses"} <span>→</span></button></div></section>;
 }
 
 function OperatorResponses({ request, proposals, shortlist, next }: { request: TripRequest; proposals: OperatorProposal[]; shortlist: ShortlistRow[]; next: () => void }) {
   const selectedPartners = partners.filter((partner) => request.selectedPartnerIds.includes(partner.id));
   const received = proposals.filter((proposal) => request.selectedPartnerIds.includes(proposal.partnerId));
   const emailed = shortlist.filter((row) => row.sentAt).length;
+  const demoSent = shortlist.some((row) => row.deliveredTo);
   const requirements = buildRequirements(request);
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">STEP 6 · OPERATOR RESPONSES</p><h1>Each ITO returns the trip it would actually provide.</h1><p>The response covers availability, inclusions, gaps, price assumptions, and operating deadlines—not merely a headline quote.</p></div><button className="primary" disabled={!received.length} onClick={next}>Compare {received.length} Proposed Trips →</button></div><div className="success-banner"><span>{emailed ? "✓" : "i"}</span><div><strong>{emailed ? `Trip request emailed to ${emailed} of ${selectedPartners.length} operators.` : `No email has been sent. Each of the ${selectedPartners.length} operators has its own private link.`}</strong><p>{received.length} of {selectedPartners.length} proposals received.</p></div></div><div className="proposal-response-grid">{selectedPartners.map((partner) => { const proposal = proposals.find((item) => item.partnerId === partner.id); return <article key={partner.id} className={proposal ? "received" : "waiting"}>{proposal ? <><div className="proposal-status"><span>Proposal Received</span><b>{proposal.availability}</b></div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><div className="proposal-quick-facts"><span><small>DATES</small><strong>{formatDate(proposal.startDate)}</strong></span><span><small>REQUIREMENTS</small><strong>{requirementCoverage(requirements, proposal.requirementAnswers).score}% covered</strong></span><span><small>NET / PERSON</small><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong></span><span><small>PROGRAM TYPE</small><strong>{proposal.basedOnExistingProgram ? "Adapted existing" : "Custom build"}</strong></span></div><TagList title="Included" values={proposal.experiencesIncluded.slice(0, 8)} /><PlainList title="Changes or additions" values={proposal.changesOrAdditions} /><PlainList title="Cannot provide" values={proposal.cannotProvide} tone="missing" />{proposal.operatorNotes.trim() && <p className="proposal-note">“{proposal.operatorNotes}”</p>}</> : <><div className="proposal-status"><span>Awaiting Response</span></div><p>Selected ITO</p><h2>{partner.name}</h2><span className="quiet">No structured proposal has been submitted yet.</span></>}</article>; })}</div></section>;
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">STEP 6 · OPERATOR RESPONSES</p><h1>Each ITO returns the trip it would actually provide.</h1><p>The response covers availability, inclusions, gaps, price assumptions, and operating deadlines—not merely a headline quote.</p></div><button className="primary" disabled={!received.length} onClick={next}>Compare {received.length} Proposed Trips →</button></div><div className="success-banner"><span>{emailed ? "✓" : "i"}</span><div><strong>{demoSent ? `Trip request sent to ${emailed} of ${selectedPartners.length} operators through the demo stand-in inbox. Simulated replies arrive within about a minute, and this page updates on its own.` : emailed ? `Trip request emailed to ${emailed} of ${selectedPartners.length} operators.` : `No email has been sent. Each of the ${selectedPartners.length} operators has its own private link.`}</strong><p>{received.length} of {selectedPartners.length} proposals received.</p></div></div><div className="proposal-response-grid">{selectedPartners.map((partner) => { const proposal = proposals.find((item) => item.partnerId === partner.id); return <article key={partner.id} className={proposal ? "received" : "waiting"}>{proposal ? <><div className="proposal-status"><span>{proposal.simulated ? "Simulated reply received" : "Proposal Received"}</span><b>{proposal.availability}</b></div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><div className="proposal-quick-facts"><span><small>DATES</small><strong>{formatDate(proposal.startDate)}</strong></span><span><small>REQUIREMENTS</small><strong>{requirementCoverage(requirements, proposal.requirementAnswers).score}% covered</strong></span><span><small>NET / PERSON</small><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong></span><span><small>PROGRAM TYPE</small><strong>{proposal.basedOnExistingProgram ? "Adapted existing" : "Custom build"}</strong></span></div><TagList title="Included" values={proposal.experiencesIncluded.slice(0, 8)} /><PlainList title="Changes or additions" values={proposal.changesOrAdditions} /><PlainList title="Cannot provide" values={proposal.cannotProvide} tone="missing" />{proposal.operatorNotes.trim() && <p className="proposal-note">“{proposal.operatorNotes}”</p>}</> : <><div className="proposal-status"><span>Awaiting Response</span></div><p>Selected ITO</p><h2>{partner.name}</h2><span className="quiet">{shortlist.find((row) => row.operatorSlug === partner.id)?.sendError || (shortlist.find((row) => row.operatorSlug === partner.id)?.deliveredTo ? "Request delivered to the stand-in inbox. The reply is being written…" : "No structured proposal has been submitted yet.")}</span></>}</article>; })}</div></section>;
 }
 
 function CompareProposals({ request, proposals, select }: { request: TripRequest; proposals: OperatorProposal[]; select: (id: string) => void }) {
@@ -530,7 +540,7 @@ function CompareProposals({ request, proposals, select }: { request: TripRequest
 // such, never as a yes.
 function RequirementGrid({ requirements, proposals }: { requirements: Requirement[]; proposals: OperatorProposal[] }) {
   if (!requirements.length || !proposals.length) return null;
-  return <section className="requirement-grid-section"><div className="section-heading"><p className="eyebrow">REQUIREMENT BY REQUIREMENT</p><h2>What each operator said to R1–R{requirements.length}</h2><p>Every cell is the operator's own answer; a quote means it came from their email, word for word. A blank is shown as not answered.</p></div><div className="requirement-grid-scroll"><table className="requirement-grid"><thead><tr><th scope="col">Requirement</th>{proposals.map((proposal) => <th scope="col" key={proposal.id}>{partnerName(proposal.partnerId)}<small>{proposal.programName}</small></th>)}</tr></thead><tbody>{requirements.map((requirement) => <tr key={requirement.key}><th scope="row"><span className="requirement-id">{requirement.id}</span> {requirement.label}<small className={`tier ${requirement.tier}`}>{TIER_LABEL[requirement.tier]}</small></th>{proposals.map((proposal) => { const answer = proposal.requirementAnswers.find((item) => item.key === requirement.key); return <td key={proposal.id} className={`answer ${answer?.answer ?? "none"}`}>{answer ? <><b>{ANSWER_MARK[answer.answer]} {ANSWER_LABEL[answer.answer]}</b>{answer.note && <span>{answer.note}</span>}{answer.quote && <q>{answer.quote}</q>}</> : <b>— Not answered</b>}</td>; })}</tr>)}</tbody><tfoot><tr><th scope="row">Coverage</th>{proposals.map((proposal) => { const coverage = requirementCoverage(requirements, proposal.requirementAnswers); return <td key={proposal.id}><b>{coverage.score}%</b><span>{coverage.yes} yes · {coverage.partly} partly · {coverage.no} no · {coverage.unanswered} not answered</span></td>; })}</tr></tfoot></table></div></section>;
+  return <section className="requirement-grid-section"><div className="section-heading"><p className="eyebrow">REQUIREMENT BY REQUIREMENT</p><h2>What each operator said to R1–R{requirements.length}</h2><p>Every cell is the operator's own answer; a quote means it came from their email, word for word. A blank is shown as not answered.</p></div><div className="requirement-grid-scroll"><table className="requirement-grid"><thead><tr><th scope="col">Requirement</th>{proposals.map((proposal) => <th scope="col" key={proposal.id}>{partnerName(proposal.partnerId)}<small>{proposal.programName}{proposal.simulated ? " · simulated reply" : ""}</small></th>)}</tr></thead><tbody>{requirements.map((requirement) => <tr key={requirement.key}><th scope="row"><span className="requirement-id">{requirement.id}</span> {requirement.label}<small className={`tier ${requirement.tier}`}>{TIER_LABEL[requirement.tier]}</small></th>{proposals.map((proposal) => { const answer = proposal.requirementAnswers.find((item) => item.key === requirement.key); return <td key={proposal.id} className={`answer ${answer?.answer ?? "none"}`}>{answer ? <><b>{ANSWER_MARK[answer.answer]} {ANSWER_LABEL[answer.answer]}</b>{answer.note && <span>{answer.note}</span>}{answer.quote && <q>{answer.quote}</q>}</> : <b>— Not answered</b>}</td>; })}</tr>)}</tbody><tfoot><tr><th scope="row">Coverage</th>{proposals.map((proposal) => { const coverage = requirementCoverage(requirements, proposal.requirementAnswers); return <td key={proposal.id}><b>{coverage.score}%</b><span>{coverage.yes} yes · {coverage.partly} partly · {coverage.no} no · {coverage.unanswered} not answered</span></td>; })}</tr></tfoot></table></div></section>;
 }
 
 function SelectedAndWorkback({ request, proposal, reset }: { request: TripRequest; proposal: OperatorProposal; reset: () => void }) {
@@ -543,7 +553,7 @@ function SelectedAndWorkback({ request, proposal, reset }: { request: TripReques
 // each operator's own capability record, and how to bring another one in. It is a
 // management surface rather than a ranking — the brief decides what matters for a
 // particular request.
-function OperatorDirectory({ request, briefId }: { request: TripRequest; briefId: Id<"briefs"> | null }) {
+function OperatorDirectory({ findStatus, find }: { findStatus: FindStatus; find: (slugs: string[]) => void }) {
   const links = useQuery(api.network.capabilityLinks) ?? [];
   const createLink = useMutation(api.network.createCapabilityLink);
   const removeOperator = useMutation(api.network.removeOperator);
@@ -579,7 +589,7 @@ function OperatorDirectory({ request, briefId }: { request: TripRequest; briefId
       </article>;
     })}</div>
     <AddOperator />
-    <NetworkResearch request={request} briefId={briefId} />
+    <NetworkResearch findStatus={findStatus} find={find} />
   </section>;
 }
 
@@ -616,40 +626,9 @@ function AddOperator() {
 // Looking for an operator the network does not have yet. Firecrawl returns
 // published pages; each one keeps the query that surfaced it, and nothing joins
 // the network until an advisor adds it.
-function NetworkResearch({ request, briefId }: { request: TripRequest; briefId: Id<"briefs"> | null }) {
-  const [destinationSlug, setDestinationSlug] = useState(request.selectedDestinationIds[0] ?? destinations[0].id);
-  const [queries, setQueries] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const runSearch = useAction(api.research.search);
-  const addOperator = useMutation(api.network.addOperator);
-  const dismiss = useMutation(api.research.dismiss);
-  const found = useQuery(api.research.list, { destinationSlug });
-  const destination = destinations.find((item) => item.id === destinationSlug) ?? destinations[0];
-  const search = async () => {
-    if (!briefId) { setError("Open a brief first — research is spent against one brief."); return; }
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const result = await runSearch({ briefId, destinationSlug, destinationName: destination.name, focus: request.desiredExperiences });
-      setQueries(result.queries);
-    } catch (cause) { setError(cause instanceof Error ? cause.message.replace(/^\[.*?\]\s*/, "") : "The search failed."); }
-    finally { setBusy(false); }
-  };
-  // A researched page is evidence, not a member: it becomes an operator only
-  // when an advisor adds it, and it carries the page it came from.
-  const add = async (candidateId: Id<"candidates">, title: string) => {
-    setError("");
-    try {
-      const result = await addOperator({ candidateId, name: title, destinationSlugs: [destinationSlug], country: destination.country, minGroupSize: request.minimumViableTravelers || 8, maxGroupSize: Math.max(request.travelerCount, 10), website: (found ?? []).find((item) => item._id === candidateId)?.url });
-      setNotice(`${title} was added to the network as ${result.slug}. Create its intake link above and send it, and it can be matched.`);
-    } catch (cause) { setError(errorText(cause, "Could not add that operator.")); }
-  };
-  return <section className="network-research"><div className="section-heading split-heading"><div><p className="eyebrow">GROW THE NETWORK</p><h2>Find incoming operators that are not in the network yet</h2><p>Firecrawl searches published websites for operators serving one destination. A result is evidence, not a network member: it becomes an operator only when you add it, and it matches nothing until it has filled in a capability record.</p></div><label>Destination<select value={destinationSlug} onChange={(event) => { setDestinationSlug(event.target.value); setQueries([]); setNotice(""); }}>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
-    {error && <div className="inline-warning"><strong>Research</strong><span>{error}</span></div>}
-    {notice && <div className="inline-success"><strong>Added</strong><span>{notice}</span></div>}
-    <div className="research-actions"><button className="primary" disabled={busy} onClick={() => void search()}>{busy ? "Searching published websites…" : `Search published operators in ${destination.name}`} <span>→</span></button>{queries.length > 0 && <p className="quiet">Searched for: {queries.map((item) => `"${item}"`).join(" · ")}</p>}</div>
-    <div className="candidate-list">{(found ?? []).map((item) => <article key={item._id}><div><small>{item.query}</small><h3>{item.title}</h3><span>{item.description}</span><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div>{item.addedOperatorSlug ? <span className="status-badge">In the network as {item.addedOperatorSlug}</span> : <div className="candidate-actions"><button className="primary" onClick={() => void add(item._id, item.title)}>Add to the network</button><button className="secondary" onClick={() => void dismiss({ candidateId: item._id })}>Dismiss</button></div>}</article>)}{found && found.length === 0 && <p className="quiet">Nothing found yet for {destination.name}. Run the search, or choose another destination.</p>}</div></section>;
+function NetworkResearch({ findStatus, find }: { findStatus: FindStatus; find: (slugs: string[]) => void }) {
+  const [slug, setSlug] = useState(destinations[0]?.id ?? "");
+  return <section className="network-research"><div className="section-heading split-heading"><div><p className="eyebrow">GROW THE NETWORK</p><h2>Find real operators for any location</h2><p>Firecrawl searches published websites for incoming tour operators and destination management companies in one location, reads each company's own site, and adds it to this network with the contact address that site publishes.</p></div><label>Location<select value={slug} onChange={(event) => setSlug(event.target.value)}>{destinations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div><FindRealOperators places={slug ? [slug] : []} status={findStatus} find={find} /></section>;
 }
 
 // The operator's own landing page on its private link. It shows the request and
@@ -1014,6 +993,8 @@ function Workspace() {
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [findStatus, setFindStatus] = useState<FindStatus>({});
+  const findReal = useAction(api.webOperators.findForDestination);
 
   // The operator network is one live read at the root, cached under the names the demo's
   // matching engine already uses, so every ranking view sees the current records.
@@ -1065,6 +1046,18 @@ function Workspace() {
     } catch (cause) { report(cause, "Could not save the brief."); }
   };
 
+  // Real operators for each location, found on the web. Runs on its own for a
+  // chosen location with nobody in the network yet, and on request for more.
+  const findOperators = (slugs: string[]) => {
+    for (const slug of slugs) {
+      if (findStatus[slug]?.state === "working") continue;
+      setFindStatus((current) => ({ ...current, [slug]: { state: "working", message: "" } }));
+      void findReal({ destinationSlug: slug, destinationName: destinationName(slug), focus: request.desiredExperiences })
+        .then((result) => setFindStatus((current) => ({ ...current, [slug]: { state: "done", message: result.added ? `${result.added} real operator${result.added === 1 ? "" : "s"} added to your network${result.fromCache ? " (already researched)" : ""}` : "Every operator found is already in your network" } })))
+        .catch((cause: unknown) => setFindStatus((current) => ({ ...current, [slug]: { state: "failed", message: errorText(cause, "The search did not finish. Try again.") } })));
+    }
+  };
+
   const chooseDestinations = async () => {
     setError("");
     if (!briefId) { goView("destinations"); return; }
@@ -1072,6 +1065,7 @@ function Workspace() {
       await saveBrief({ briefId, brief: briefPayload(request) });
       await writeDestinations({ briefId, destinationSlugs: request.selectedDestinationIds });
       goView("operators");
+      findOperators(request.selectedDestinationIds.filter((slug) => !partners.some((partner) => partner.destinations.includes(slug))));
     } catch (cause) { report(cause, "Could not save the customer-approved locations."); }
   };
 
@@ -1080,12 +1074,16 @@ function Workspace() {
     setError("");
     if (!briefId) { setError("Save the brief first."); return; }
     try {
+      // The ranking position goes with each operator: in demo mode the strongest
+      // match is the one whose reply meets every requirement.
+      const order = operatorRanking(request, profile, true).map((item) => item.partner.id);
       await writeShortlist({
         briefId,
         operators: request.selectedPartnerIds.map((slug) => ({
           operatorSlug: slug,
           operatorName: partners.find((item) => item.id === slug)?.name ?? slug,
           capabilityToken: shortlist.find((row) => row.operatorSlug === slug)?.capabilityToken ?? newCapabilityToken(),
+          rank: order.includes(slug) ? order.indexOf(slug) + 1 : 99,
         })),
       });
       goView("request");
@@ -1108,13 +1106,15 @@ function Workspace() {
     try {
       for (const row of shortlist) {
         const email = (emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug) ?? "").trim();
-        if (!email || row.sentAt) continue;
+        // In demo mode every operator is sent to, published address or not: the
+        // request goes to the stand-in inbox either way.
+        if ((!email && !account?.demo) || row.sentAt) continue;
         await sendRequest({ briefOperatorId: row._id, email });
         sent += 1;
       }
     } catch (cause) { report(cause, "The request was not sent."); }
     finally { setSending(false); }
-    setNotice(sent ? `${sent} request${sent === 1 ? "" : "s"} sent from the workspace mail inbox.` : "No address was entered, so no email was sent. Each operator still has its own private link.");
+    setNotice(sent ? (account?.demo ? `${sent} request${sent === 1 ? "" : "s"} sent to the demo stand-in inbox. Simulated replies arrive within about a minute.` : `${sent} request${sent === 1 ? "" : "s"} sent from the workspace mail inbox.`) : "No address was entered, so no email was sent. Each operator still has its own private link.");
     goView("responses");
   };
 
@@ -1165,17 +1165,17 @@ function Workspace() {
     finally { setDeleting(false); }
   };
 
-  const viewContent = activeView === "dashboard" ? <Dashboard start={start} portal={() => goView("portal")} briefs={briefList ?? []} open={openBrief} />
+  const viewContent = activeView === "dashboard" ? <Dashboard start={start} portal={() => goView("portal")} briefs={briefList ?? []} open={openBrief} demo={Boolean(account?.demo)} />
     : activeView === "brief" ? <BriefForm request={request} setRequest={setRequest} next={() => void saveBriefStep()} />
     : activeView === "destinations" ? <DestinationDiscovery request={request} setRequest={setRequest} next={() => void chooseDestinations()} />
-    : activeView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goView("choose")} />
+    : activeView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goView("choose")} findStatus={findStatus} find={findOperators} />
     : activeView === "choose" ? <ChoosePartners request={request} profile={profile} setRequest={setRequest} next={() => void choosePartners()} />
-    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} blocked={account && !account.canSend ? account.reason : ""} /><TripRequestReview request={request} profile={profile} canSend={Boolean(account?.canSend)} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from your workspace inbox…</div>}</>
+    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} blocked={account && !account.canSend ? account.reason : ""} demo={Boolean(account?.demo)} /><TripRequestReview request={request} profile={profile} canSend={Boolean(account?.canSend)} demo={Boolean(account?.demo)} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from your workspace inbox…</div>}</>
     : activeView === "responses" ? <><OperatorResponses request={request} proposals={proposals} shortlist={shortlist} next={() => goView("compare")} />{briefId && <ReplyImport briefId={briefId} shortlist={shortlist} request={request} />}</>
     : activeView === "compare" ? <CompareProposals request={request} proposals={proposals} select={(id) => void selectProposal(id)} />
     : activeView === "selected" && selectedProposal ? <SelectedAndWorkback request={request} proposal={selectedProposal} reset={reset} />
     : activeView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} resume={() => goView(resumeView())} deleting={deleting} onDelete={() => void deleteBrief()} />
-    : <OperatorDirectory request={request} briefId={briefId} />;
+    : <OperatorDirectory findStatus={findStatus} find={findOperators} />;
 
   return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} newBrief={start} reset={reset} signOut={() => { void signOut(); }} account={account} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
 }
@@ -1200,10 +1200,10 @@ function OperatorLinks({ shortlist, briefName, resume, onDelete, deleting }: { s
 
 // One address per operator, captured by hand. Nothing is prefilled with a real
 // supplier: the demo runs on the private links instead.
-function SendPanel({ shortlist, emails, setEmails, blocked }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void; blocked: string }) {
+function SendPanel({ shortlist, emails, setEmails, blocked, demo }: { shortlist: ShortlistRow[]; emails: Record<string, string>; setEmails: (value: Record<string, string>) => void; blocked: string; demo: boolean }) {
   if (!shortlist.length) return null;
-  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>Add an address to email an operator from the workspace mail inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically.</p></div>{blocked && <div className="inline-warning"><strong>Sending is off for this workspace</strong><span>{blocked}</span></div>}
-    <div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? "Request already sent" : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>Operator email<input type="email" inputMode="email" placeholder="name@operator.example" value={emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug)} disabled={Boolean(row.sentAt)} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
+  return <section className="workflow-section send-panel"><div className="section-heading"><p className="eyebrow">DELIVERY</p><h2>Who receives it, and how</h2><p>{demo ? "Each shortlisted operator gets its own request, sent when you press Send below. In demo mode it goes to TripBrief's stand-in inbox, never to the operator." : "Add an address to email an operator from the workspace mail inbox, or hand over the private link. Either way the request reaches one named operator, and nothing is sent automatically."}</p></div>{blocked && <div className="inline-warning"><strong>Sending is off for this workspace</strong><span>{blocked}</span></div>}{demo && <div className="inline-success"><strong>Demo mode</strong><span>The address shown is the one the operator's own website publishes. It is never written to: every request goes to TripBrief's stand-in inbox, and an AI replies as the operator. The strongest match meets every requirement; the others differ on one or two things, the way real answers do.</span></div>}
+    <div className="bespoke-request-list">{shortlist.map((row) => <article key={row._id}><div className="request-recipient"><span>TO</span><div><h2>{row.operatorName}</h2><p>{row.sentAt ? (row.deliveredTo ? "Sent to the demo stand-in inbox" : "Request already sent") : "Not sent yet"}{row.sendError ? ` · ${row.sendError}` : ""}</p></div></div><div className="send-row"><label>{demo ? "Operator's published address" : "Operator email"}<input type="email" inputMode="email" placeholder={demo ? "No address published" : "name@operator.example"} value={emails[row._id] ?? row.email ?? operatorContactEmail(row.operatorSlug)} disabled={Boolean(row.sentAt) || demo} onChange={(event) => setEmails({ ...emails, [row._id]: event.target.value })} /></label><a className="secondary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open its link instead</a></div></article>)}</div></section>;
 }
 
 // The address the agency reaches this operator at. It lives on the network record
@@ -1621,6 +1621,7 @@ type StoredProposal = {
   cancellationTerms: { daysBefore: number; penalty: string }[];
   operatorNotes: string;
   requirementAnswers?: RequirementAnswer[];
+  simulated?: boolean;
 };
 
 function toDemoProposal(proposal: StoredProposal): OperatorProposal {
@@ -1656,6 +1657,7 @@ function toDemoProposal(proposal: StoredProposal): OperatorProposal {
     cancellationTerms: proposal.cancellationTerms,
     operatorNotes: proposal.operatorNotes,
     requirementAnswers: proposal.requirementAnswers ?? [],
+    simulated: proposal.simulated === true,
   };
 }
 

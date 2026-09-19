@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { placeProfile } from "./schema";
 
 // The locations an advisor can put in front of a client. Three sources, one list:
 //
@@ -42,6 +43,8 @@ const listedDestination = v.object({
   // The advisor's own assessment, when they made one. Empty means unassessed.
   strengths: v.array(v.string()),
   operatorCount: v.number(),
+  // What published sources say about a place the advisor added.
+  profile: v.optional(placeProfile),
 });
 
 export const list = query({
@@ -75,6 +78,7 @@ export const list = query({
         source: "network" | "added";
         strengths: string[];
         operatorCount: number;
+        profile?: typeof added[number]["profile"];
       }
     >();
     const covering = new Map<string, Set<string>>();
@@ -110,6 +114,7 @@ export const list = query({
         source: known ? "network" : "added",
         strengths: row.strengths,
         operatorCount: known?.operatorCount ?? 0,
+        ...(row.profile ? { profile: row.profile } : {}),
       });
     }
 

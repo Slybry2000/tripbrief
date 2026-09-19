@@ -182,6 +182,43 @@ export const availability = v.union(
   v.literal("Unavailable"),
 );
 
+// What published sources say about a place. The strengths use the same experience
+// vocabulary as a brief, scored 0 to 5, so the destination ranking reads them
+// exactly as it reads the starter catalog.
+export const placeProfile = v.object({
+  name: v.string(),
+  country: v.string(),
+  description: v.string(),
+  climates: v.array(v.string()),
+  experienceStrengths: v.record(v.string(), v.number()),
+  watchOuts: v.array(v.string()),
+  sources: v.array(v.object({ title: v.string(), url: v.string() })),
+  researchedAt: v.number(),
+});
+
+// A real operator as its own website describes it.
+export const webOperator = v.object({
+  destinationSlug: v.string(),
+  domain: v.string(),
+  name: v.string(),
+  country: v.string(),
+  regions: v.array(v.string()),
+  website: v.string(),
+  // Only an address that appears on the operator's own pages. Empty when the site
+  // publishes none.
+  email: v.string(),
+  summary: v.string(),
+  services: v.array(v.string()),
+  operations: v.array(v.string()),
+  travelerTypes: v.array(v.string()),
+  hotelTypes: v.array(v.string()),
+  languages: v.array(v.string()),
+  minGroupSize: v.number(),
+  maxGroupSize: v.number(),
+  sourceUrl: v.string(),
+  foundAt: v.number(),
+});
+
 // One operator's answer to one numbered requirement (R1..Rn). Keyed by the
 // requirement's stable key rather than its number, so an answer still lines up
 // if the brief later gains or loses a requirement.
@@ -275,8 +312,27 @@ destinations: defineTable({
   // vocabulary the brief uses. Empty is allowed: it means "not assessed yet",
   // which is a different statement from "a poor fit".
   strengths: v.array(v.string()),
+  // Filled in from published travel sources when the place is added, so the
+  // advisor types a name and nothing else. Optional: places added before this
+  // carry only the advisor's own ticks.
+  profile: v.optional(placeProfile),
   updatedAt: v.number(),
 }).index("by_owner_and_slug", ["owner", "slug"]),
+
+// What published travel sources say about a place, shared by every workspace so
+// the same country is only researched once. It is reference knowledge about a
+// country, not anybody's data.
+placeProfiles: defineTable({
+  slug: v.string(),
+  ...placeProfile.fields,
+}).index("by_slug", ["slug"]),
+
+// Real incoming tour operators and destination management companies found on the
+// web, with the contact address their own site publishes. Shared by every
+// workspace as a cache: a workspace imports from here into its own network.
+webOperators: defineTable(webOperator).index("by_destinationSlug", [
+  "destinationSlug",
+]),
 
 briefs: defineTable({
     owner: v.string(),
@@ -323,6 +379,11 @@ briefs: defineTable({
       v.literal("declined"),
     ),
     email: v.optional(v.string()),
+    // The operator's position in the capability ranking when it was shortlisted:
+    // 1 is the strongest match. Demo mode makes the strongest match the perfect one.
+    rank: v.optional(v.number()),
+    // Set when the request went to the demo stand-in inbox instead of the operator.
+    deliveredTo: v.optional(v.string()),
     sentAt: v.optional(v.number()),
     providerMessageId: v.optional(v.string()),
     // The thread this request started. A reply carries it back, which is how a
@@ -358,6 +419,8 @@ briefs: defineTable({
     // Set once the arrival has been announced to the advisor, so a quote is never
     // announced twice and never silently missed.
     announcedAt: v.optional(v.number()),
+    // True when a model wrote the reply as the operator, in demo mode.
+    simulated: v.optional(v.boolean()),
     standardisedAt: v.optional(v.number()),
     standardisedBy: v.optional(v.string()),
     // The operator's own words, kept when a proposal arrived as an emailed reply

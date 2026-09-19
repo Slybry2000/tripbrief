@@ -14,6 +14,8 @@ import type * as auth from "../auth.js";
 import type * as authMail from "../authMail.js";
 import type * as briefs from "../briefs.js";
 import type * as crons from "../crons.js";
+import type * as demo from "../demo.js";
+import type * as demoResponder from "../demoResponder.js";
 import type * as destinations from "../destinations.js";
 import type * as http from "../http.js";
 import type * as integrationLimits from "../integrationLimits.js";
@@ -22,10 +24,14 @@ import type * as network from "../network.js";
 import type * as openai from "../openai.js";
 import type * as operatorImport from "../operatorImport.js";
 import type * as outbound from "../outbound.js";
+import type * as places from "../places.js";
 import type * as proposals from "../proposals.js";
 import type * as replies from "../replies.js";
 import type * as research from "../research.js";
 import type * as seedData from "../seedData.js";
+import type * as vocabulary from "../vocabulary.js";
+import type * as web from "../web.js";
+import type * as webOperators from "../webOperators.js";
 
 import type {
   ApiFromModules,
@@ -40,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   authMail: typeof authMail;
   briefs: typeof briefs;
   crons: typeof crons;
+  demo: typeof demo;
+  demoResponder: typeof demoResponder;
   destinations: typeof destinations;
   http: typeof http;
   integrationLimits: typeof integrationLimits;
@@ -48,10 +56,14 @@ declare const fullApi: ApiFromModules<{
   openai: typeof openai;
   operatorImport: typeof operatorImport;
   outbound: typeof outbound;
+  places: typeof places;
   proposals: typeof proposals;
   replies: typeof replies;
   research: typeof research;
   seedData: typeof seedData;
+  vocabulary: typeof vocabulary;
+  web: typeof web;
+  webOperators: typeof webOperators;
 }>;
 
 /**

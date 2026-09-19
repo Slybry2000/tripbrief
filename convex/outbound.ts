@@ -11,6 +11,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
 import type { Id } from "./_generated/dataModel";
 import { displayName, parseInbox } from "./mailboxes";
+import { demoMode } from "./demo";
 
 // The brief's inbox is the only thing that sends, and it sends one operator its
 // own link. Nothing here can reach a second address, and no message ever
@@ -226,6 +227,8 @@ export const sendRequest = action({
     });
     if (!found || found.row.owner !== owner)
       throw new ConvexError("That operator is not on one of your briefs.");
+    const demo = demoMode();
+    if (demo.on) return await sendDemo(ctx, found, args.email);
     // The one place in the product that reaches a real person's inbox, so the
     // account's permission is checked here rather than in the interface.
     const permission: {
@@ -307,13 +310,75 @@ export const sendRequest = action({
   },
 });
 
+// Demo mode: the request is a real email, but it goes to the stand-in inbox, never
+// to the operator. The operator's own published address is recorded for the
+// advisor to see, and a model answers as the operator a little later. Anyone may
+// send in demo mode, a trial included, because nothing can reach a stranger.
+type SendTarget = {
+  row: { _id: Id<"briefOperators">; briefId: Id<"briefs">; owner: string; operatorName: string; capabilityToken: string; email?: string; sentAt?: number };
+  brief: { name: string; travelerCount: number; minimumViableTravelers: number; nights: number; earliestDepartureDate: string; latestDepartureDate: string };
+};
+
+async function sendDemo(ctx: ActionCtx, found: SendTarget, typed: string): Promise<{ to: string }> {
+  const demo = demoMode();
+  const { row, brief } = found;
+  if (row.sentAt) throw new ConvexError("This request has already been sent.");
+  if (!demo.agencyInbox || !demo.operatorInbox)
+    throw new ConvexError("Demo mode is on, but its stand-in inboxes are not configured.");
+  const key = env.AGENTMAIL_API_KEY?.trim();
+  if (!key) throw new ConvexError("Email sending has not been configured.");
+  await ctx.runMutation(internal.integrationLimits.consumeForOwner, { owner: row.owner, kind: "send" });
+  const real = typed.trim().toLowerCase();
+  const shown = isSendableAddress(real) ? real : "";
+  const link = `${env.SITE_URL?.trim() || env.CONVEX_SITE_URL}/#respond=${encodeURIComponent(row.capabilityToken)}`;
+  const message = requestMessage(brief, row.operatorName, link);
+  const notice = `DEMO MODE: this request is addressed to ${row.operatorName}${shown ? ` (${shown})` : ""} but was delivered to TripBrief's stand-in inbox. The operator was not contacted.`;
+  const response = await fetch(sendUrl(demo.agencyInbox), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      "Idempotency-Key": `operator-request-${row._id}`,
+    },
+    body: JSON.stringify({
+      to: [demo.operatorInbox],
+      subject: `${message.subject} (${row.operatorName.slice(0, 60)})`,
+      text: `${notice}\n\n${message.text}`,
+      html: `<p><strong>${escapeHtml(notice)}</strong></p>\n${message.html}`,
+      labels: ["operator-request", "demo"],
+    }),
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => null);
+  if (!response?.ok) {
+    await ctx.runMutation(internal.outbound.markFailed, {
+      briefOperatorId: row._id,
+      error: `The email service refused the demo message${response ? ` (status ${response.status})` : ""}.`,
+    });
+    throw new ConvexError("The request was not sent. You can try again from this row.");
+  }
+  const sent = providerSendResult(await response.json().catch(() => null));
+  await ctx.runMutation(internal.outbound.markSent, {
+    briefOperatorId: row._id,
+    email: shown,
+    deliveredTo: demo.operatorInbox,
+    providerMessageId: sent.messageId,
+    providerThreadId: sent.threadId,
+  });
+  // A real operator does not answer in the same second. Twenty to fifty seconds
+  // is quick enough to watch, and staggered enough to look like five companies.
+  const delay = 20_000 + Math.floor(Math.random() * 30_000);
+  await ctx.scheduler.runAfter(delay, internal.demoResponder.reply, { briefOperatorId: row._id });
+  return { to: demo.operatorInbox };
+}
+
 export const markSent = internalMutation({
   args: {
     briefOperatorId: v.id("briefOperators"),
     email: v.string(),
+    deliveredTo: v.optional(v.string()),
     providerMessageId: v.string(),
     providerThreadId: v.string(),
-    mailboxId: v.id("mailboxes"),
+    mailboxId: v.optional(v.id("mailboxes")),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -321,17 +386,18 @@ export const markSent = internalMutation({
     if (!row) throw new ConvexError("Operator not found.");
     const now = Date.now();
     await ctx.db.patch("briefOperators", row._id, {
-      email: args.email,
+      ...(args.email ? { email: args.email } : {}),
+      ...(args.deliveredTo ? { deliveredTo: args.deliveredTo } : {}),
       sentAt: now,
       providerMessageId: args.providerMessageId,
       // An empty thread id is stored as absent, so a later reply cannot match on it.
       ...(args.providerThreadId ? { providerThreadId: args.providerThreadId } : {}),
-      mailboxId: args.mailboxId,
+      ...(args.mailboxId ? { mailboxId: args.mailboxId } : {}),
       sendError: "",
       status: row.status === "submitted" ? "submitted" : "sent",
       updatedAt: now,
     });
-    await ctx.db.patch("mailboxes", args.mailboxId, { lastUsedAt: now });
+    if (args.mailboxId) await ctx.db.patch("mailboxes", args.mailboxId, { lastUsedAt: now });
     const brief = await ctx.db.get("briefs", row.briefId);
     if (brief && brief.status === "draft")
       await ctx.db.patch("briefs", brief._id, { status: "sent", updatedAt: now });
