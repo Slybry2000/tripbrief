@@ -65,7 +65,11 @@ async function discover(slug: string, place: string, focus: string[], known: str
       `${place} ground handler private group tours`,
     ];
     for (const query of queries) {
-      for (const page of await searchWithContent(firecrawl, query, 6, true)) {
+      // One slow or refused search must not sink the others: it is skipped, and
+      // only a place where every search failed is reported as a failure.
+      let results: WebPage[] = [];
+      try { results = await searchWithContent(firecrawl, query, 6, true); } catch { continue; }
+      for (const page of results) {
         const domain = domainOf(page.url);
         if (looksLikeDirectory(domain) || domains.has(domain) || page.markdown.length < 300) continue;
         domains.add(domain);
