@@ -775,3 +775,7 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
   .requirement-grid tbody th { width: auto; }
   .answer-choice { padding: 7px 11px; }
 }
+
+/* Each brief on the home list carries its own open and delete. */
+.brief-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+.delete-confirm { color: var(--red); font-size: .85rem; margin-top: 6px; }
