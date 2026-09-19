@@ -17,7 +17,13 @@ const addDays = (value: string, days: number) => {
 };
 const percent = (matched: number, total: number) => total ? Math.round((matched / total) * 100) : 100;
 
-export const calculateTargetNet = (request: TripRequest) => request.targetRetailPricePerPerson * 0.75;
+// The agency quotes its client a retail price and asks operators for a net a
+// quarter below it. On the operator's side only the net is known, and it is used
+// as given.
+export const calculateTargetNet = (request: TripRequest) =>
+  request.targetNetPerPerson && request.targetNetPerPerson > 0
+    ? request.targetNetPerPerson
+    : request.targetRetailPricePerPerson * 0.75;
 
 export function getMatchedExperiences(request: TripRequest, trip: ReadyMadeTrip) {
   return request.desiredExperiences.filter((item) => trip.experiences.includes(item));
@@ -148,31 +154,53 @@ export function servesSelectedDestinations(request: TripRequest, profile: Operat
 export function calculateProposalMargin(request: TripRequest, proposal: Proposal | OperatorProposal) {
   const net = "netPricePerPerson" in proposal ? proposal.netPricePerPerson : proposal.revisedNetPricePerPerson;
   if (net === null) return null;
+  // A margin is only meaningful against a known retail price in the same currency.
+  if (!request.targetRetailPricePerPerson) return null;
+  if ("currency" in proposal && proposal.currency && proposal.currency !== "USD") return null;
   const profit = request.targetRetailPricePerPerson - net;
-  const margin = request.targetRetailPricePerPerson ? profit / request.targetRetailPricePerPerson : 0;
+  const margin = profit / request.targetRetailPricePerPerson;
   return { profit, margin };
 }
 
-export function buildWorkbackSchedule(request: TripRequest, proposal: OperatorProposal): WorkbackItem[] {
+// The operator's own deadlines are contractual and always shown. The agency's
+// sales checkpoints are suggestions, so one that has already passed is left out
+// rather than shown as a date nobody can meet. A deadline the proposal did not
+// state (zero days) is not invented either.
+export function buildWorkbackSchedule(
+  request: TripRequest,
+  proposal: OperatorProposal,
+  today: string = new Date().toISOString().slice(0, 10),
+): WorkbackItem[] {
   const departure = proposal.startDate;
+  // Every date below is counted back from departure. Without a real one there is
+  // nothing honest to show, and an invalid date must never take the page down.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(departure) || Number.isNaN(toUtcDate(departure).getTime()) || isoDate(toUtcDate(departure)) !== departure) return [];
   const create = (daysBefore: number, label: string, owner: WorkbackItem["owner"], category: WorkbackItem["category"], detail: string, warning = false): WorkbackItem => ({
     date: addDays(departure, -daysBefore), daysBefore, label, owner, category, detail, warning,
   });
   const halfTarget = Math.max(1, Math.ceil(request.minimumViableTravelers / 2));
   const twoThirdsTarget = Math.max(1, Math.ceil(request.minimumViableTravelers * 2 / 3));
   const minimumWarning = request.confirmedTravelers < request.minimumViableTravelers;
-  return [
-    create(0, "Trip departs", "Shared", "departure", `${request.travelerCount} target travelers · ${proposal.destinationId}`),
-    create(proposal.travelerNamesDaysBefore, "Final traveler names due", "Agency", "operator", "Submit the final rooming and traveler-name list."),
-    create(proposal.finalPaymentDaysBefore, "Final payment to operator", "Agency", "operator", `${proposal.currency} payment deadline under the selected proposal.`),
-    create(proposal.roomReleaseDaysBefore, "Unused rooms released", "Operator", "operator", "Uncommitted room inventory can return to the supplier."),
-    create(proposal.finalHeadcountDaysBefore, "Final group count committed", "Shared", "operator", `Operator commitment based on the final ${request.minimumViableTravelers}+ traveler plan.`),
-    create(60, `Minimum viable group: ${request.minimumViableTravelers}`, "Agency", "decision", `Current demo count: ${request.confirmedTravelers}. Go / No-Go decision required if the minimum is not reached.`, minimumWarning),
+  const contractual: WorkbackItem[] = [
+    create(0, "Trip departs", "Shared", "departure", `${request.travelerCount} target travelers`),
+  ];
+  const deadline = (daysBefore: number, item: () => WorkbackItem) => { if (daysBefore > 0) contractual.push(item()); };
+  deadline(proposal.depositDueDaysBefore, () => create(proposal.depositDueDaysBefore, `Deposit to operator${proposal.depositPercent ? ` (${proposal.depositPercent}%)` : ""}`, "Agency", "operator", `${proposal.currency} deposit due under the selected proposal.`));
+  deadline(proposal.travelerNamesDaysBefore, () => create(proposal.travelerNamesDaysBefore, "Final traveler names due", "Agency", "operator", "Submit the final rooming and traveler-name list."));
+  deadline(proposal.finalPaymentDaysBefore, () => create(proposal.finalPaymentDaysBefore, "Final payment to operator", "Agency", "operator", `${proposal.currency} payment deadline under the selected proposal.`));
+  deadline(proposal.roomReleaseDaysBefore, () => create(proposal.roomReleaseDaysBefore, "Unused rooms released", "Operator", "operator", "Uncommitted room inventory can return to the supplier."));
+  deadline(proposal.finalHeadcountDaysBefore, () => create(proposal.finalHeadcountDaysBefore, "Final group count committed", "Shared", "operator", `Operator commitment based on the final ${request.minimumViableTravelers}+ traveler plan.`));
+  for (const term of proposal.cancellationTerms) {
+    if (term.daysBefore > 0) contractual.push(create(term.daysBefore, `Cancellation penalty rises to ${term.penalty}`, "Agency", "operator", "From this date, cancelling costs this share of the trip under the selected proposal.", false));
+  }
+  const checkpoints = [
+    create(60, `Minimum viable group: ${request.minimumViableTravelers}`, "Agency", "decision", `${request.confirmedTravelers} confirmed so far. Go / No-Go decision required if the minimum is not reached.`, minimumWarning),
     create(90, `Sales target: ${twoThirdsTarget} confirmed`, "Agency", "sales", "Review sales pace, pricing, and supplier commitments."),
     create(120, `Sales target: ${halfTarget} confirmed`, "Agency", "sales", "Early viability checkpoint."),
     create(150, "Trip actively selling", "Agency", "sales", "Launch sales materials and client outreach."),
     create(180, "Operator and itinerary locked", "Shared", "decision", "Approve the operating partner and final trip structure."),
-  ].sort((a, b) => b.date.localeCompare(a.date));
+  ].filter((item) => item.date >= today);
+  return [...contractual, ...checkpoints].sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label));
 }
 
 export function canSelectPartner(selectedPartnerIds: string[], partnerId: string, limit = 5) {

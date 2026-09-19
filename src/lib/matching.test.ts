@@ -271,8 +271,9 @@ test("the workback schedule runs backwards from the selected departure", () => {
     roomReleaseDaysBefore: 60,
     cancellationTerms: [],
     operatorNotes: "",
+    requirementAnswers: [],
   };
-  const schedule = buildWorkbackSchedule(request, proposal);
+  const schedule = buildWorkbackSchedule(request, proposal, "2026-09-19");
   expect(schedule[0].daysBefore).toBe(0);
   expect(schedule[0].label).toBe("Trip departs");
   expect(schedule.some((item) => item.daysBefore === 120)).toBe(true);
@@ -281,4 +282,32 @@ test("the workback schedule runs backwards from the selected departure", () => {
   )!;
   // The demo has 8 confirmed against a minimum of 12, so the go/no-go is warned.
   expect(minimum.warning).toBe(true);
+});
+
+test("the schedule carries the operator's deposit and cancellation dates, and invents nothing", () => {
+  const request = { ...(requestSeed as TripRequest), confirmedTravelers: 3 };
+  const proposal: OperatorProposal = {
+    id: "x", partnerId: "p1", programName: "Ubud Quiet Week", basedOnExistingProgram: false, readyMadeTripId: null,
+    destinationId: "bali", startDate: "2027-10-15", endDate: "2027-10-22", nights: 7, availability: "Available",
+    groupSizeAccepted: 16, hotelLevel: "4-star", hotelNotes: "", transportation: [], experiencesIncluded: [],
+    requirementsMet: [], changesOrAdditions: [], cannotProvide: [], finalFit: 0, netPricePerPerson: 2450,
+    currency: "USD", pricingAssumptions: "", depositPercent: 30, depositDueDaysBefore: 120,
+    finalHeadcountDaysBefore: 0, finalPaymentDaysBefore: 45, travelerNamesDaysBefore: 45, roomReleaseDaysBefore: 0,
+    cancellationTerms: [{ daysBefore: 90, penalty: "25%" }], operatorNotes: "", requirementAnswers: [],
+  };
+  const schedule = buildWorkbackSchedule(request, proposal, "2026-09-19");
+  const labels = schedule.map((item) => item.label);
+  expect(labels).toContain("Deposit to operator (30%)");
+  expect(labels).toContain("Cancellation penalty rises to 25%");
+  // A deadline the operator did not state is left out, not shown as departure day.
+  expect(labels).not.toContain("Unused rooms released");
+  expect(labels).not.toContain("Final group count committed");
+  expect(schedule.find((item) => item.label.startsWith("Minimum viable"))!.detail).toContain("3 confirmed so far");
+  // A sales checkpoint that has already passed is not offered as a date to hit.
+  const late = buildWorkbackSchedule(request, proposal, "2027-06-01");
+  expect(late.some((item) => item.label === "Operator and itinerary locked")).toBe(false);
+  expect(late.some((item) => item.label === "Deposit to operator (30%)")).toBe(true);
+  // An impossible or missing start date yields no schedule, never an error.
+  expect(buildWorkbackSchedule(request, { ...proposal, startDate: "" })).toEqual([]);
+  expect(buildWorkbackSchedule(request, { ...proposal, startDate: "2027-13-01" })).toEqual([]);
 });

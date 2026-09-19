@@ -83,7 +83,7 @@ export const pending = internalQuery({
           operatorName:
             shortlisted.find((row) => row.operatorSlug === proposal.operatorSlug)
               ?.operatorName ?? proposal.operatorSlug,
-          detail: `${proposal.programName} — ${price} net per person, ${proposal.finalFit}% fit`,
+          detail: `${proposal.programName} — ${price} net per person, ${proposal.finalFit}% ${proposal.requirementAnswers?.length ? "of the requirements covered" : "fit"}`,
         });
       }
     }

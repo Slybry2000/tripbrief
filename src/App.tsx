@@ -8,9 +8,9 @@ import destinationSeed from "./data/destinations.json";
 import requestSeed from "./data/demo-request.json";
 import programSeed from "./data/programs.json";
 import { buildWorkbackSchedule, calculateOperatorMatch, calculateProposalMargin, calculateTargetNet, calculateTripMatch, servesSelectedDestinations } from "./lib/matching";
-import type { Destination, OperatorMatch, OperatorProfile, OperatorProposal, Partner, ReadyMadeTrip, TripRequest } from "./lib/types";
+import type { Destination, OperatorMatch, OperatorProfile, OperatorProposal, OperatorTiming, Partner, ReadyMadeTrip, RequirementAnswer, RequirementAnswerValue, ServiceArea, TripRequest } from "./lib/types";
 import { newCapabilityToken, readResponseToken, responseLink } from "./capability";
-import { buildRequirements, hardNoList, missingMusts, TIER_LABEL } from "./lib/requirements";
+import { buildRequirements, hardNoList, missingMusts, requirementCoverage, TIER_LABEL, type Requirement } from "./lib/requirements";
 import { isAssessed, mergeDestinations, rankDestinations, type DestinationEntry, type DestinationListing } from "./lib/destinations";
 
 // The catalog is JSON, so its per-entry strength tables infer as a union of
@@ -98,7 +98,6 @@ export type NetworkRow = {
 
 let partners: Partner[] = [];
 let operatorProfiles: OperatorProfile[] = [];
-let demoOperator: Partner = partners[0];
 let demoProfile: OperatorProfile = operatorProfiles[0];
 let networkBySlug = new Map<string, StoredOperator>();
 
@@ -122,7 +121,6 @@ function cacheNetwork(rows: NetworkRow[]) {
   operatorProfiles = rows.map(({ capability }) => ({
     ...toProfile(capability),
   }));
-  demoOperator = partners[0];
   demoProfile = operatorProfiles[0];
   networkBySlug = new Map(rows.map(({ operator }) => [operator.slug, operator]));
 }
@@ -196,15 +194,6 @@ function toStoredCapability(profile: OperatorProfile) {
   };
 }
 
-// On an operator's own link, "the operator" is that operator: the portal's
-// workspace and intake are written around one record, and this points them at the
-// one the link belongs to rather than at the demo's first row.
-function focusOperator(slug: string) {
-  const partner = partners.find((item) => item.id === slug);
-  const capability = operatorProfiles.find((item) => item.partnerId === slug);
-  if (partner) demoOperator = partner;
-  if (capability) demoProfile = capability;
-}
 
 const experiences = ["wellness", "yoga", "meditation", "spa", "fitness", "hiking", "adventure", "light_adventure", "beach", "nature", "wildlife", "culture", "history", "healthy_food", "cooking", "wine", "golf", "luxury", "family_travel", "multigenerational_travel", "religious_travel", "educational_travel", "retreats", "corporate_groups", "private_group_experiences"];
 const operations = ["private_transportation", "shared_transportation", "airport_transfers", "private_guides", "shared_guides", "multilingual_guides", "accessible_transportation", "low_mobility_options", "private_activities", "shared_activities", "luggage_handling", "meet_and_greet", "on_trip_support", "emergency_support", "custom_itinerary_building"];
@@ -219,7 +208,31 @@ const orderedViews: AppView[] = ["brief", "destinations", "operators", "choose",
 
 const titleCase = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const money = (value: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
-const formatDate = (value: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+// An operator quotes in its own currency, so a price is shown in the currency it
+// was given in. An unknown code falls back to the number and the code.
+const moneyIn = (value: number, currency = "USD") => {
+  try { return new Intl.NumberFormat("en-US", { style: "currency", currency: currency || "USD", maximumFractionDigits: 0 }).format(value); }
+  catch { return `${Math.round(value).toLocaleString("en-US")} ${currency}`; }
+};
+// A date an operator never gave is shown as missing. It must never take the page
+// down with it: one emailed reply without a date used to blank three steps.
+const formatDate = (value: string) => {
+  const date = new Date(`${value}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(date.getTime())
+    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date)
+    : "Date not given";
+};
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "TB";
+const ANSWER_LABEL: Record<RequirementAnswerValue, string> = { yes: "Yes", partly: "Partly", no: "No" };
+const ANSWER_MARK: Record<RequirementAnswerValue, string> = { yes: "✓", partly: "◐", no: "✕" };
+// Field names from a model draft, in words an advisor reads.
+const FIELD_LABEL: Record<string, string> = { programName: "Program name", destinationSlug: "Destination", startDate: "Start date", endDate: "End date", nights: "Nights", availability: "Availability", groupSizeAccepted: "Group size", hotelLevel: "Hotel level", hotelNotes: "Hotels", transportation: "Transport", experiencesIncluded: "Experiences", requirementsMet: "Operating requirements", changesOrAdditions: "Changes", cannotProvide: "Cannot provide", netPricePerPerson: "Net price", currency: "Currency", pricingAssumptions: "Pricing assumptions", depositPercent: "Deposit", depositDueDaysBefore: "Deposit due", finalHeadcountDaysBefore: "Final headcount", finalPaymentDaysBefore: "Final payment", travelerNamesDaysBefore: "Traveler names", roomReleaseDaysBefore: "Room release", operatorNotes: "Notes" };
+const fieldLabel = (field: string) => FIELD_LABEL[field] ?? titleCase(field.replace(/([a-z])([A-Z])/g, "$1 $2"));
+const operatorSourceLabel = (slug: string) => {
+  const source = networkBySlug.get(slug)?.source;
+  return source === "seed" ? "Sample operator · fictional" : source === "researched" ? "Found on the web · added by you" : "Added by you";
+};
+const partnerName = (slug: string) => partners.find((item) => item.id === slug)?.name ?? titleCase(slug);
 const destinationName = (id: string) => destinations.find((item) => item.id === id)?.name ?? titleCase(id);
 const levelLabel = (level: number) => level === 1 ? "3-star" : level === 2 ? "4-star" : "5-star / Luxury";
 const fitLabel = (score: number) => score >= 90 ? "Excellent" : score >= 75 ? "Strong" : score >= 55 ? "Partial" : "Limited";
@@ -239,11 +252,11 @@ function operatorRanking(request: TripRequest, profileOverride?: OperatorProfile
 
 type Account = { email: string; isTrial: boolean; canSend: boolean; reason: string };
 
-function BrandHeader({ activeView, setActiveView, reset, signOut, account }: { activeView: AppView; setActiveView: (value: AppView) => void; reset: () => void; signOut: () => void; account: Account | null | undefined }) {
+function BrandHeader({ activeView, setActiveView, newBrief, reset, signOut, account }: { activeView: AppView; setActiveView: (value: AppView) => void; newBrief: () => void; reset: () => void; signOut: () => void; account: Account | null | undefined }) {
   return <header className="topbar operator-topbar">
     <button className="brand-home" onClick={() => setActiveView("dashboard")} aria-label="TripBrief operator finder dashboard"><span className="brand-mark">TB</span><span><strong>TripBrief</strong><small>Incoming Operator Finder</small></span></button>
     <div className="side-switch" aria-label="Choose workspace"><button className={activeView !== "portal" ? "active" : ""} onClick={() => setActiveView("dashboard")}>TripBrief</button><button className={activeView === "portal" ? "active" : ""} onClick={() => setActiveView("portal")}>Operator Links</button></div>
-    <nav aria-label="TripBrief navigation"><button className={activeView === "dashboard" ? "nav-active" : ""} onClick={() => setActiveView("dashboard")}>Dashboard</button><button className={activeView === "brief" ? "nav-active" : ""} onClick={() => setActiveView("brief")}>New Client Brief</button><button className={activeView === "directory" ? "nav-active" : ""} onClick={() => setActiveView("directory")}>ITO Network</button></nav>
+    <nav aria-label="TripBrief navigation"><button className={activeView === "dashboard" ? "nav-active" : ""} onClick={() => setActiveView("dashboard")}>Dashboard</button><button className={activeView === "brief" ? "nav-active" : ""} onClick={newBrief}>New Client Brief</button><button className={activeView === "directory" ? "nav-active" : ""} onClick={() => setActiveView("directory")}>ITO Network</button></nav>
     <div className="topbar-actions">{account && <span className="who">{account.isTrial ? "Trial workspace" : account.email}</span>}<button className="reset-button" onClick={reset}>Home</button><button className="reset-button" onClick={signOut}>Sign out</button></div>
   </header>;
 }
@@ -284,6 +297,11 @@ function TagList({ title, values, tone = "match" }: { title: string; values: str
   return <div className="tag-section"><strong>{title}</strong><div className="tags">{values.length ? values.map((item) => <span className={`tag ${tone}`} key={item}>{tone === "match" ? "✓ " : tone === "missing" ? "− " : ""}{titleCase(item)}</span>) : <span className="quiet">None</span>}</div></div>;
 }
 
+function PlainList({ title, values, tone = "neutral" }: { title: string; values: string[]; tone?: "neutral" | "missing" }) {
+  if (!values.length) return null;
+  return <div className="tag-section"><strong>{title}</strong><div className="tags">{values.map((item) => <span className={`tag ${tone}`} key={item}>{tone === "missing" ? "− " : ""}{item}</span>)}</div></div>;
+}
+
 function Score({ value, caption = "Capability Match" }: { value: number; caption?: string }) {
   return <div className="score"><strong>{value}</strong><span>%</span><small>{caption}</small></div>;
 }
@@ -302,6 +320,7 @@ function BriefForm({ request, setRequest, next }: { request: TripRequest; setReq
   const validate = () => {
     const nextErrors: string[] = [];
     if (request.minimumViableTravelers > request.travelerCount) nextErrors.push("Minimum viable travelers cannot exceed target group size.");
+    if (request.confirmedTravelers < 0 || request.confirmedTravelers > request.travelerCount) nextErrors.push("Travelers confirmed so far must be between 0 and the target group size.");
     if (request.earliestDepartureDate > request.latestDepartureDate) nextErrors.push("Earliest departure must be before latest departure.");
     if (request.preferredDepartureDate < request.earliestDepartureDate || request.preferredDepartureDate > request.latestDepartureDate) nextErrors.push("Preferred departure must fall inside the travel window.");
     if (!request.desiredExperiences.length) nextErrors.push("Choose at least one experience.");
@@ -309,7 +328,7 @@ function BriefForm({ request, setRequest, next }: { request: TripRequest; setReq
     if (!nextErrors.length) next();
   };
   return <section className="workflow-section request-form"><div className="section-heading"><p className="eyebrow">STEP 1 · CLIENT NEEDS</p><h1>Describe the trip without choosing the destination first.</h1><p>The dates, group economics, experiences, operating needs, and accessibility requirements will all travel with this brief.</p></div>{errors.length > 0 && <div className="inline-warning"><strong>Review the brief</strong>{errors.map((error) => <span key={error}>{error}</span>)}</div>}
-    <div className="form-card"><h2>Group and viability</h2><div className="form-grid three"><label className="wide">Brief name<input value={request.name} onChange={(event) => update("name", event.target.value)} /></label><label>Target group size<input type="number" value={request.travelerCount} onChange={(event) => update("travelerCount", Number(event.target.value))} /></label><label>Minimum viable travelers<input type="number" value={request.minimumViableTravelers} onChange={(event) => update("minimumViableTravelers", Number(event.target.value))} /></label><label>Nights<input type="number" value={request.nights} onChange={(event) => update("nights", Number(event.target.value))} /></label><label>Hotel level<select value={request.experienceLevel} onChange={(event) => update("experienceLevel", Number(event.target.value))}><option value="1">3-star</option><option value="2">4-star</option><option value="3">5-star / Luxury</option></select></label><label>Pace<select value={request.pace} onChange={(event) => update("pace", event.target.value)}><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="active">Active</option></select></label><label>Target retail / person<div className="money-input"><span>$</span><input type="number" value={request.targetRetailPricePerPerson} onChange={(event) => update("targetRetailPricePerPerson", Number(event.target.value))} /></div></label></div><fieldset><legend>Who is traveling?</legend><div className="choice-grid">{travelerTypes.map((item) => <Choice key={item} item={item} checked={request.travelerTypes.includes(item)} onChange={() => toggle("travelerTypes", item)} />)}</div></fieldset></div>
+    <div className="form-card"><h2>Group and viability</h2><div className="form-grid three"><label className="wide">Brief name<input value={request.name} onChange={(event) => update("name", event.target.value)} /></label><label>Target group size<input type="number" value={request.travelerCount} onChange={(event) => update("travelerCount", Number(event.target.value))} /></label><label>Minimum viable travelers<input type="number" value={request.minimumViableTravelers} onChange={(event) => update("minimumViableTravelers", Number(event.target.value))} /></label><label>Travelers confirmed so far<input type="number" min="0" value={request.confirmedTravelers} onChange={(event) => update("confirmedTravelers", Number(event.target.value))} /></label><label>Nights<input type="number" value={request.nights} onChange={(event) => update("nights", Number(event.target.value))} /></label><label>Hotel level<select value={request.experienceLevel} onChange={(event) => update("experienceLevel", Number(event.target.value))}><option value="1">3-star</option><option value="2">4-star</option><option value="3">5-star / Luxury</option></select></label><label>Pace<select value={request.pace} onChange={(event) => update("pace", event.target.value)}><option value="relaxed">Relaxed</option><option value="balanced">Balanced</option><option value="active">Active</option></select></label><label>Target retail / person<div className="money-input"><span>$</span><input type="number" value={request.targetRetailPricePerPerson} onChange={(event) => update("targetRetailPricePerPerson", Number(event.target.value))} /></div></label></div><fieldset><legend>Who is traveling?</legend><div className="choice-grid">{travelerTypes.map((item) => <Choice key={item} item={item} checked={request.travelerTypes.includes(item)} onChange={() => toggle("travelerTypes", item)} />)}</div></fieldset></div>
     <div className="form-card date-card"><h2>Departure window and decision timing</h2><p className="form-help">These dates become questions in the trip request. Each shortlisted ITO must review them and confirm what it can actually operate.</p><div className="form-grid three"><label>Earliest departure<input type="date" value={request.earliestDepartureDate} onChange={(event) => update("earliestDepartureDate", event.target.value)} /></label><label>Preferred departure<input type="date" value={request.preferredDepartureDate} onChange={(event) => update("preferredDepartureDate", event.target.value)} /></label><label>Latest departure<input type="date" value={request.latestDepartureDate} onChange={(event) => update("latestDepartureDate", event.target.value)} /></label><label>Proposal decision deadline<input type="date" value={request.proposalDecisionDate} onChange={(event) => update("proposalDecisionDate", event.target.value)} /></label><label className="inline-check"><input type="checkbox" checked={request.flexibleDates} onChange={(event) => update("flexibleDates", event.target.checked)} />Flexible dates within this window</label></div></div>
     <div className="form-card"><fieldset><legend>Preferred climate</legend><div className="choice-grid compact">{["warm", "tropical", "mild", "cool"].map((item) => <Choice key={item} item={item} checked={request.climates.includes(item)} onChange={() => toggle("climates", item)} />)}</div></fieldset><fieldset><legend>Experiences and trip types</legend><div className="choice-grid">{experiences.map((item) => <Choice key={item} item={item} checked={request.desiredExperiences.includes(item)} onChange={() => toggle("desiredExperiences", item)} />)}</div></fieldset></div>
     <div className="form-card"><fieldset><legend>Transportation and operating needs</legend><div className="choice-grid">{operations.slice(0, 10).map((item) => <Choice key={item} item={item} checked={request.transportationNeeds.includes(item)} onChange={() => toggle("transportationNeeds", item)} />)}</div></fieldset><fieldset><legend>Accessibility and trip requirements</legend><div className="choice-grid">{[...requirements, "accessible_transportation", "low_mobility_options"].map((item) => { const key = item.includes("mobility") || item.includes("accessible") ? "accessibilityNeeds" : "importantRequirements"; return <Choice key={item} item={item} checked={request[key].includes(item)} onChange={() => toggle(key, item)} />; })}</div></fieldset><label>Additional context<textarea rows={4} value={request.notes} onChange={(event) => update("notes", event.target.value)} /></label></div>
@@ -405,7 +424,7 @@ function DestinationDiscovery({ request, setRequest, next }: { request: TripRequ
 
     <div className="form-card">
       <h2>{destinations.length} locations to choose from</h2>
-      <p className="form-help">{fromNetwork} of them have an operator in your network, {added} you added yourself, and the rest are the starter catalog. A location the network has never been to is still a location you can win: add it here, then find operators there in the next step.</p>
+      <p className="form-help">{fromNetwork} of them have an operator in your network, {added} you added yourself, and the rest are the starter catalog. A location the network has never been to is still a location you can win: add it here, then find operators there from the ITO Network page.</p>
       {error && <div className="inline-warning"><strong>That did not work</strong><span>{error}</span></div>}
       {note && <div className="inline-success"><strong>On the list</strong><span>{note}</span></div>}
       <div className="form-grid three"><label className="wide">Find a location<input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Country or place name" /></label></div>
@@ -459,7 +478,7 @@ function TimingConfirmationPanel({ item }: { item: RankedOperator }) {
 
 function OperatorResultCard({ item, rank }: { item: RankedOperator; rank: number }) {
   const missing = [...item.match.missingServices, ...item.match.missingOperations];
-  return <article className="operator-result-card"><span className="operator-rank">#{rank}</span><div className="operator-result-head"><div><p>{item.profile.serviceAreas.map((area) => `${area.country} · ${area.regions.join(", ")}`).join(" | ")}</p><h2>{item.partner.name}</h2><span>Fictional approved incoming tour operator</span></div><Score value={item.match.score} /></div><CapabilityBreakdown match={item.match} /><TimingConfirmationPanel item={item} /><div className="result-detail-grid"><TagList title="Strong match" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Missing or needs confirmation" values={missing.slice(0, 8)} tone={missing.length ? "missing" : "match"} /></div>{item.bestTrip ? <div className="supporting-program"><div><small>OPTIONAL EXISTING PROGRAM</small><strong>{item.bestTrip.name}</strong><span>{item.bestTripScore}% trip similarity · useful context only</span></div><b>Does not affect capability rank</b></div> : <div className="supporting-program custom"><div><small>CUSTOM / À LA CARTE</small><strong>No ready-made program listed</strong><span>Operator can recommend a program from scratch.</span></div><b>Equal matching treatment</b></div>}</article>;
+  return <article className="operator-result-card"><span className="operator-rank">#{rank}</span><div className="operator-result-head"><div><p>{item.profile.serviceAreas.map((area) => `${area.country} · ${area.regions.join(", ")}`).join(" | ")}</p><h2>{item.partner.name}</h2><span>{operatorSourceLabel(item.partner.id)}</span></div><Score value={item.match.score} /></div><CapabilityBreakdown match={item.match} /><TimingConfirmationPanel item={item} /><div className="result-detail-grid"><TagList title="Strong match" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Missing or needs confirmation" values={missing.slice(0, 8)} tone={missing.length ? "missing" : "match"} /></div>{item.bestTrip ? <div className="supporting-program"><div><small>OPTIONAL EXISTING PROGRAM</small><strong>{item.bestTrip.name}</strong><span>{item.bestTripScore}% trip similarity · useful context only</span></div><b>Does not affect capability rank</b></div> : <div className="supporting-program custom"><div><small>CUSTOM / À LA CARTE</small><strong>No ready-made program listed</strong><span>Operator can recommend a program from scratch.</span></div><b>Equal matching treatment</b></div>}</article>;
 }
 
 function OperatorResults({ request, profile, next }: { request: TripRequest; profile: OperatorProfile; next: () => void }) {
@@ -483,28 +502,41 @@ function requestItems(request: TripRequest, item: RankedOperator) {
   return items;
 }
 
-function TripRequestReview({ request, profile, send }: { request: TripRequest; profile: OperatorProfile; send: () => void }) {
+function TripRequestReview({ request, profile, send, canSend }: { request: TripRequest; profile: OperatorProfile; send: () => void; canSend: boolean }) {
   const selected = operatorRanking(request, profile, true).filter((item) => request.selectedPartnerIds.includes(item.partner.id));
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 5 · SEND TRIP REQUEST</p><h1>One core brief, with operator-specific questions.</h1><p>This is the first time each ITO is asked to judge the requested timing. Existing programs may be referenced as context, but every operator must reply with dates and availability it can stand behind.</p></div><div className="brief-strip v2"><div><strong>{request.name}</strong><span>{request.travelerCount} target · {request.minimumViableTravelers} minimum viable · {request.nights} nights</span></div><div><small>TRAVEL WINDOW TO CONFIRM</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET OPERATOR NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="bespoke-request-list">{selected.map((item) => <article key={item.partner.id}><div className="request-recipient"><span>TO</span><div><h2>{item.partner.name}</h2><p>{item.profile.locations.map(destinationName).join(", ")}</p></div><Score value={item.match.score} /></div><TagList title="Profile already supports" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Please answer in the proposal" values={requestItems(request, item)} tone="missing" />{item.bestTrip ? <p className="reference-trip"><strong>Optional reference:</strong> {item.bestTrip.name} appears {item.bestTripScore}% similar. Confirm what changes, availability, and pricing are required.</p> : <p className="reference-trip"><strong>Custom request:</strong> No existing program is required. Recommend the trip you would actually operate.</p>}</article>)}</div><div className="send-box"><div><strong>Send to {selected.length} fictional ITOs</strong><p>No real messages are sent in this demo.</p></div><button className="primary" onClick={send}>Send Trip Requests <span>→</span></button></div></section>;
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STEP 5 · SEND TRIP REQUEST</p><h1>One core brief, with operator-specific questions.</h1><p>This is the first time each ITO is asked to judge the requested timing. Existing programs may be referenced as context, but every operator must reply with dates and availability it can stand behind.</p></div><div className="brief-strip v2"><div><strong>{request.name}</strong><span>{request.travelerCount} target · {request.minimumViableTravelers} minimum viable · {request.nights} nights</span></div><div><small>TRAVEL WINDOW TO CONFIRM</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET OPERATOR NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="bespoke-request-list">{selected.map((item) => <article key={item.partner.id}><div className="request-recipient"><span>TO</span><div><h2>{item.partner.name}</h2><p>{item.profile.locations.map(destinationName).join(", ")}</p></div><Score value={item.match.score} /></div><TagList title="Profile already supports" values={[...item.match.matchedServices, ...item.match.matchedOperations].slice(0, 10)} /><TagList title="Please answer in the proposal" values={requestItems(request, item)} tone="missing" />{item.bestTrip ? <p className="reference-trip"><strong>Optional reference:</strong> {item.bestTrip.name} appears {item.bestTripScore}% similar. Confirm what changes, availability, and pricing are required.</p> : <p className="reference-trip"><strong>Custom request:</strong> No existing program is required. Recommend the trip you would actually operate.</p>}</article>)}</div><div className="send-box"><div><strong>{canSend ? `Send to ${selected.length} operator${selected.length === 1 ? "" : "s"}` : `${selected.length} private operator link${selected.length === 1 ? "" : "s"} ready`}</strong><p>{canSend ? "Each operator with an address above gets its own email from your workspace inbox. An operator without an address answers through its private link." : "This trial workspace does not send email. Open each operator's link above to answer as that operator, then come back to see the proposal arrive."}</p></div><button className="primary" onClick={send}>{canSend ? "Send Trip Requests" : "Continue to Responses"} <span>→</span></button></div></section>;
 }
 
-function OperatorResponses({ request, proposals, next }: { request: TripRequest; proposals: OperatorProposal[]; next: () => void }) {
+function OperatorResponses({ request, proposals, shortlist, next }: { request: TripRequest; proposals: OperatorProposal[]; shortlist: ShortlistRow[]; next: () => void }) {
   const selectedPartners = partners.filter((partner) => request.selectedPartnerIds.includes(partner.id));
   const received = proposals.filter((proposal) => request.selectedPartnerIds.includes(proposal.partnerId));
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">STEP 6 · OPERATOR RESPONSES</p><h1>Each ITO returns the trip it would actually provide.</h1><p>The response covers availability, inclusions, gaps, price assumptions, and operating deadlines—not merely a headline quote.</p></div><button className="primary" disabled={!received.length} onClick={next}>Compare {received.length} Proposed Trips →</button></div><div className="success-banner"><span>✓</span><div><strong>Trip Request sent to {selectedPartners.length} demo ITOs.</strong><p>{received.length} structured proposals are ready for review.</p></div></div><div className="proposal-response-grid">{selectedPartners.map((partner) => { const proposal = proposals.find((item) => item.partnerId === partner.id); return <article key={partner.id} className={proposal ? "received" : "waiting"}>{proposal ? <><div className="proposal-status"><span>Proposal Received</span><b>{proposal.availability}</b></div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><div className="proposal-quick-facts"><span><small>DATES</small><strong>{formatDate(proposal.startDate)}</strong></span><span><small>FINAL FIT</small><strong>{proposal.finalFit}%</strong></span><span><small>NET / PERSON</small><strong>{money(proposal.netPricePerPerson)}</strong></span><span><small>PROGRAM TYPE</small><strong>{proposal.basedOnExistingProgram ? "Adapted existing" : "Custom build"}</strong></span></div><TagList title="Included" values={proposal.experiencesIncluded.slice(0, 8)} /><TagList title="Changes or additions" values={proposal.changesOrAdditions} tone="neutral" />{proposal.cannotProvide.length > 0 && <TagList title="Cannot provide" values={proposal.cannotProvide} tone="missing" />}<p className="proposal-note">“{proposal.operatorNotes}”</p></> : <><div className="proposal-status"><span>Awaiting Response</span></div><p>Selected ITO</p><h2>{partner.name}</h2><span className="quiet">No structured proposal has been submitted yet.</span></>}</article>; })}</div></section>;
+  const emailed = shortlist.filter((row) => row.sentAt).length;
+  const requirements = buildRequirements(request);
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">STEP 6 · OPERATOR RESPONSES</p><h1>Each ITO returns the trip it would actually provide.</h1><p>The response covers availability, inclusions, gaps, price assumptions, and operating deadlines—not merely a headline quote.</p></div><button className="primary" disabled={!received.length} onClick={next}>Compare {received.length} Proposed Trips →</button></div><div className="success-banner"><span>{emailed ? "✓" : "i"}</span><div><strong>{emailed ? `Trip request emailed to ${emailed} of ${selectedPartners.length} operators.` : `No email has been sent. Each of the ${selectedPartners.length} operators has its own private link.`}</strong><p>{received.length} of {selectedPartners.length} proposals received.</p></div></div><div className="proposal-response-grid">{selectedPartners.map((partner) => { const proposal = proposals.find((item) => item.partnerId === partner.id); return <article key={partner.id} className={proposal ? "received" : "waiting"}>{proposal ? <><div className="proposal-status"><span>Proposal Received</span><b>{proposal.availability}</b></div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><div className="proposal-quick-facts"><span><small>DATES</small><strong>{formatDate(proposal.startDate)}</strong></span><span><small>REQUIREMENTS</small><strong>{requirementCoverage(requirements, proposal.requirementAnswers).score}% covered</strong></span><span><small>NET / PERSON</small><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong></span><span><small>PROGRAM TYPE</small><strong>{proposal.basedOnExistingProgram ? "Adapted existing" : "Custom build"}</strong></span></div><TagList title="Included" values={proposal.experiencesIncluded.slice(0, 8)} /><PlainList title="Changes or additions" values={proposal.changesOrAdditions} /><PlainList title="Cannot provide" values={proposal.cannotProvide} tone="missing" />{proposal.operatorNotes.trim() && <p className="proposal-note">“{proposal.operatorNotes}”</p>}</> : <><div className="proposal-status"><span>Awaiting Response</span></div><p>Selected ITO</p><h2>{partner.name}</h2><span className="quiet">No structured proposal has been submitted yet.</span></>}</article>; })}</div></section>;
 }
 
 function CompareProposals({ request, proposals, select }: { request: TripRequest; proposals: OperatorProposal[]; select: (id: string) => void }) {
   const received = proposals.filter((proposal) => request.selectedPartnerIds.includes(proposal.partnerId));
-  const bestFit = Math.max(...received.map((proposal) => proposal.finalFit));
-  return <section className="workflow-section wide-section"><div className="section-heading"><p className="eyebrow">STEP 7 · COMPARE PROPOSED TRIPS</p><h1>Now compare the offers—not the operator profiles.</h1><p>Each column is a real proposed trip with final requirement coverage, price, hotels, transportation, remaining gaps, deposits, and deadlines.</p></div><div className="proposal-compare-table"><div className="compare-labels"><span>Proposal</span><span>Fit & availability</span><span>Commercial</span><span>Hotels & transport</span><span>Remaining gaps</span><span>Commitments</span></div>{received.map((proposal) => { const partner = partners.find((item) => item.id === proposal.partnerId)!; const margin = calculateProposalMargin(request, proposal)!; return <article className={proposal.finalFit === bestFit ? "recommended" : ""} key={proposal.id}>{proposal.finalFit === bestFit && <em>★ Strongest final fit</em>}<div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><small>{partner.name}</small><b>{proposal.basedOnExistingProgram ? "Adapted existing program" : "Built from scratch"}</b></div><div><strong>{proposal.finalFit}% final fit</strong><span className="availability-pill">{proposal.availability}</span><small>{formatDate(proposal.startDate)} · {proposal.nights} nights</small></div><div><strong>{money(proposal.netPricePerPerson)}</strong><span>{(margin.margin * 100).toFixed(1)}% est. margin</span><small>{proposal.depositPercent}% deposit · {proposal.currency}</small></div><div><strong>{titleCase(proposal.hotelLevel)}</strong><span>{proposal.hotelNotes}</span><small>{proposal.transportation.map(titleCase).join(", ")}</small></div><div>{proposal.cannotProvide.length ? proposal.cannotProvide.map((item) => <span className="gap-line" key={item}>! {item}</span>) : <span className="clear-line">✓ No unresolved gaps</span>}<small>{proposal.changesOrAdditions.length} documented changes</small></div><div><strong>Deposit: {proposal.depositDueDaysBefore} days prior</strong><span>Final payment: {proposal.finalPaymentDaysBefore} days prior</span><small>Room release: {proposal.roomReleaseDaysBefore} days prior</small><button className="primary" onClick={() => select(proposal.id)}>Select Trip & ITO →</button></div></article>; })}</div></section>;
+  const requirements = buildRequirements(request);
+  const coverageOf = (proposal: OperatorProposal) => requirementCoverage(requirements, proposal.requirementAnswers);
+  const best = Math.max(0, ...received.map((proposal) => coverageOf(proposal).score));
+  // A deadline the operator did not state is "not stated", never "0 days".
+  const prior = (value: number) => value > 0 ? `${value} days prior` : "not stated";
+  return <section className="workflow-section wide-section"><div className="section-heading"><p className="eyebrow">STEP 7 · COMPARE PROPOSED TRIPS</p><h1>Now compare the offers—not the operator profiles.</h1><p>Each column is a proposed trip: how it answers every numbered requirement, then price, hotels, transport, remaining gaps, deposits and deadlines. Coverage is worked out from the operators' own answers, not from a score they gave themselves.</p></div><div className="proposal-compare-table"><div className="compare-labels"><span>Proposal</span><span>Coverage & availability</span><span>Commercial</span><span>Hotels & transport</span><span>Remaining gaps</span><span>Commitments</span></div>{received.map((proposal) => { const coverage = coverageOf(proposal); const margin = calculateProposalMargin(request, proposal); const top = best > 0 && coverage.score === best; return <article className={top ? "recommended" : ""} key={proposal.id}>{top && <em>★ Best requirement coverage</em>}<div><p>{destinationName(proposal.destinationId)}</p><h2>{proposal.programName}</h2><small>{partnerName(proposal.partnerId)}</small><b>{proposal.basedOnExistingProgram ? "Adapted existing program" : "Built from scratch"}</b></div><div><strong>{coverage.score}% requirement coverage</strong><span className="availability-pill">{proposal.availability}</span><small>{formatDate(proposal.startDate)} · {proposal.nights} nights</small></div><div><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong><span>{margin ? `${(margin.margin * 100).toFixed(1)}% est. margin` : `Margin not worked out for ${proposal.currency}`}</span><small>{proposal.depositPercent ? `${proposal.depositPercent}% deposit` : "Deposit not stated"} · {proposal.currency}</small></div><div><strong>{proposal.hotelLevel ? titleCase(proposal.hotelLevel) : "Hotel level not stated"}</strong><span>{proposal.hotelNotes}</span><small>{proposal.transportation.map(titleCase).join(", ")}</small></div><div>{coverage.mustsOpen.length > 0 && <span className="gap-line">! Must-haves not fully met: {coverage.mustsOpen.join(", ")}</span>}{proposal.cannotProvide.map((item) => <span className="gap-line" key={item}>! {item}</span>)}{!coverage.mustsOpen.length && !proposal.cannotProvide.length && <span className="clear-line">✓ No unresolved gaps</span>}<small>{proposal.changesOrAdditions.length} documented changes</small></div><div><strong>Deposit: {prior(proposal.depositDueDaysBefore)}</strong><span>Final payment: {prior(proposal.finalPaymentDaysBefore)}</span><small>Room release: {prior(proposal.roomReleaseDaysBefore)}</small><button className="primary" onClick={() => select(proposal.id)}>Select Trip & ITO →</button></div></article>; })}</div><RequirementGrid requirements={requirements} proposals={received} /></section>;
+}
+
+// The comparison the numbered requirements exist for: every operator's answer to
+// the same question, side by side. A requirement nobody answered is shown as
+// such, never as a yes.
+function RequirementGrid({ requirements, proposals }: { requirements: Requirement[]; proposals: OperatorProposal[] }) {
+  if (!requirements.length || !proposals.length) return null;
+  return <section className="requirement-grid-section"><div className="section-heading"><p className="eyebrow">REQUIREMENT BY REQUIREMENT</p><h2>What each operator said to R1–R{requirements.length}</h2><p>Every cell is the operator's own answer; a quote means it came from their email, word for word. A blank is shown as not answered.</p></div><div className="requirement-grid-scroll"><table className="requirement-grid"><thead><tr><th scope="col">Requirement</th>{proposals.map((proposal) => <th scope="col" key={proposal.id}>{partnerName(proposal.partnerId)}<small>{proposal.programName}</small></th>)}</tr></thead><tbody>{requirements.map((requirement) => <tr key={requirement.key}><th scope="row"><span className="requirement-id">{requirement.id}</span> {requirement.label}<small className={`tier ${requirement.tier}`}>{TIER_LABEL[requirement.tier]}</small></th>{proposals.map((proposal) => { const answer = proposal.requirementAnswers.find((item) => item.key === requirement.key); return <td key={proposal.id} className={`answer ${answer?.answer ?? "none"}`}>{answer ? <><b>{ANSWER_MARK[answer.answer]} {ANSWER_LABEL[answer.answer]}</b>{answer.note && <span>{answer.note}</span>}{answer.quote && <q>{answer.quote}</q>}</> : <b>— Not answered</b>}</td>; })}</tr>)}</tbody><tfoot><tr><th scope="row">Coverage</th>{proposals.map((proposal) => { const coverage = requirementCoverage(requirements, proposal.requirementAnswers); return <td key={proposal.id}><b>{coverage.score}%</b><span>{coverage.yes} yes · {coverage.partly} partly · {coverage.no} no · {coverage.unanswered} not answered</span></td>; })}</tr></tfoot></table></div></section>;
 }
 
 function SelectedAndWorkback({ request, proposal, reset }: { request: TripRequest; proposal: OperatorProposal; reset: () => void }) {
-  const partner = partners.find((item) => item.id === proposal.partnerId)!;
-  const margin = calculateProposalMargin(request, proposal)!;
+  const margin = calculateProposalMargin(request, proposal);
   const schedule = buildWorkbackSchedule(request, proposal);
-  return <section className="workflow-section selected-workback"><div className="selection-confirm"><div className="selected-icon">✓</div><div><p className="eyebrow">STEP 8 · SELECTED TRIP & OPERATING PARTNER</p><h1>{proposal.programName}</h1><p>Your agency will sell this proposed trip. <strong>{partner.name}</strong> is the behind-the-scenes operating partner.</p></div><div className="selection-commercial"><span><small>NET / PERSON</small><strong>{money(proposal.netPricePerPerson)}</strong></span><span><small>EST. MARGIN</small><strong>{(margin.margin * 100).toFixed(1)}%</strong></span><span><small>LIVE AVAILABILITY</small><strong>{proposal.availability}</strong></span></div></div><div className="workback-heading"><div><p className="eyebrow">INITIAL WORKBACK SCHEDULE</p><h2>Work backward from {formatDate(proposal.startDate)}</h2><p>Contractual deadlines come from the selected proposal. Sales and viability checkpoints remain the agency's decisions.</p></div><div className="traveler-progress"><strong>{request.confirmedTravelers} confirmed</strong><span>{request.minimumViableTravelers} minimum viable · {request.travelerCount} target</span><div><i style={{ width: `${Math.min(100, request.confirmedTravelers / request.travelerCount * 100)}%` }} /></div></div></div><div className="go-no-go-warning"><span>!</span><div><strong>Go / No-Go Decision Required if the minimum is missed</strong><p>The demo does not automatically cancel. The agency can continue, cancel, renegotiate, change price, reduce commitments, or choose another operator.</p></div></div><div className="workback-timeline">{schedule.map((item) => <article className={`${item.category} ${item.warning ? "warning" : ""}`} key={`${item.date}-${item.label}`}><div className="timeline-date"><strong>{formatDate(item.date)}</strong><span>{item.daysBefore ? `${item.daysBefore} days before` : "Departure"}</span></div><i /><div className="timeline-content"><span>{item.owner}</span><h3>{item.label}</h3><p>{item.detail}</p></div></article>)}</div><div className="handoff-box"><strong>Matching is complete; operations now begin.</strong><p>The capability engine answered who could deliver. This schedule answers what must happen next so the selected trip does not drift toward costly deadlines.</p></div><button className="primary" onClick={reset}>Start Another ITO Search</button></section>;
+  return <section className="workflow-section selected-workback"><div className="selection-confirm"><div className="selected-icon">✓</div><div><p className="eyebrow">STEP 8 · SELECTED TRIP & OPERATING PARTNER</p><h1>{proposal.programName}</h1><p>Your agency will sell this proposed trip. <strong>{partnerName(proposal.partnerId)}</strong> is the behind-the-scenes operating partner.</p></div><div className="selection-commercial"><span><small>NET / PERSON</small><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong></span><span><small>EST. MARGIN</small><strong>{margin ? `${(margin.margin * 100).toFixed(1)}%` : "—"}</strong></span><span><small>LIVE AVAILABILITY</small><strong>{proposal.availability}</strong></span></div></div><div className="workback-heading"><div><p className="eyebrow">INITIAL WORKBACK SCHEDULE</p><h2>Work backward from {formatDate(proposal.startDate)}</h2><p>Contractual deadlines come from the selected proposal. Sales and viability checkpoints remain the agency's decisions.</p></div><div className="traveler-progress"><strong>{request.confirmedTravelers} confirmed so far</strong><span>{request.minimumViableTravelers} minimum viable · {request.travelerCount} target</span><div><i style={{ width: `${Math.min(100, request.confirmedTravelers / request.travelerCount * 100)}%` }} /></div></div></div><div className="go-no-go-warning"><span>!</span><div><strong>Go / No-Go Decision Required if the minimum is missed</strong><p>TripBrief never cancels anything on its own. The agency can continue, cancel, renegotiate, change price, reduce commitments, or choose another operator.</p></div></div><div className="workback-timeline">{schedule.length === 0 && <div className="inline-warning"><strong>No schedule yet</strong><span>This proposal has no valid start date, and every deadline is counted back from it. Ask the operator for the date, then record the proposal again.</span></div>}{schedule.map((item, index) => <article className={`${item.category} ${item.warning ? "warning" : ""}`} key={`${index}-${item.date}-${item.label}`}><div className="timeline-date"><strong>{formatDate(item.date)}</strong><span>{item.daysBefore ? `${item.daysBefore} days before` : "Departure"}</span></div><i /><div className="timeline-content"><span>{item.owner}</span><h3>{item.label}</h3><p>{item.detail}</p></div></article>)}</div><div className="handoff-box"><strong>Matching is complete; operations now begin.</strong><p>The capability engine answered who could deliver. This schedule answers what must happen next so the selected trip does not drift toward costly deadlines.</p></div><button className="primary" onClick={reset}>Start Another ITO Search</button></section>;
 }
 
 // The network page: who is in this workspace's operator network, how to reach
@@ -620,25 +652,31 @@ function NetworkResearch({ request, briefId }: { request: TripRequest; briefId: 
     <div className="candidate-list">{(found ?? []).map((item) => <article key={item._id}><div><small>{item.query}</small><h3>{item.title}</h3><span>{item.description}</span><a href={item.url} target="_blank" rel="noreferrer">{item.url}</a></div>{item.addedOperatorSlug ? <span className="status-badge">In the network as {item.addedOperatorSlug}</span> : <div className="candidate-actions"><button className="primary" onClick={() => void add(item._id, item.title)}>Add to the network</button><button className="secondary" onClick={() => void dismiss({ candidateId: item._id })}>Dismiss</button></div>}</article>)}{found && found.length === 0 && <p className="quiet">Nothing found yet for {destination.name}. Run the search, or choose another destination.</p>}</div></section>;
 }
 
-function PartnerWorkspace({ profile, request, go }: { profile: OperatorProfile; request: TripRequest; go: (value: OperatorView) => void }) {
-  const match = calculateOperatorMatch(request, demoOperator, profile, destinations);
-  return <section className="workflow-section partner-workspace"><div className="portal-identity"><div><span className="portal-logo">IW</span><div><p className="eyebrow">SIGNED IN AS</p><h1>{demoOperator.name}</h1><span>{profile.serviceAreas.flatMap((area) => [area.country, ...area.regions]).join(" · ")}</span></div></div><button className="primary" onClick={() => go("profile")}>Open Capability Intake</button></div><div className="portal-metrics"><article><span>{profile.serviceAreas.length}</span><strong>Operating area</strong><p>With regional detail</p></article><article><span>{profile.services.length}</span><strong>Experiences</strong><p>Searchable capabilities</p></article><article><span>{profile.operations.length}</span><strong>Operating services</strong><p>How trips are delivered</p></article><article><span>{profile.timing.minimumLeadTimeDays}</span><strong>Day minimum lead</strong><p>Profile planning context</p></article></div><div className="portal-columns"><section><div className="portal-section-title"><div><p className="eyebrow">INCOMING REQUEST</p><h2>{request.name}</h2></div><span className="needs-response-badge">Needs Response</span></div><div className="request-overview"><span><small>GROUP</small><strong>{request.travelerCount}</strong></span><span><small>DEPARTURE</small><strong>{formatDate(request.preferredDepartureDate)}</strong></span><span><small>WINDOW</small><strong>{request.flexibleDates ? "Flexible" : "Fixed"}</strong></span><span><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></span></div><TagList title="Client needs" values={request.desiredExperiences.slice(0, 8)} tone="neutral" /><button className="primary" onClick={() => go("request")}>Review Trip Request →</button></section><aside><p className="eyebrow">PROFILE-BASED QUALIFICATION</p><Score value={match.score} /><CapabilityBreakdown match={match} /><TimingConfirmationPanel item={{ partner: demoOperator, profile, match, bestTrip: trips[0], bestTripScore: 92 }} /></aside></div></section>;
+// The operator's own landing page on its private link. It shows the request and
+// what the agency needs back. The agency's ranking of operators is the agency's
+// own working and is never shown here.
+function PartnerWorkspace({ operatorName, profile, request, go }: { operatorName: string; profile: OperatorProfile; request: TripRequest; go: (value: OperatorView) => void }) {
+  const requirements = buildRequirements(request);
+  return <section className="workflow-section partner-workspace"><div className="portal-identity"><div><span className="portal-logo">{initials(operatorName)}</span><div><p className="eyebrow">YOUR PRIVATE LINK</p><h1>{operatorName}</h1><span>{profile.serviceAreas.flatMap((area) => [area.country, ...area.regions]).filter(Boolean).join(" · ") || profile.locations.map(destinationName).join(" · ")}</span></div></div><button className="primary" onClick={() => go("profile")}>Open Capability Record</button></div><div className="portal-metrics"><article><span>{profile.serviceAreas.length}</span><strong>Operating area</strong><p>With regional detail</p></article><article><span>{profile.services.length}</span><strong>Experiences</strong><p>Searchable capabilities</p></article><article><span>{profile.operations.length}</span><strong>Operating services</strong><p>How trips are delivered</p></article><article><span>{profile.timing.minimumLeadTimeDays}</span><strong>Day minimum lead</strong><p>Profile planning context</p></article></div><div className="portal-columns"><section><div className="portal-section-title"><div><p className="eyebrow">INCOMING REQUEST</p><h2>{request.name}</h2></div><span className="needs-response-badge">Needs Response</span></div><div className="request-overview"><span><small>GROUP</small><strong>{request.travelerCount}</strong></span><span><small>DEPARTURE</small><strong>{formatDate(request.preferredDepartureDate)}</strong></span><span><small>WINDOW</small><strong>{request.flexibleDates ? "Flexible" : "Fixed"}</strong></span><span><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></span></div><TagList title="Client needs" values={request.desiredExperiences.slice(0, 8)} tone="neutral" /><button className="primary" onClick={() => go("request")}>Review Trip Request →</button></section><aside><p className="eyebrow">WHAT THE AGENCY NEEDS BACK</p><ul className="return-list"><li>The dates you can actually operate inside the window</li><li>A yes, partly or no on each of the {requirements.length} numbered requirements</li><li>Your net price, what it includes, and its assumptions</li><li>Your deposit, payment and cancellation terms</li></ul><p className="form-help">Only this agency sees your proposal. No other operator can read it.</p></aside></div></section>;
 }
 
 function IntakeSection({ number, title, description, children }: { number: string; title: string; description: string; children: React.ReactNode }) {
   return <div className="intake-section form-card"><div className="intake-title"><span>{number}</span><div><h2>{title}</h2><p>{description}</p></div></div>{children}</div>;
 }
 
-function ProfileEditor({ profile, setProfile, save }: { profile: OperatorProfile; setProfile: (value: OperatorProfile) => void; save: () => void }) {
+function ProfileEditor({ operatorName, profile, setProfile, save }: { operatorName: string; profile: OperatorProfile; setProfile: (value: OperatorProfile) => void; save: () => void }) {
+  const area: ServiceArea = profile.serviceAreas[0] ?? { destinationId: profile.locations[0] ?? "", country: "", regions: [], cities: [], areas: [], coverage: "regional", operatingMonths: [] };
+  const setArea = (next: Partial<ServiceArea>) => setProfile({ ...profile, serviceAreas: [{ ...area, ...next }, ...profile.serviceAreas.slice(1)] });
+  const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
   const toggle = (key: "locations" | "hotelTypes" | "services" | "features" | "operations" | "travelerTypes" | "groupTypes", value: string) => setProfile({ ...profile, [key]: profile[key].includes(value) ? profile[key].filter((item) => item !== value) : [...profile[key], value] });
   const commercial = profile.commercial;
   const timing = profile.timing;
-  return <section className="workflow-section intake-page"><div className="section-heading split-heading"><div><p className="eyebrow">ITO CAPABILITY INTAKE</p><h1>Describe what, where, who, how, cost, and when you can deliver.</h1><p>This is supplier-product data used for matching. Ready-made programs are optional records at the end.</p></div><span className="status-badge">Approved Demo ITO</span></div><div className="intake-index"><span>01 Footprint</span><span>02 Experiences</span><span>03 Operations</span><span>04 Groups & Hotels</span><span>05 Commercial</span><span>06 Timing</span><span>07 Programs</span></div>
-    <IntakeSection number="01" title="Operating footprint" description="Be specific: nationwide coverage and regional expertise are not the same."><div className="form-grid three"><label className="wide">Company name<input value={demoOperator.name} readOnly /></label><label>Country<input value={profile.serviceAreas[0].country} readOnly /></label><label>Coverage<select value={profile.serviceAreas[0].coverage} onChange={(event) => setProfile({ ...profile, serviceAreas: [{ ...profile.serviceAreas[0], coverage: event.target.value as "nationwide" | "regional" | "local" }] })}><option value="nationwide">Nationwide</option><option value="regional">Regional</option><option value="local">Local</option></select></label><label className="wide">Regions<input value={profile.serviceAreas[0].regions.join(", ")} onChange={(event) => setProfile({ ...profile, serviceAreas: [{ ...profile.serviceAreas[0], regions: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }] })} /></label><label className="wide">Cities<input value={profile.serviceAreas[0].cities.join(", ")} onChange={(event) => setProfile({ ...profile, serviceAreas: [{ ...profile.serviceAreas[0], cities: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }] })} /></label><label className="wide">Islands / areas<input value={profile.serviceAreas[0].areas.join(", ")} onChange={(event) => setProfile({ ...profile, serviceAreas: [{ ...profile.serviceAreas[0], areas: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) }] })} /></label></div><fieldset><legend>Destination knowledge sets</legend><div className="choice-grid compact">{destinations.map((item) => <Choice key={item.id} item={item.id} checked={profile.locations.includes(item.id)} onChange={() => toggle("locations", item.id)} />)}</div></fieldset></IntakeSection>
+  return <section className="workflow-section intake-page"><div className="section-heading split-heading"><div><p className="eyebrow">ITO CAPABILITY INTAKE</p><h1>Describe what, where, who, how, cost, and when you can deliver.</h1><p>This is supplier-product data used for matching. Ready-made programs are optional records at the end.</p></div><span className="status-badge">Your own record</span></div><div className="intake-index"><span>01 Footprint</span><span>02 Experiences</span><span>03 Operations</span><span>04 Groups & Hotels</span><span>05 Commercial</span><span>06 Timing</span><span>07 Programs</span></div>
+    <IntakeSection number="01" title="Operating footprint" description="Be specific: nationwide coverage and regional expertise are not the same."><div className="form-grid three"><label className="wide">Company name<input value={operatorName} readOnly /></label><label>Country<input value={area.country} onChange={(event) => setArea({ country: event.target.value })} /></label><label>Coverage<select value={area.coverage} onChange={(event) => setArea({ coverage: event.target.value as ServiceArea["coverage"] })}><option value="nationwide">Nationwide</option><option value="regional">Regional</option><option value="local">Local</option></select></label><label className="wide">Regions<input value={area.regions.join(", ")} onChange={(event) => setArea({ regions: splitList(event.target.value) })} /></label><label className="wide">Cities<input value={area.cities.join(", ")} onChange={(event) => setArea({ cities: splitList(event.target.value) })} /></label><label className="wide">Islands / areas<input value={area.areas.join(", ")} onChange={(event) => setArea({ areas: splitList(event.target.value) })} /></label></div><fieldset><legend>Destination knowledge sets</legend><div className="choice-grid compact">{destinations.map((item) => <Choice key={item.id} item={item.id} checked={profile.locations.includes(item.id)} onChange={() => toggle("locations", item.id)} />)}</div></fieldset></IntakeSection>
     <IntakeSection number="02" title="Experiences and traveler types" description="Everything your team can reliably arrange, with room to add categories later."><fieldset><legend>Experiences and trip types</legend><div className="choice-grid">{experiences.map((item) => <Choice key={item} item={item} checked={profile.services.includes(item)} onChange={() => toggle("services", item)} />)}</div></fieldset><fieldset><legend>Traveler types served</legend><div className="choice-grid">{travelerTypes.map((item) => <Choice key={item} item={item} checked={profile.travelerTypes.includes(item)} onChange={() => toggle("travelerTypes", item)} />)}</div></fieldset></IntakeSection>
     <IntakeSection number="03" title="Operational capabilities" description="How your company moves, guides, supports, and protects travelers on the ground."><div className="choice-grid">{operations.map((item) => <Choice key={item} item={item} checked={profile.operations.includes(item)} onChange={() => toggle("operations", item)} />)}</div><label className="intake-select">Customization supported<select value={profile.customizationLevel} onChange={(event) => setProfile({ ...profile, customizationLevel: event.target.value as OperatorProfile["customizationLevel"] })}><option value="limited">Limited changes</option><option value="moderate">Moderate</option><option value="high">High</option><option value="fully_bespoke">Fully bespoke</option></select></label></IntakeSection>
     <IntakeSection number="04" title="Groups and accommodations" description="Who fits your operating model and what accommodation supply you normally contract."><div className="form-grid three"><label>Minimum group<input type="number" value={profile.minGroupSize} onChange={(event) => setProfile({ ...profile, minGroupSize: Number(event.target.value) })} /></label><label>Ideal group<input type="number" value={profile.idealGroupSize} onChange={(event) => setProfile({ ...profile, idealGroupSize: Number(event.target.value) })} /></label><label>Maximum group<input type="number" value={profile.maxGroupSize} onChange={(event) => setProfile({ ...profile, maxGroupSize: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={profile.supportsFIT} onChange={(event) => setProfile({ ...profile, supportsFIT: event.target.checked })} />FIT / individual travelers</label></div><fieldset><legend>Group formats</legend><div className="choice-grid compact">{["fit", "small_groups", "medium_groups", "large_groups", "private_groups", "retreats"].map((item) => <Choice key={item} item={item} checked={profile.groupTypes.includes(item)} onChange={() => toggle("groupTypes", item)} />)}</div></fieldset><fieldset><legend>Accommodation types</legend><div className="choice-grid">{hotelTypes.map((item) => <Choice key={item} item={item} checked={profile.hotelTypes.includes(item)} onChange={() => toggle("hotelTypes", item)} />)}</div></fieldset></IntakeSection>
-    <IntakeSection number="05" title="Budget and commercial fit" description="Demo values are normalized to USD; the currency field remains part of the model."><div className="form-grid three"><label>Typical net minimum<input type="number" value={commercial.typicalNetMin} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMin: Number(event.target.value) } })} /></label><label>Typical net maximum<input type="number" value={commercial.typicalNetMax} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMax: Number(event.target.value) } })} /></label><label>Currency<select value={commercial.currency} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, currency: event.target.value } })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Minimum trip value<input type="number" value={commercial.minimumTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, minimumTripValue: Number(event.target.value) } })} /></label><label>Typical trip value<input type="number" value={commercial.typicalTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalTripValue: Number(event.target.value) } })} /></label><label>Preferred group value<input type="number" value={commercial.preferredGroupValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, preferredGroupValue: Number(event.target.value) } })} /></label><label className="inline-check"><input type="checkbox" checked={commercial.pricingVariesByGroupSize} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, pricingVariesByGroupSize: event.target.checked } })} />Pricing changes by group size</label></div></IntakeSection>
+    <IntakeSection number="05" title="Budget and commercial fit" description="Typical prices per person, in the currency you quote in."><div className="form-grid three"><label>Typical net minimum<input type="number" value={commercial.typicalNetMin} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMin: Number(event.target.value) } })} /></label><label>Typical net maximum<input type="number" value={commercial.typicalNetMax} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalNetMax: Number(event.target.value) } })} /></label><label>Currency<select value={commercial.currency} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, currency: event.target.value } })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Minimum trip value<input type="number" value={commercial.minimumTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, minimumTripValue: Number(event.target.value) } })} /></label><label>Typical trip value<input type="number" value={commercial.typicalTripValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, typicalTripValue: Number(event.target.value) } })} /></label><label>Preferred group value<input type="number" value={commercial.preferredGroupValue} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, preferredGroupValue: Number(event.target.value) } })} /></label><label className="inline-check"><input type="checkbox" checked={commercial.pricingVariesByGroupSize} onChange={(event) => setProfile({ ...profile, commercial: { ...commercial, pricingVariesByGroupSize: event.target.checked } })} />Pricing changes by group size</label></div></IntakeSection>
     <IntakeSection number="06" title="Availability, lead times, and deadlines" description="Operating availability and known exceptions inform matching. Live space remains unconfirmed until you respond."><div className="availability-layers"><article><small>LAYER 1</small><strong>Operating availability</strong><span>{timing.yearRound ? "Year-round" : timing.operatingMonths.map((month) => new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2027, month - 1, 1))).replace(" ", "")).join(", ")}</span></article><article><small>LAYER 2</small><strong>Known exceptions</strong><span>{timing.blackoutPeriods.length ? timing.blackoutPeriods.map((period) => `${formatDate(period.start)}–${formatDate(period.end)}`).join(", ") : "No blackouts listed"}</span></article><article><small>LAYER 3</small><strong>Live availability</strong><span>Confirmed only in a proposal</span></article></div><div className="form-grid three"><label className="inline-check"><input type="checkbox" checked={timing.yearRound} onChange={(event) => setProfile({ ...profile, timing: { ...timing, yearRound: event.target.checked } })} />Operate year-round</label><label>Shortest accepted lead<input type="number" value={timing.shortestLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, shortestLeadTimeDays: Number(event.target.value) } })} /></label><label>Normal minimum lead<input type="number" value={timing.minimumLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, minimumLeadTimeDays: Number(event.target.value) } })} /></label><label>Ideal lead time<input type="number" value={timing.idealLeadTimeDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, idealLeadTimeDays: Number(event.target.value) } })} /></label><label>Average proposal turnaround<input type="number" value={timing.averageProposalTurnaroundDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, averageProposalTurnaroundDays: Number(event.target.value) } })} /></label><label>Maximum proposal turnaround<input type="number" value={timing.maximumProposalTurnaroundDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, maximumProposalTurnaroundDays: Number(event.target.value) } })} /></label><label>Space hold (days)<input type="number" value={timing.spaceHoldDays} onChange={(event) => setProfile({ ...profile, timing: { ...timing, spaceHoldDays: Number(event.target.value) } })} /></label><label>Deposit due (days before)<input type="number" value={timing.depositDueDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, depositDueDaysBefore: Number(event.target.value) } })} /></label><label>Final payment (days before)<input type="number" value={timing.finalPaymentDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, finalPaymentDaysBefore: Number(event.target.value) } })} /></label><label>Final headcount (days before)<input type="number" value={timing.finalHeadcountDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, finalHeadcountDaysBefore: Number(event.target.value) } })} /></label><label>Traveler names (days before)<input type="number" value={timing.travelerNamesDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, travelerNamesDaysBefore: Number(event.target.value) } })} /></label><label>Room release (days before)<input type="number" value={timing.roomReleaseDaysBefore} onChange={(event) => setProfile({ ...profile, timing: { ...timing, roomReleaseDaysBefore: Number(event.target.value) } })} /></label></div><label>Seasonal notes<textarea rows={3} value={timing.seasonalNotes} onChange={(event) => setProfile({ ...profile, timing: { ...timing, seasonalNotes: event.target.value } })} /></label><div className="deadline-list"><strong>Cancellation deadlines</strong>{timing.cancellationDeadlines.map((deadline) => <span key={deadline.daysBefore}>{deadline.daysBefore} days before · {deadline.penalty} penalty</span>)}</div></IntakeSection>
     <IntakeSection number="07" title="Optional ready-made programs" description="Useful context after qualification. Programs never increase or reduce Capability Match.">{trips.filter((trip) => trip.partnerId === profile.partnerId).map((trip) => <div className="profile-trip" key={trip.id}><div><strong>{trip.name}</strong><span>{trip.nights} nights · {money(trip.netPricePerPerson)} starting net</span></div><span>Supporting information only</span></div>)}{trips.filter((trip) => trip.partnerId === profile.partnerId).length === 0 && <p className="quiet">No ready-made programs listed. Matching never depends on having one.</p>}</IntakeSection><div className="sticky-action"><span>Saving updates the matching immediately.</span><button className="primary" onClick={save}>Save Capability Record</button></div></section>;
 }
@@ -671,20 +709,31 @@ function GapNotice({ request }: { request: TripRequest }) {
   return <section className="packet-section"><h2>What we do not have yet</h2><p className="form-help">The agency has not answered these. Ask, or price against a stated assumption and say what the assumption is.</p><ul>{missing.map((item) => <li key={item.key}>{item.label}</li>)}</ul></section>;
 }
 
-function PartnerRequest({ request, profile, quote }: { request: TripRequest; profile: OperatorProfile; quote: () => void }) {
-  const ranked = operatorRanking(request, profile);
-  const item = ranked.find((row) => row.partner.id === profile.partnerId) ?? ranked[0];
+function operatorAsks(request: TripRequest) {
+  return [
+    `Review the full ${formatDate(request.earliestDepartureDate)}–${formatDate(request.latestDepartureDate)} window and propose dates you can actually operate`,
+    "Confirm live hotel, guide, transport and activity availability",
+    `Quote at or near ${money(calculateTargetNet(request))} net per person`,
+    "Answer every numbered requirement with yes, partly or no",
+  ];
+}
+
+const approvedNames = (request: TripRequest) => (request.approvedDestinations ?? []).map(({ slug, name }) => name || destinationName(slug));
+
+function PartnerRequest({ request, quote }: { request: TripRequest; quote: () => void }) {
+  const requirements = buildRequirements(request);
   return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">TRIP REQUEST FROM THE AGENCY</p><h1>{request.name}</h1><p>Review the requested window, recommend the actual trip you would operate, and confirm dates, availability, fit, pricing assumptions, and deadlines.</p></div><span className="needs-response-badge">Needs Response</span></div><div className="brief-strip v2"><div><strong>{request.travelerCount} travelers · {request.minimumViableTravelers} minimum</strong><span>{request.nights} nights · {levelLabel(request.experienceLevel)} · {titleCase(request.pace)} pace</span></div><div><small>TRAVEL WINDOW TO REVIEW</small><strong>{formatDate(request.earliestDepartureDate)}–{formatDate(request.latestDepartureDate)}</strong></div><div><small>TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div></div><div className="portal-columns request-detail"><section><div className="packet">
-      <PacketSection title="The group" rows={[["Who they are", request.groupDescription], ["Ages", request.ages], ["Travellers", `${request.travelerCount} to price, ${request.minimumViableTravelers} minimum viable, ${request.confirmedTravelers} confirmed`], ["Travelling from", request.guestOrigin]]} />
+      <PacketSection title="Where" rows={[["Places the agency approved", approvedNames(request).join(", ")]]} />
+      <PacketSection title="The group" rows={[["Who they are", request.groupDescription], ["Ages", request.ages], ["Travellers", `${request.travelerCount} to price, ${request.minimumViableTravelers} minimum viable`], ["Travelling from", request.guestOrigin]]} />
       <PacketSection title="Dates" rows={[["Window", `${request.earliestDepartureDate} to ${request.latestDepartureDate}`], ["Preferred departure", request.preferredDepartureDate], ["Length", `${request.nights} nights`], ["How firm", request.dateFirmness]]} />
       <PacketSection title="Rooms, meals and needs" rows={[["Rooms and occupancy", request.rooms], ["Dietary, mobility and medical", request.dietaryAndMedical], ["Accessibility", request.accessibilityNeeds.map(titleCase).join(", ")], ["Hotel level", levelLabel(request.experienceLevel)]]} />
-      <PacketSection title="Money" rows={[["Budget", `${money(request.targetRetailPricePerPerson)} per person, ${request.budgetBasis || "land only"}`], ["Your net target", `${money(calculateTargetNet(request))} per person`]]} />
+      <PacketSection title="Money" rows={[["Target net", `${money(calculateTargetNet(request))} per person`], ["What it covers", request.budgetBasis || "land only"]]} />
       <PacketSection title="What a good day looks like" rows={[["The shape of a day", request.dayShape], ["Pace", titleCase(request.pace)], ["Built around", request.desiredExperiences.map(titleCase).join(", ")], ["Must be included", request.inclusionsExpected.map(titleCase).join(", ")], ["Transport and support", request.transportationNeeds.map(titleCase).join(", ")]]} />
     </div>
     <RequirementTable request={request} />
     <HardNos request={request} />
     <GapNotice request={request} />
-    <section><h2>What we are asking you to return</h2><p className="form-help">A complete proposal, not a headline price: the program you would actually operate, the dates you can hold, what is included and what is not, the net price and its assumptions, your deposit and cancellation terms, and an answer to every requirement above.</p><div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div></section></section><section><p className="eyebrow">YOUR PROFILE MATCH</p><Score value={item.match.score} /><TimingConfirmationPanel item={item} /><TagList title="Proposal must address" values={requestItems(request, item)} tone="missing" /><div className="starting-trip"><div><span>OPTIONAL STARTING POINT</span><strong>Bali Reset</strong><p>Use it if helpful, but return a complete proposal against the brief.</p></div><strong>92%</strong></div><button className="primary full" onClick={quote}>Build Full Proposal →</button></section></div></section>;
+    <section><h2>What we are asking you to return</h2><p className="form-help">A complete proposal, not a headline price: the program you would actually operate, the dates you can hold, what is included and what is not, the net price and its assumptions, your deposit and cancellation terms, and an answer to every requirement above.</p>{request.notes && <div className="notes"><strong>Agency notes</strong><p>{request.notes}</p></div>}</section></section><section><p className="eyebrow">BEFORE YOU QUOTE</p><div className="method-note"><strong>{requirements.length} numbered requirements</strong><span>The proposal form asks for a yes, partly or no on each one, with a line of explanation. A clear no is useful; a blank is not.</span></div><PlainList title="Your proposal must" values={operatorAsks(request)} /><button className="primary full" onClick={quote}>Build Full Proposal →</button></section></div></section>;
 }
 
 // An operator should not have to retype the trip it already sells. It can hand
@@ -748,8 +797,9 @@ function ImportPanel({ token, request, proposal, setProposal }: { token: string;
   const readDocument = useAction(api.operatorImport.draftFromDocument);
   const askForUpload = useMutation(api.operatorImport.uploadUrl);
   // The model may only choose a destination the agency actually asked about.
-  const options = (request.selectedDestinationIds.length ? request.selectedDestinationIds : destinations.map((item) => item.id))
-    .map((id) => ({ slug: id, name: destinationName(id) }));
+  const options = request.approvedDestinations?.length
+    ? request.approvedDestinations.map(({ slug, name }) => ({ slug, name: name || destinationName(slug) }))
+    : destinations.map((item) => ({ slug: item.id, name: item.name }));
 
   const apply = (result: ImportedDraft, source: string) => {
     setProposal(mergeImportedDraft(result.draft ?? {}, proposal));
@@ -790,7 +840,7 @@ function ImportPanel({ token, request, proposal, setProposal }: { token: string;
     {error && <div className="inline-warning"><strong>That did not work</strong><span>{error}</span></div>}
     {note && <div className="inline-success"><strong>Filled in</strong><span>{note}</span></div>}
     {dropped.length > 0 && <div className="inline-warning"><strong>Check these by hand</strong><span>The draft named these and then quoted something that is not in your material, so those quotes were dropped:</span>{dropped.map((field) => <span key={field}>· {field}</span>)}</div>}
-    {evidence.length > 0 && <div className="evidence-list"><strong>Quoted from your material</strong>{evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}
+    {evidence.length > 0 && <div className="evidence-list"><strong>Quoted from your material</strong>{evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{fieldLabel(item.field)}</span>“{item.quote}”</blockquote>)}</div>}
     <div className="form-grid three">
       <label className="wide">A page on your own site<input type="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://youragency.com/trips/…" /></label>
       <label className="wide">The document you send agencies<input type="file" accept=".pdf,.txt,.md,application/pdf,text/plain" disabled={Boolean(busy)} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readFile(file); }} /></label>
@@ -799,9 +849,42 @@ function ImportPanel({ token, request, proposal, setProposal }: { token: string;
   </div>;
 }
 
+// One row per numbered requirement: yes, partly or no, and a line saying how. The
+// same component serves the advisor reviewing a model draft of an emailed reply,
+// where a quote shows which of the operator's own words the answer rests on.
+function RequirementAnswers({ request, answers, setAnswers, intro }: { request: TripRequest; answers: RequirementAnswer[]; setAnswers: (value: RequirementAnswer[]) => void; intro: string }) {
+  const requirements = buildRequirements(request);
+  const byKey = new Map(answers.map((item) => [item.key, item]));
+  const set = (key: string, patch: Partial<RequirementAnswer>) => {
+    const current: RequirementAnswer = byKey.get(key) ?? { key, answer: "yes", note: "" };
+    const next: RequirementAnswer = { ...current, ...patch };
+    // A quote is the operator's own words for the answer the model read. Once a
+    // person changes the answer, the quote no longer backs it, so it goes.
+    if (patch.answer && patch.answer !== current.answer) delete next.quote;
+    setAnswers([...answers.filter((item) => item.key !== key), next]);
+  };
+  if (!requirements.length) return null;
+  return <div className="form-card"><h2>Answer each requirement</h2><p className="form-help">{intro}</p><ol className="answer-list">{requirements.map((requirement) => { const answer = byKey.get(requirement.key); return <li key={requirement.key} className={answer ? `answered ${answer.answer}` : ""}><div className="requirement-head"><span className="requirement-id">{requirement.id}</span><strong>{requirement.label}</strong><span className={`tier ${requirement.tier}`}>{TIER_LABEL[requirement.tier]}</span></div><p className="requirement-statement">{requirement.statement}</p><p className="requirement-ask">{requirement.ask}</p><div className="answer-row"><div className="answer-choices" role="radiogroup" aria-label={`${requirement.id} answer`}>{(["yes", "partly", "no"] as const).map((value) => <label key={value} className={`answer-choice ${value} ${answer?.answer === value ? "checked" : ""}`}><input type="radio" name={`answer-${requirement.key}`} checked={answer?.answer === value} onChange={() => set(requirement.key, { answer: value })} />{ANSWER_LABEL[value]}</label>)}</div><input className="answer-note" aria-label={`${requirement.id} explanation`} disabled={!answer} value={answer?.note ?? ""} placeholder={!answer ? "Choose yes, partly or no first" : answer.answer === "no" ? "What you would do instead" : "One line: how, or what changes"} onChange={(event) => set(requirement.key, { note: event.target.value })} /></div>{answer?.quote && <q className="answer-quote">{answer.quote}</q>}</li>; })}</ol></div>;
+}
+
 function ProposalBuilder({ request, proposal, setProposal, token, submit }: { request: TripRequest; proposal: OperatorProposal; setProposal: (value: OperatorProposal) => void; token: string; submit: () => void }) {
+  const [problem, setProblem] = useState("");
   const toggle = (key: "transportation" | "experiencesIncluded" | "requirementsMet", item: string) => setProposal({ ...proposal, [key]: proposal[key].includes(item) ? proposal[key].filter((value) => value !== item) : [...proposal[key], item] });
-  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell the agency exactly what you will provide.</h1><p>This becomes the offer your agency compares and the source for operational deadlines after selection.</p></div><ImportPanel token={token} request={request} proposal={proposal} setProposal={setProposal} /><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{destinations.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}>{hotelTypes.map((item) => <option key={item}>{item}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><div className="form-card"><h2>Fit, changes, and gaps</h2><div className="form-grid three"><label>Final proposed fit<input type="number" min="0" max="100" value={proposal.finalFit} onChange={(event) => setProposal({ ...proposal, finalFit: Number(event.target.value) })} /></label><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}><option>USD</option><option>EUR</option><option>IDR</option></select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>)}</div></div><div className="quote-summary"><div><small>PROPOSED NET</small><strong>{money(proposal.netPricePerPerson)}</strong></div><div><small>TARGET RETAIL</small><strong>{money(request.targetRetailPricePerPerson)}</strong></div><div><small>EST. MARGIN</small><strong>{(((request.targetRetailPricePerPerson - proposal.netPricePerPerson) / request.targetRetailPricePerPerson) * 100).toFixed(1)}%</strong></div><button className="primary" onClick={submit}>Submit Full Proposal →</button></div></section>;
+  const requirements = buildRequirements(request);
+  const answered = new Set(proposal.requirementAnswers.map((item) => item.key));
+  const openMusts = requirements.filter((item) => item.tier === "must" && !answered.has(item.key));
+  // The places the agency approved come first; the rest of the catalog is only
+  // offered when the request carries none.
+  const places = request.approvedDestinations?.length
+    ? request.approvedDestinations.map(({ slug, name }) => ({ id: slug, name: name || destinationName(slug) }))
+    : destinations.map((item) => ({ id: item.id, name: item.name }));
+  const trySubmit = () => {
+    if (openMusts.length) { setProblem(`Answer the must-have requirements first: ${openMusts.map((item) => `${item.id} ${item.label}`).join(", ")}. A clear no is fine.`); return; }
+    if (!proposal.programName.trim() || !proposal.startDate || proposal.netPricePerPerson <= 0) { setProblem("A proposal needs a program name, a start date and a net price."); return; }
+    setProblem("");
+    submit();
+  };
+  return <section className="workflow-section"><div className="section-heading"><p className="eyebrow">STRUCTURED OPERATOR PROPOSAL</p><h1>Tell the agency exactly what you will provide.</h1><p>This becomes the offer your agency compares and the source for operational deadlines after selection.</p></div><ImportPanel token={token} request={request} proposal={proposal} setProposal={setProposal} /><div className="form-card"><h2>What are you proposing?</h2><div className="form-grid three"><label className="wide">Program name<input value={proposal.programName} onChange={(event) => setProposal({ ...proposal, programName: event.target.value })} /></label><label>Destination<select value={proposal.destinationId} onChange={(event) => setProposal({ ...proposal, destinationId: event.target.value })}>{!places.some((item) => item.id === proposal.destinationId) && <option value={proposal.destinationId}>{destinationName(proposal.destinationId)}</option>}{places.map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</select></label><label>Start date<input type="date" value={proposal.startDate} onChange={(event) => setProposal({ ...proposal, startDate: event.target.value })} /></label><label>End date<input type="date" value={proposal.endDate} onChange={(event) => setProposal({ ...proposal, endDate: event.target.value })} /></label><label>Nights<input type="number" value={proposal.nights} onChange={(event) => setProposal({ ...proposal, nights: Number(event.target.value) })} /></label><label className="inline-check"><input type="checkbox" checked={proposal.basedOnExistingProgram} onChange={(event) => setProposal({ ...proposal, basedOnExistingProgram: event.target.checked })} />Based on an existing program</label></div></div><div className="form-card"><h2>Can you actually do it?</h2><div className="form-grid three"><label>Live availability<select value={proposal.availability} onChange={(event) => setProposal({ ...proposal, availability: event.target.value as OperatorProposal["availability"] })}>{["Confirmation Required", "Available", "On Request", "Held", "Unavailable"].map((item) => <option key={item}>{item}</option>)}</select></label><label>Group size accepted<input type="number" value={proposal.groupSizeAccepted} onChange={(event) => setProposal({ ...proposal, groupSizeAccepted: Number(event.target.value) })} /></label><label>Hotel level<select value={proposal.hotelLevel} onChange={(event) => setProposal({ ...proposal, hotelLevel: event.target.value })}><option value="">Choose…</option>{hotelTypes.map((item) => <option key={item} value={item}>{titleCase(item)}</option>)}</select></label><label className="wide">Hotel notes<input value={proposal.hotelNotes} onChange={(event) => setProposal({ ...proposal, hotelNotes: event.target.value })} /></label></div><fieldset><legend>Transportation included</legend><div className="choice-grid">{operations.slice(0, 8).map((item) => <Choice key={item} item={item} checked={proposal.transportation.includes(item)} onChange={() => toggle("transportation", item)} />)}</div></fieldset><fieldset><legend>Experiences included</legend><div className="choice-grid">{request.desiredExperiences.map((item) => <Choice key={item} item={item} checked={proposal.experiencesIncluded.includes(item)} onChange={() => toggle("experiencesIncluded", item)} />)}</div></fieldset></div><RequirementAnswers request={request} answers={proposal.requirementAnswers} setAnswers={(requirementAnswers) => setProposal({ ...proposal, requirementAnswers })} intro="One answer per numbered requirement in the request. The agency compares every operator on exactly these, side by side. Must-haves need an answer before you can submit; a clear no is useful, a blank is not." /><div className="form-card"><h2>Changes and gaps</h2><div className="form-grid three"><label className="wide">Changes or additions<textarea rows={3} value={proposal.changesOrAdditions.join("\n")} onChange={(event) => setProposal({ ...proposal, changesOrAdditions: event.target.value.split("\n").filter(Boolean) })} /></label><label className="wide">Cannot provide<textarea rows={3} value={proposal.cannotProvide.join("\n")} onChange={(event) => setProposal({ ...proposal, cannotProvide: event.target.value.split("\n").filter(Boolean) })} /></label></div></div><div className="form-card"><h2>Price and assumptions</h2><div className="form-grid three"><label>Net price / person<input type="number" value={proposal.netPricePerPerson} onChange={(event) => setProposal({ ...proposal, netPricePerPerson: Number(event.target.value) })} /></label><label>Currency<select value={proposal.currency} onChange={(event) => setProposal({ ...proposal, currency: event.target.value })}>{["USD", "EUR", "GBP", "THB", "IDR", "MXN", "CRC"].map((code) => <option key={code}>{code}</option>)}</select></label><label>Deposit %<input type="number" value={proposal.depositPercent} onChange={(event) => setProposal({ ...proposal, depositPercent: Number(event.target.value) })} /></label><label className="wide">Pricing assumptions<textarea rows={3} value={proposal.pricingAssumptions} onChange={(event) => setProposal({ ...proposal, pricingAssumptions: event.target.value })} /></label></div></div><div className="form-card"><h2>Deadlines that will drive the workback schedule</h2><div className="form-grid three"><label>Deposit due · days before<input type="number" value={proposal.depositDueDaysBefore} onChange={(event) => setProposal({ ...proposal, depositDueDaysBefore: Number(event.target.value) })} /></label><label>Final headcount · days before<input type="number" value={proposal.finalHeadcountDaysBefore} onChange={(event) => setProposal({ ...proposal, finalHeadcountDaysBefore: Number(event.target.value) })} /></label><label>Final payment · days before<input type="number" value={proposal.finalPaymentDaysBefore} onChange={(event) => setProposal({ ...proposal, finalPaymentDaysBefore: Number(event.target.value) })} /></label><label>Traveler names · days before<input type="number" value={proposal.travelerNamesDaysBefore} onChange={(event) => setProposal({ ...proposal, travelerNamesDaysBefore: Number(event.target.value) })} /></label><label>Room release · days before<input type="number" value={proposal.roomReleaseDaysBefore} onChange={(event) => setProposal({ ...proposal, roomReleaseDaysBefore: Number(event.target.value) })} /></label></div><div className="deadline-list"><strong>Cancellation terms</strong>{proposal.cancellationTerms.length ? proposal.cancellationTerms.map((item) => <span key={item.daysBefore}>{item.daysBefore} days before · {item.penalty} penalty</span>) : <span>None on your capability record yet. State them in the pricing assumptions.</span>}</div></div>{problem && <div className="inline-warning" role="alert"><strong>Not sent yet</strong><span>{problem}</span></div>}<div className="quote-summary"><div><small>YOUR NET / PERSON</small><strong>{moneyIn(proposal.netPricePerPerson, proposal.currency)}</strong></div><div><small>AGENCY'S TARGET NET</small><strong>{money(calculateTargetNet(request))}</strong></div><div><small>REQUIREMENTS ANSWERED</small><strong>{requirements.filter((item) => answered.has(item.key)).length}/{requirements.length}</strong></div><button className="primary" onClick={trySubmit}>Submit Full Proposal →</button></div></section>;
 }
 
 function Submitted({ goBack, label = "Back to the request →" }: { goBack: () => void; label?: string }) {
@@ -1044,25 +1127,6 @@ function Workspace() {
     catch (cause) { report(cause, "Could not record the decision."); }
   };
 
-  // The demo operator's link, so the two-sided story can be shown end to end
-  // without waiting for a real supplier to open anything.
-  const addDemoLink = async () => {
-    setError(""); setNotice("");
-    if (!briefId) { setError("Create a brief first — an operator's link belongs to one request."); return; }
-    const slugs = [...new Set([...shortlist.map((row) => row.operatorSlug), "p1"])].slice(0, 5);
-    try {
-      await writeShortlist({
-        briefId,
-        operators: slugs.map((slug) => ({
-          operatorSlug: slug,
-          operatorName: partners.find((item) => item.id === slug)?.name ?? slug,
-          capabilityToken: shortlist.find((row) => row.operatorSlug === slug)?.capabilityToken ?? newCapabilityToken(),
-        })),
-      });
-      setNotice("The demo operator now has a private link on this brief.");
-    } catch (cause) { report(cause, "Could not create the operator's link."); }
-  };
-
   const selectedProposal = proposals.find((proposal) => proposal.id === request.selectedProposalId) ?? proposals[0];
 
   // The operator panel sits outside the eight steps, so it needs to hand the
@@ -1106,14 +1170,14 @@ function Workspace() {
     : activeView === "destinations" ? <DestinationDiscovery request={request} setRequest={setRequest} next={() => void chooseDestinations()} />
     : activeView === "operators" ? <OperatorResults request={request} profile={profile} next={() => goView("choose")} />
     : activeView === "choose" ? <ChoosePartners request={request} profile={profile} setRequest={setRequest} next={() => void choosePartners()} />
-    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} blocked={account && !account.canSend ? account.reason : ""} /><TripRequestReview request={request} profile={profile} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from the brief's own inbox…</div>}</>
-    : activeView === "responses" ? <><OperatorResponses request={request} proposals={proposals} next={() => goView("compare")} />{briefId && <ReplyImport briefId={briefId} shortlist={shortlist} />}</>
+    : activeView === "request" ? <><SendPanel shortlist={shortlist} emails={emails} setEmails={setEmails} blocked={account && !account.canSend ? account.reason : ""} /><TripRequestReview request={request} profile={profile} canSend={Boolean(account?.canSend)} send={() => void sendRequests()} />{sending && <div className="floating-success">Sending from your workspace inbox…</div>}</>
+    : activeView === "responses" ? <><OperatorResponses request={request} proposals={proposals} shortlist={shortlist} next={() => goView("compare")} />{briefId && <ReplyImport briefId={briefId} shortlist={shortlist} request={request} />}</>
     : activeView === "compare" ? <CompareProposals request={request} proposals={proposals} select={(id) => void selectProposal(id)} />
     : activeView === "selected" && selectedProposal ? <SelectedAndWorkback request={request} proposal={selectedProposal} reset={reset} />
-    : activeView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} createDemoLink={() => void addDemoLink()} resume={() => goView(resumeView())} deleting={deleting} onDelete={() => void deleteBrief()} />
+    : activeView === "portal" ? <OperatorLinks shortlist={shortlist} briefName={request.name} resume={() => goView(resumeView())} deleting={deleting} onDelete={() => void deleteBrief()} />
     : <OperatorDirectory request={request} briefId={briefId} />;
 
-  return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} reset={reset} signOut={() => { void signOut(); }} account={account} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
+  return <main className="app-shell"><BrandHeader activeView={activeView} setActiveView={goView} newBrief={start} reset={reset} signOut={() => { void signOut(); }} account={account} /><WorkflowProgress view={activeView} go={goView} />{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{viewContent}</main>;
 }
 
 // The mail plan gives three inboxes and an agency has more briefs than that, so
@@ -1126,9 +1190,9 @@ function MailPool() {
 }
 
 // The operators a brief has been sent to, each with the private link it owns.
-function OperatorLinks({ shortlist, briefName, createDemoLink, resume, onDelete, deleting }: { shortlist: ShortlistRow[]; briefName: string; createDemoLink: () => void; resume: () => void; onDelete: () => void; deleting: boolean }) {
+function OperatorLinks({ shortlist, briefName, resume, onDelete, deleting }: { shortlist: ShortlistRow[]; briefName: string; resume: () => void; onDelete: () => void; deleting: boolean }) {
   const [confirming, setConfirming] = useState(false);
-  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">OPERATOR LINKS</p><h1>What the operator sees, through its own private link.</h1><p>Each row is one operator on one request. The link needs no account, carries no traveller detail, and can only ever read and answer that operator's own request. Open one in a new tab to drive the other side of the demo.</p></div><div className="heading-actions"><button className="secondary" onClick={createDemoLink}>Add the demo operator's link</button><button className="primary" onClick={resume}>Back to the brief's workflow →</button></div></div>{shortlist.length === 0 ? <div className="method-note"><strong>No operator links yet.</strong><span>Choose partners on {briefName || "a brief"} and each one gets its own link here.</span></div> : <div className="link-list">{shortlist.map((row) => <article key={row._id}><div><h2>{row.operatorName}</h2><p>{row.status === "submitted" ? "Proposal received" : row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "Ready to send"}</p></div><a className="primary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open the operator's link →</a></article>)}</div>}
+  return <section className="workflow-section"><div className="section-heading split-heading"><div><p className="eyebrow">OPERATOR LINKS</p><h1>What the operator sees, through its own private link.</h1><p>Each row is one operator on one request. The link needs no account. It shows that operator what it needs to quote, including the group's ages and needs but never names or contact details, and it can only ever read and answer that operator's own request. Open one in a new tab to see exactly what the operator sees.</p></div><div className="heading-actions"><button className="primary" onClick={resume}>Back to the brief's workflow →</button></div></div>{shortlist.length === 0 ? <div className="method-note"><strong>No operator links yet.</strong><span>Choose partners on {briefName || "a brief"} and each one gets its own link here.</span></div> : <div className="link-list">{shortlist.map((row) => <article key={row._id}><div><h2>{row.operatorName}</h2><p>{row.status === "submitted" ? "Proposal received" : row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "Ready to send"}</p></div><a className="primary" href={responseLink(row.capabilityToken)} target="_blank" rel="noreferrer">Open the operator's link →</a></article>)}</div>}
     <MailPool />
     <div className="danger-zone"><div><strong>Delete this brief</strong><span>Removes the brief, its group detail, every operator on it, every response link, every proposal it received and the mail it received. It cannot be undone. The operators themselves stay in the network.</span></div>{confirming ? <div className="heading-actions"><button className="secondary" onClick={() => setConfirming(false)}>Keep it</button><button className="primary danger" disabled={deleting} onClick={onDelete}>{deleting ? "Deleting…" : "Yes, delete this brief"}</button></div> : <button className="secondary" onClick={() => setConfirming(true)}>Delete…</button>}</div>
   </section>;
@@ -1168,7 +1232,7 @@ function OperatorContact({ slug, contactEmail }: { slug: string; contactEmail?: 
 // words and their own format. This is where that reply is read: a model drafts
 // the structured proposal, every claim in the draft carries an exact quote from
 // the reply, and a person corrects and records it. The model never writes.
-function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist: ShortlistRow[] }) {
+function ReplyImport({ briefId, shortlist, request }: { briefId: Id<"briefs">; shortlist: ShortlistRow[]; request: TripRequest }) {
   const replies = useQuery(api.replies.list, { briefId }) ?? [];
   const draftFromReply = useAction(api.proposals.draftFromReply);
   const recordEmailed = useMutation(api.proposals.recordEmailed);
@@ -1184,10 +1248,14 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
   const draft = async (operatorSlug: string, source: string) => {
     setError(""); setNotice(""); setResult(null); setBusy(true);
     try {
+      // The approved places first, so the model reaches for them; the requirements
+      // exactly as the operator's packet numbered them.
+      const approved = request.selectedDestinationIds.map((id) => ({ slug: id, name: destinationName(id) }));
       const response = await draftFromReply({
         briefId,
         sourceText: source,
-        destinations: destinations.map((item) => ({ slug: item.id, name: item.name })),
+        destinations: [...approved, ...destinations.filter((item) => !request.selectedDestinationIds.includes(item.id)).map((item) => ({ slug: item.id, name: item.name }))].slice(0, 40),
+        requirements: buildRequirements(request).map(({ key, id, label, statement }) => ({ key, id, label, statement })),
       });
       setSlug(operatorSlug);
       setText(source);
@@ -1198,7 +1266,9 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
 
   const record = async () => {
     if (!result) return;
-    setError(""); setNotice(""); setBusy(true);
+    setError(""); setNotice("");
+    if (!result.draft.startDate) { setError("Add the start date the operator proposed before recording this proposal."); return; }
+    setBusy(true);
     try {
       await recordEmailed({
         briefId,
@@ -1207,6 +1277,7 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
         standardised: true,
         proposal: {
           ...result.draft,
+          finalFit: requirementCoverage(buildRequirements(request), result.draft.requirementAnswers).score,
           availability: result.draft.availability as OperatorProposal["availability"],
           basedOnExistingProgram: false,
           basedOnProgramSlug: "",
@@ -1223,9 +1294,9 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
     {error && <div className="inline-warning"><strong>Reply</strong><span>{error}</span></div>}
     {notice && <div className="inline-success"><strong>Recorded</strong><span>{notice}</span></div>}
     {replies.length > 0 && <div className="inbox-list">{replies.map((message) => <article key={message._id}><div><small>{new Date(message.receivedAt).toLocaleString()} · {message.fromEmail}</small><h3>{message.subject || "(no subject)"}</h3><p>{message.text.slice(0, 240)}{message.text.length > 240 ? "…" : ""}</p></div><button className="primary" disabled={busy} onClick={() => void draft(message.operatorSlug ?? waiting[0]?.operatorSlug ?? "", message.text)}>Draft a proposal from this →</button></article>)}</div>}
-    {waiting.map((row) => <article className="reply-compose" key={row._id}><div><h3>{row.operatorName}</h3><p>{row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "No request sent yet — the link is the other way in."}</p></div><label>Paste the reply<input value={slug === row.operatorSlug ? text : ""} placeholder="Paste what the operator wrote…" onChange={(event) => { setSlug(row.operatorSlug); setText(event.target.value); setResult(null); }} /></label><button className="secondary" disabled={busy || (slug !== row.operatorSlug) || text.trim().length < 20} onClick={() => void draft(row.operatorSlug, text)}>{busy && slug === row.operatorSlug ? "Drafting…" : "Draft the proposal"}</button></article>)}
-    {result && <div className="draft-review"><div className="section-heading split-heading"><div><p className="eyebrow">REVIEW DRAFT · {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}</p><h2>{result.draft.programName || "Untitled program"}</h2><p>The model read the reply and filled this in. Every quote below is copied from the reply; anything the reply did not say is left at zero or empty. Correct it, then record it.</p></div><span className="status-badge">{result.draft.finalFit}% final fit · {money(result.draft.netPricePerPerson)} net</span></div><div className="form-grid three"><label>Program name<input value={result.draft.programName} onChange={(event) => setResult({ ...result, draft: { ...result.draft, programName: event.target.value } })} /></label><label>Net price / person<input type="number" value={result.draft.netPricePerPerson} onChange={(event) => setResult({ ...result, draft: { ...result.draft, netPricePerPerson: Number(event.target.value) } })} /></label><label>Final proposed fit<input type="number" min="0" max="100" value={result.draft.finalFit} onChange={(event) => setResult({ ...result, draft: { ...result.draft, finalFit: Number(event.target.value) } })} /></label><label className="wide">Operator notes<textarea rows={3} value={result.draft.operatorNotes} onChange={(event) => setResult({ ...result, draft: { ...result.draft, operatorNotes: event.target.value } })} /></label></div><div className="result-detail-grid"><TagList title="Experiences it says it includes" values={result.draft.experiencesIncluded} /><TagList title="Requirements it says it meets" values={result.draft.requirementsMet} /><TagList title="It says it cannot provide" values={result.draft.cannotProvide} tone="missing" /></div>{result.droppedEvidence.length > 0 && <div className="inline-warning"><strong>Check these by hand</strong><span>The model claimed these and then quoted something the operator did not write, so the quotes were dropped:</span>{result.droppedEvidence.map((field) => <span key={field}>· {field}</span>)}</div>}
-        {result.evidence.length > 0 && <div className="evidence-list"><strong>Quoted from the reply</strong>{result.evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{item.field}</span>“{item.quote}”</blockquote>)}</div>}{result.caveats.length > 0 && <div className="method-note"><strong>The model flagged</strong>{result.caveats.map((caveat) => <span key={caveat}>{caveat}</span>)}</div>}<div className="sticky-action"><span>Recording attaches this proposal to {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}, with the reply kept as its source.</span><button className="primary" disabled={busy} onClick={() => void record()}>Record this proposal</button></div></div>}
+    {waiting.map((row) => <article className="reply-compose" key={row._id}><div><h3>{row.operatorName}</h3><p>{row.sentAt ? `Request sent${row.email ? ` to ${row.email}` : ""}` : "No request sent yet — the link is the other way in."}</p></div><label>Paste the reply<textarea rows={4} value={slug === row.operatorSlug ? text : ""} placeholder="Paste what the operator wrote…" onChange={(event) => { setSlug(row.operatorSlug); setText(event.target.value); setResult(null); }} /></label><button className="secondary" disabled={busy || (slug !== row.operatorSlug) || text.trim().length < 20} onClick={() => void draft(row.operatorSlug, text)}>{busy && slug === row.operatorSlug ? "Drafting…" : "Draft the proposal"}</button></article>)}
+    {result && <div className="draft-review"><div className="section-heading split-heading"><div><p className="eyebrow">REVIEW DRAFT · {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}</p><h2>{result.draft.programName || "Untitled program"}</h2><p>The model read the reply and filled this in. Every quote below is copied from the reply; anything the reply did not say is left at zero or empty. Correct it, then record it.</p></div><span className="status-badge">{requirementCoverage(buildRequirements(request), result.draft.requirementAnswers).score}% requirement coverage · {moneyIn(result.draft.netPricePerPerson, result.draft.currency)} net</span></div><div className="form-grid three"><label>Program name<input value={result.draft.programName} onChange={(event) => setResult({ ...result, draft: { ...result.draft, programName: event.target.value } })} /></label><label>Start date<input type="date" value={result.draft.startDate} onChange={(event) => setResult({ ...result, draft: { ...result.draft, startDate: event.target.value } })} /></label><label>End date<input type="date" value={result.draft.endDate} onChange={(event) => setResult({ ...result, draft: { ...result.draft, endDate: event.target.value } })} /></label><label>Net price / person<input type="number" value={result.draft.netPricePerPerson} onChange={(event) => setResult({ ...result, draft: { ...result.draft, netPricePerPerson: Number(event.target.value) } })} /></label><label className="wide">Operator notes<textarea rows={3} value={result.draft.operatorNotes} onChange={(event) => setResult({ ...result, draft: { ...result.draft, operatorNotes: event.target.value } })} /></label></div>{!result.draft.startDate && <div className="inline-warning"><strong>No start date in the reply</strong><span>Every later step is dated from it. Add the date the operator proposed, or ask them for one.</span></div>}<div className="result-detail-grid"><TagList title="Experiences it says it includes" values={result.draft.experiencesIncluded} /><PlainList title="It says it cannot provide" values={result.draft.cannotProvide} tone="missing" /></div><RequirementAnswers request={request} answers={result.draft.requirementAnswers} setAnswers={(requirementAnswers) => setResult({ ...result, draft: { ...result.draft, requirementAnswers } })} intro="The model answered a requirement only where the reply addresses it, and every answer carries the operator's own words. Anything left blank was not answered in the reply: correct or fill in what you know, then record it." />{result.droppedEvidence.length > 0 && <div className="inline-warning"><strong>Check these by hand</strong><span>The model claimed these and then quoted something the operator did not write, so the quotes were dropped:</span>{result.droppedEvidence.map((field) => <span key={field}>· {field}</span>)}</div>}
+        {result.evidence.length > 0 && <div className="evidence-list"><strong>Quoted from the reply</strong>{result.evidence.map((item) => <blockquote key={`${item.field}-${item.quote}`}><span>{fieldLabel(item.field)}</span>“{item.quote}”</blockquote>)}</div>}{result.caveats.length > 0 && <div className="method-note"><strong>The model flagged</strong>{result.caveats.map((caveat) => <span key={caveat}>{caveat}</span>)}</div>}<div className="sticky-action"><span>Recording attaches this proposal to {shortlist.find((row) => row.operatorSlug === slug)?.operatorName}, with the reply kept as its source.</span><button className="primary" disabled={busy} onClick={() => void record()}>Record this proposal</button></div></div>}
   </section>;
 }
 
@@ -1235,7 +1306,8 @@ function ReplyImport({ briefId, shortlist }: { briefId: Id<"briefs">; shortlist:
 // ---------------------------------------------------------------------------
 
 function OperatorApp({ token }: { token: string }) {
-  const network = useQuery(api.network.list);
+  // Everything on this side comes from the link itself. The agency's own network
+  // is only readable when signed in to that agency, which an operator never is.
   const link = useQuery(api.network.forToken, { token });
   const brief = useQuery(api.briefs.forOperatorToken, { token });
   const stored = useQuery(api.proposals.byOperatorToken, { token });
@@ -1248,24 +1320,18 @@ function OperatorApp({ token }: { token: string }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  if (network) cacheNetwork(network);
-  // On an operator's own link, the portal's fixed "this operator" reference has
-  // to be the operator the link belongs to.
-  if (link?.operatorSlug) focusOperator(link.operatorSlug);
-
   // Both of these are React's "adjust state when an input changes" case: the
   // guard closes after one pass, and the operator's edits are never overwritten.
-  if (link?.capability && !profile) setProfile(toProfile(link.capability));
-  if (brief && !draft) {
+  // An operator added by hand has no capability record yet; it starts from an
+  // empty one rather than waiting forever for a record that does not exist.
+  if (link && !profile) setProfile(link.capability ? toProfile(link.capability) : emptyProfile(link.operatorSlug));
+  if (link && brief && stored !== undefined && !draft) {
     const startingPoint = fromOperatorBrief(brief);
+    const own = link.capability ? toProfile(link.capability) : emptyProfile(link.operatorSlug);
     setDraft(
       stored
-        ? toDemoProposal({
-            ...stored,
-            id: "own-proposal",
-            operatorSlug: link?.operatorSlug ?? "p1",
-          })
-        : blankProposal(startingPoint, link?.operatorSlug ?? "p1"),
+        ? toDemoProposal({ ...stored, id: "own-proposal", operatorSlug: link.operatorSlug })
+        : blankProposal(startingPoint, link.operatorSlug, own),
     );
   }
 
@@ -1276,6 +1342,8 @@ function OperatorApp({ token }: { token: string }) {
 
   // A standing capability link carries no request: the operator is here to keep
   // its own record current. A request link carries one brief and one proposal.
+  // Still loading: a request link must not flash the "no request is waiting" page.
+  if (brief === undefined || (brief && stored === undefined)) return <Splash label="Reading the request…" />;
   const request = brief ? fromOperatorBrief(brief) : null;
   if (request && !draft) return <Splash label="Reading the request…" />;
   const go = (next: OperatorView) => { setNotice(""); setError(""); setView(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
@@ -1291,19 +1359,22 @@ function OperatorApp({ token }: { token: string }) {
   const send = async () => {
     setError(""); setSaving(true);
     try {
-      if (!draft) return;
-      await submit({ token, proposal: toStoredProposal(draft) });
+      if (!draft || !request) return;
+      // The stored fit is the requirement coverage worked out from the operator's
+      // own answers, so an alert or a list can quote it without recomputing.
+      const coverage = requirementCoverage(buildRequirements(request), draft.requirementAnswers);
+      await submit({ token, proposal: toStoredProposal({ ...draft, finalFit: coverage.score }) });
       setView("submitted");
     } catch (cause) { setError(errorText(cause, "Could not submit the proposal.")); }
     finally { setSaving(false); }
   };
 
-  const content = view === "workspace" ? (request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />)
-    : view === "profile" ? <ProfileEditor profile={profile} setProfile={setProfile} save={() => void save()} />
-    : view === "request" && request ? <PartnerRequest request={request} profile={profile} quote={() => go("quote")} />
+  const content = view === "workspace" ? (request ? <PartnerWorkspace operatorName={link.operatorName} profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />)
+    : view === "profile" ? <ProfileEditor operatorName={link.operatorName} profile={profile} setProfile={setProfile} save={() => void save()} />
+    : view === "request" && request ? <PartnerRequest request={request} quote={() => go("quote")} />
     : view === "quote" && request && draft ? <ProposalBuilder request={request} proposal={draft} setProposal={setDraft} token={token} submit={() => void send()} />
     : view === "submitted" ? <Submitted goBack={() => go("workspace")} label="Back to the request →" />
-    : request ? <PartnerWorkspace profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />;
+    : request ? <PartnerWorkspace operatorName={link.operatorName} profile={profile} request={request} go={go} /> : <CapabilityWorkspace profile={profile} go={() => go("profile")} />;
 
   return <main className="app-shell"><header className="topbar operator-topbar"><span className="brand-home"><span className="brand-mark">TB</span><span><strong>{link.operatorName}</strong><small>TripBrief operator link{request ? ` · ${request.name}` : " · capability record"}</small></span></span><nav aria-label="Operator navigation"><button className={view === "workspace" ? "nav-active" : ""} onClick={() => go("workspace")}>Workspace</button><button className={view === "profile" ? "nav-active" : ""} onClick={() => go("profile")}>Capability Record</button>{request && <button className={view === "request" || view === "quote" ? "nav-active" : ""} onClick={() => go("request")}>The Request</button>}</nav><span className="link-badge">Private link</span></header>{content}{error && <div className="banner-error" role="alert">{error}</div>}{notice && <div className="banner-notice">{notice}</div>}{saving && <div className="floating-success">Saving…</div>}</main>;
 }
@@ -1413,7 +1484,10 @@ type OperatorBrief = {
   latestDepartureDate: string;
   flexibleDates: boolean;
   proposalDecisionDate: string;
-  targetRetailPricePerPerson: number;
+  targetNetPerPerson: number;
+  approvedDestinations: { slug: string; name: string }[];
+  climates: string[];
+  travelerTypes: string[];
   experienceLevel: number;
   pace: string;
   desiredExperiences: string[];
@@ -1441,14 +1515,19 @@ function fromOperatorBrief(brief: OperatorBrief): TripRequest {
     travelMonth: brief.travelMonth,
     travelerCount: brief.travelerCount,
     minimumViableTravelers: brief.minimumViableTravelers,
-    confirmedTravelers: brief.minimumViableTravelers,
+    confirmedTravelers: 0,
     nights: brief.nights,
     earliestDepartureDate: brief.earliestDepartureDate,
     preferredDepartureDate: brief.preferredDepartureDate,
     latestDepartureDate: brief.latestDepartureDate,
     flexibleDates: brief.flexibleDates,
     proposalDecisionDate: brief.proposalDecisionDate,
-    targetRetailPricePerPerson: brief.targetRetailPricePerPerson,
+    // The operator is never told the client's price; only the net to quote.
+    targetRetailPricePerPerson: 0,
+    targetNetPerPerson: brief.targetNetPerPerson,
+    approvedDestinations: brief.approvedDestinations,
+    climates: brief.climates,
+    travelerTypes: brief.travelerTypes,
     experienceLevel: brief.experienceLevel,
     pace: brief.pace,
     desiredExperiences: brief.desiredExperiences,
@@ -1466,7 +1545,7 @@ function fromOperatorBrief(brief: OperatorBrief): TripRequest {
     dayShape: brief.dayShape ?? "",
     inclusionsExpected: brief.inclusionsExpected ?? [],
     hardNos: brief.hardNos ?? [],
-    selectedDestinationIds: [],
+    selectedDestinationIds: brief.approvedDestinations.map((item) => item.slug),
     selectedPartnerIds: [],
     selectedProposalId: null,
     status: "Sent",
@@ -1541,6 +1620,7 @@ type StoredProposal = {
   roomReleaseDaysBefore: number;
   cancellationTerms: { daysBefore: number; penalty: string }[];
   operatorNotes: string;
+  requirementAnswers?: RequirementAnswer[];
 };
 
 function toDemoProposal(proposal: StoredProposal): OperatorProposal {
@@ -1575,6 +1655,7 @@ function toDemoProposal(proposal: StoredProposal): OperatorProposal {
     roomReleaseDaysBefore: proposal.roomReleaseDaysBefore,
     cancellationTerms: proposal.cancellationTerms,
     operatorNotes: proposal.operatorNotes,
+    requirementAnswers: proposal.requirementAnswers ?? [],
   };
 }
 
@@ -1608,6 +1689,7 @@ function toStoredProposal(proposal: OperatorProposal) {
     roomReleaseDaysBefore: proposal.roomReleaseDaysBefore,
     cancellationTerms: proposal.cancellationTerms,
     operatorNotes: proposal.operatorNotes,
+    requirementAnswers: proposal.requirementAnswers,
   };
 }
 
@@ -1616,38 +1698,68 @@ function toStoredProposal(proposal: OperatorProposal) {
 // without a program name, a start date and a net price. The payment terms are
 // prefilled from the operator's own capability record, because those are the
 // terms it already told the agency it works to.
-function blankProposal(request: TripRequest, operatorSlug: string): OperatorProposal {
-  const timing = operatorProfiles.find((item) => item.partnerId === operatorSlug)?.timing;
+function blankProposal(request: TripRequest, operatorSlug: string, own: OperatorProfile): OperatorProposal {
+  const timing: OperatorTiming = own.timing;
+  // Default to an approved place this operator actually serves.
+  const approved = request.selectedDestinationIds;
+  const destinationId = approved.find((id) => own.locations.includes(id)) ?? approved[0] ?? destinations[0].id;
   return {
     id: "draft",
     partnerId: operatorSlug,
     programName: "",
     basedOnExistingProgram: false,
     readyMadeTripId: null,
-    destinationId: request.selectedDestinationIds[0] ?? destinations[0].id,
+    destinationId,
     startDate: request.preferredDepartureDate,
     endDate: "",
     nights: request.nights,
     availability: "Confirmation Required",
     groupSizeAccepted: request.travelerCount,
-    hotelLevel: "",
+    hotelLevel: request.experienceLevel === 1 ? "3-star" : request.experienceLevel === 2 ? "4-star" : "5-star_luxury",
     hotelNotes: "",
     transportation: [],
     experiencesIncluded: [],
     requirementsMet: [],
     changesOrAdditions: [],
+    cancellationTerms: timing.cancellationDeadlines ?? [],
     cannotProvide: [],
     finalFit: 0,
     netPricePerPerson: Math.round(calculateTargetNet(request)),
-    currency: "USD",
+    currency: own.commercial.currency || "USD",
     pricingAssumptions: "",
-    depositPercent: timing?.depositDueDaysBefore ? 25 : 0,
-    depositDueDaysBefore: timing?.depositDueDaysBefore ?? 0,
-    finalHeadcountDaysBefore: timing?.finalHeadcountDaysBefore ?? 0,
-    finalPaymentDaysBefore: timing?.finalPaymentDaysBefore ?? 0,
-    travelerNamesDaysBefore: timing?.travelerNamesDaysBefore ?? 0,
-    roomReleaseDaysBefore: timing?.roomReleaseDaysBefore ?? 0,
-    cancellationTerms: timing?.cancellationDeadlines ?? [],
+    depositPercent: timing.depositDueDaysBefore ? 25 : 0,
+    depositDueDaysBefore: timing.depositDueDaysBefore ?? 0,
+    finalHeadcountDaysBefore: timing.finalHeadcountDaysBefore ?? 0,
+    finalPaymentDaysBefore: timing.finalPaymentDaysBefore ?? 0,
+    travelerNamesDaysBefore: timing.travelerNamesDaysBefore ?? 0,
+    roomReleaseDaysBefore: timing.roomReleaseDaysBefore ?? 0,
     operatorNotes: "",
+    requirementAnswers: [],
+  };
+}
+
+// The capability record of an operator the agency added by hand, before the
+// operator has filled anything in. Every field is neutral: nothing is claimed.
+function emptyProfile(operatorSlug: string): OperatorProfile {
+  return {
+    partnerId: operatorSlug,
+    locations: [],
+    serviceAreas: [],
+    minGroupSize: 1,
+    maxGroupSize: 40,
+    idealGroupSize: 16,
+    supportsFIT: false,
+    groupTypes: [],
+    travelerTypes: [],
+    hotelTypes: [],
+    services: [],
+    features: [],
+    operations: [],
+    canBuildBespoke: true,
+    customizationLevel: "moderate",
+    quoteTurnaroundDays: 7,
+    languages: ["English"],
+    commercial: { typicalNetMin: 0, typicalNetMax: 0, minimumTripValue: 0, typicalTripValue: 0, preferredGroupValue: 0, pricingModels: [], currency: "USD", pricingVariesByGroupSize: false },
+    timing: { yearRound: true, operatingMonths: [], seasonalNotes: "", blackoutPeriods: [], shortestLeadTimeDays: 0, minimumLeadTimeDays: 0, idealLeadTimeDays: 0, averageProposalTurnaroundDays: 0, maximumProposalTurnaroundDays: 0, spaceHoldDays: 0, depositDueDaysBefore: 0, finalPaymentDaysBefore: 0, finalHeadcountDaysBefore: 0, travelerNamesDaysBefore: 0, latestGroupChangeDaysBefore: 0, roomReleaseDaysBefore: 0, cancellationDeadlines: [] },
   };
 }

@@ -12,6 +12,11 @@ export type TripRequest = {
   flexibleDates: boolean;
   proposalDecisionDate: string;
   targetRetailPricePerPerson: number;
+  // Set only on the operator's side, where the client's price is never sent: the
+  // net the agency wants quoted, used in place of a net derived from retail.
+  targetNetPerPerson?: number;
+  // The places the agency approved, named, as the operator's link reports them.
+  approvedDestinations?: { slug: string; name: string }[];
   flightsIncluded: boolean;
   experienceLevel: number;
   pace: string;
@@ -231,6 +236,17 @@ export type OperatorProposal = {
   roomReleaseDaysBefore: number;
   cancellationTerms: { daysBefore: number; penalty: string }[];
   operatorNotes: string;
+  // The operator's answer to each numbered requirement, keyed by requirement key.
+  requirementAnswers: RequirementAnswer[];
+};
+
+export type RequirementAnswerValue = "yes" | "partly" | "no";
+
+export type RequirementAnswer = {
+  key: string;
+  answer: RequirementAnswerValue;
+  note: string;
+  quote?: string;
 };
 
 export type WorkbackItem = {

@@ -2,7 +2,7 @@ import { action, env, mutation, query, type MutationCtx } from "./_generated/ser
 import { api, internal } from "./_generated/api";
 import { ConvexError, v, type Infer } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { briefFields, proposalRecord } from "./schema";
+import { briefFields, proposalRecord, requirementAnswer } from "./schema";
 import { structuredResponse } from "./openai";
 
 const MODEL = "gpt-4.1-mini";
@@ -22,7 +22,12 @@ const days = (value: number) =>
   Math.max(0, Math.min(3_650, Math.round(value || 0)));
 const money = (value: number) =>
   Math.max(0, Math.min(10_000_000, Math.round(value || 0)));
-const iso = (value: string) => (/^\d{4}-\d{2}-\d{2}$/.test(value) ? value : "");
+// A date must look right and also exist: "2027-13-01" matches the pattern.
+const iso = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : "";
+};
 
 // Quotes are compared after normalising the things a model changes without
 // changing a single word: runs of whitespace, and the curly punctuation that
@@ -83,7 +88,28 @@ export function cleanProposal(proposal: ProposalInput): ProposalInput {
       penalty: text(term.penalty, 40),
     })),
     operatorNotes: text(proposal.operatorNotes, LONG),
+    requirementAnswers: cleanAnswers(proposal.requirementAnswers ?? []),
   };
+}
+
+type AnswerInput = NonNullable<ProposalInput["requirementAnswers"]>[number];
+
+// One answer per requirement, the last one given winning. A brief has at most a
+// few dozen requirements, so anything past that is noise, not an answer.
+export function cleanAnswers(answers: AnswerInput[]): AnswerInput[] {
+  const byKey = new Map<string, AnswerInput>();
+  for (const item of answers) {
+    const key = text(item.key, 40);
+    if (!key) continue;
+    const quote = item.quote ? text(item.quote, 600) : "";
+    byKey.set(key, {
+      key,
+      answer: item.answer,
+      note: text(item.note, 600),
+      ...(quote ? { quote } : {}),
+    });
+  }
+  return [...byKey.values()].slice(0, 40);
 }
 
 async function rowForToken(ctx: MutationCtx, token: string) {
@@ -110,21 +136,48 @@ export const byOperatorToken = query({
     if (!row?.proposalId) return null;
     const proposal = await ctx.db.get("proposals", row.proposalId);
     if (!proposal) return null;
-    const { _id, _creationTime, owner, briefId, operatorSlug, submittedVia, submittedAt,
-      standardisedAt, standardisedBy, sourceText, ...rest } = proposal;
-    void _id;
-    void _creationTime;
-    void owner;
-    void briefId;
-    void operatorSlug;
-    void submittedVia;
-    void submittedAt;
-    void standardisedAt;
-    void standardisedBy;
-    void sourceText;
-    return rest;
+    // An explicit projection: bookkeeping the operator must not see (and that the
+    // return validator does not know, such as when the arrival was announced)
+    // never leaves the server.
+    return projectProposal(proposal);
   },
 });
+
+export function projectProposal(proposal: ProposalInput): ProposalInput {
+  return {
+    programName: proposal.programName,
+    basedOnExistingProgram: proposal.basedOnExistingProgram,
+    ...(proposal.basedOnProgramSlug !== undefined
+      ? { basedOnProgramSlug: proposal.basedOnProgramSlug }
+      : {}),
+    destinationSlug: proposal.destinationSlug,
+    startDate: proposal.startDate,
+    endDate: proposal.endDate,
+    nights: proposal.nights,
+    availability: proposal.availability,
+    groupSizeAccepted: proposal.groupSizeAccepted,
+    hotelLevel: proposal.hotelLevel,
+    hotelNotes: proposal.hotelNotes,
+    transportation: proposal.transportation,
+    experiencesIncluded: proposal.experiencesIncluded,
+    requirementsMet: proposal.requirementsMet,
+    changesOrAdditions: proposal.changesOrAdditions,
+    cannotProvide: proposal.cannotProvide,
+    finalFit: proposal.finalFit,
+    netPricePerPerson: proposal.netPricePerPerson,
+    currency: proposal.currency,
+    pricingAssumptions: proposal.pricingAssumptions,
+    depositPercent: proposal.depositPercent,
+    depositDueDaysBefore: proposal.depositDueDaysBefore,
+    finalHeadcountDaysBefore: proposal.finalHeadcountDaysBefore,
+    finalPaymentDaysBefore: proposal.finalPaymentDaysBefore,
+    travelerNamesDaysBefore: proposal.travelerNamesDaysBefore,
+    roomReleaseDaysBefore: proposal.roomReleaseDaysBefore,
+    cancellationTerms: proposal.cancellationTerms,
+    operatorNotes: proposal.operatorNotes,
+    requirementAnswers: proposal.requirementAnswers ?? [],
+  };
+}
 
 // The operator submits through its own link. A resubmission replaces its own
 // earlier answer and can never touch another operator's.
@@ -212,6 +265,12 @@ export const recordEmailed = mutation({
     if (!row)
       throw new ConvexError("That operator is not on this brief's shortlist.");
     const clean = cleanProposal(args.proposal);
+    // Every later step is dated from the start date, so a proposal without one
+    // cannot be compared or scheduled. Say so here rather than record a blank.
+    if (!clean.startDate)
+      throw new ConvexError(
+        "Add the start date the operator proposed before recording this proposal.",
+      );
     const now = Date.now();
     const existing = await ctx.db
       .query("proposals")
@@ -279,9 +338,20 @@ const draftFields = {
   travelerNamesDaysBefore: v.number(),
   roomReleaseDaysBefore: v.number(),
   operatorNotes: v.string(),
+  requirementAnswers: v.array(requirementAnswer),
 };
 
 const draftValidator = v.object(draftFields);
+
+// What the model is told about each numbered requirement. The advisor's browser
+// builds the list from the brief, the same list the operator's packet shows.
+const requirementBrief = v.object({
+  key: v.string(),
+  id: v.string(),
+  label: v.string(),
+  statement: v.string(),
+});
+type RequirementBrief = Infer<typeof requirementBrief>;
 type DraftFields = Infer<typeof draftValidator>;
 type DraftReply = {
   draft: DraftFields;
@@ -299,6 +369,7 @@ export const draftFromReply = action({
     briefId: v.id("briefs"),
     sourceText: v.string(),
     destinations: v.array(v.object({ slug: v.string(), name: v.string() })),
+    requirements: v.optional(v.array(requirementBrief)),
   },
   returns: v.object({
     draft: draftValidator,
@@ -333,17 +404,24 @@ export const draftFromReply = action({
     await ctx.runMutation(internal.integrationLimits.consumeAnalysis, {
       briefId: args.briefId,
     });
-    const allowedDestinations = args.destinations.slice(0, 12);
+    const allowedDestinations = args.destinations.slice(0, 40);
+    const requirements = (args.requirements ?? []).slice(0, 40).map((item) => ({
+      key: text(item.key, 40),
+      id: text(item.id, 8),
+      label: text(item.label, 120),
+      statement: text(item.statement, 400),
+    }));
     const raw = await structuredResponse({
       apiKey: key,
       model: MODEL,
       developer:
-        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Every item in evidence must be copied character for character out of the reply, exactly as written: do not paraphrase, shorten, tidy, correct or join two sentences. This is a review draft for a human, never a recommendation.",
+        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Dates are YYYY-MM-DD; when the reply gives a day and month without a year, use the year of the travel window. Every item in evidence, and every requirement answer's quote, must be copied character for character out of the reply, exactly as written: do not paraphrase, shorten, tidy, correct or join two sentences. Answer a numbered requirement with yes, partly or no only when the reply addresses it, quoting the words that show it; answer not_stated otherwise. This is a review draft for a human, never a recommendation.",
       user: [
         "THE REQUEST",
         `Destination options the operator could propose: ${allowedDestinations
           .map((item) => `${item.slug} (${item.name})`)
           .join(", ")}`,
+        `Travel window: ${brief.earliestDepartureDate} to ${brief.latestDepartureDate}, preferred departure ${brief.preferredDepartureDate}`,
         `Nights requested: ${brief.nights}`,
         `Travelers: ${brief.travelerCount} (minimum viable ${brief.minimumViableTravelers})`,
         `Experiences requested: ${brief.desiredExperiences.join(", ")}`,
@@ -354,6 +432,13 @@ export const draftFromReply = action({
         ].join(", ")}`,
         `Target net per person: ${Math.round(brief.targetRetailPricePerPerson * 0.75)} USD`,
         "",
+        "THE NUMBERED REQUIREMENTS THE OPERATOR WAS ASKED TO ANSWER",
+        ...(requirements.length
+          ? requirements.map(
+              (item) => `${item.id} [${item.key}] ${item.label}: ${item.statement}`,
+            )
+          : ["(none)"]),
+        "",
         "THE OPERATOR'S REPLY",
         sourceText,
       ].join("\n"),
@@ -361,9 +446,12 @@ export const draftFromReply = action({
       schema: draftSchema(
         brief,
         allowedDestinations.map((item) => item.slug),
+        requirements,
       ),
     });
-    return validateDraft(raw, sourceText, brief, allowedDestinations);
+    return validateDraft(raw, sourceText, brief, allowedDestinations, {
+      requirements,
+    });
   },
 });
 
@@ -379,6 +467,7 @@ export function draftSchema(
     | "accessibilityNeeds"
   >,
   destinationSlugs: string[],
+  requirements: RequirementBrief[] = [],
 ) {
   const destination = destinationSlugs.length
     ? { type: "string", enum: destinationSlugs }
@@ -404,6 +493,27 @@ export function draftSchema(
       "custom_itinerary_building",
     ]),
   ];
+  // Requirement answers are only asked for when there are requirements to answer:
+  // an empty enum is not a valid schema.
+  const answers = requirements.length
+    ? {
+        requirementAnswers: {
+          type: "array",
+          maxItems: requirements.length,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["key", "answer", "note", "quote"],
+            properties: {
+              key: { type: "string", enum: requirements.map((item) => item.key) },
+              answer: { type: "string", enum: ["yes", "partly", "no", "not_stated"] },
+              note: { type: "string" },
+              quote: { type: "string" },
+            },
+          },
+        },
+      }
+    : {};
   return {
     type: "object",
     additionalProperties: false,
@@ -412,8 +522,11 @@ export function draftSchema(
       draft: {
         type: "object",
         additionalProperties: false,
-        required: Object.keys(draftFields),
+        required: Object.keys(draftFields).filter(
+          (field) => field !== "requirementAnswers" || requirements.length > 0,
+        ),
         properties: {
+          ...answers,
           programName: { type: "string" },
           destinationSlug: destination,
           startDate: { type: "string" },
@@ -495,7 +608,7 @@ export function validateDraft(
     "desiredExperiences" | "importantRequirements"
   >,
   destinations: { slug: string; name: string }[],
-  options: { verifiable?: boolean } = {},
+  options: { verifiable?: boolean; requirements?: RequirementBrief[] } = {},
 ) {
   // A document the model read directly cannot have its quotes checked against
   // text we never extracted, so the draft is returned as unverified instead of
@@ -566,6 +679,35 @@ export function validateDraft(
     cleanedEvidence.push({ field, quote });
   }
 
+  // A requirement answer stands only on the operator's own words. One without a
+  // quote that is really in the reply is dropped and named, never shown as an
+  // answer: "not answered" is a truer cell in the comparison than a guess.
+  const known = new Map(
+    (options.requirements ?? []).map((item) => [item.key, item]),
+  );
+  const requirementAnswers: AnswerInput[] = [];
+  const rawAnswers = values.requirementAnswers;
+  for (const item of Array.isArray(rawAnswers) ? rawAnswers : []) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const key = typeof entry.key === "string" ? entry.key : "";
+    const answer = entry.answer;
+    const spec = known.get(key);
+    if (!spec || (answer !== "yes" && answer !== "partly" && answer !== "no"))
+      continue;
+    const quote = typeof entry.quote === "string" ? entry.quote.trim() : "";
+    if (!quote || (verifiable && !quoteIsPresent(quote, sourceText))) {
+      droppedEvidence.push(`${spec.id} ${spec.label}`);
+      continue;
+    }
+    requirementAnswers.push({
+      key,
+      answer,
+      note: typeof entry.note === "string" ? text(entry.note, 600) : "",
+      quote: text(quote, 600),
+    });
+  }
+
   // If the model produced evidence and none of it can be found, it is inventing
   // wholesale and the draft must not be offered at all.
   if (verifiable && evidence.length > 0 && cleanedEvidence.length === 0)
@@ -608,9 +750,10 @@ export function validateDraft(
       travelerNamesDaysBefore: days(num("travelerNamesDaysBefore")),
       roomReleaseDaysBefore: days(num("roomReleaseDaysBefore")),
       operatorNotes: text(str("operatorNotes"), LONG),
+      requirementAnswers: cleanAnswers(requirementAnswers),
     },
     evidence: cleanedEvidence.slice(0, 12),
-    droppedEvidence: [...new Set(droppedEvidence)].slice(0, 12),
+    droppedEvidence: [...new Set(droppedEvidence)].slice(0, 40),
     quoteCheck: verifiable,
     caveats: Array.isArray(caveats)
       ? caveats

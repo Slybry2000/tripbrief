@@ -727,3 +727,51 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
 .tier.must { border-color: #e0c489; background: var(--gold-bg); color: var(--gold); }
 .tier.should { border-color: #cfe4dc; background: var(--white); color: var(--green-dark); }
 @media (max-width: 760px) { .packet-section dl > div { grid-template-columns: 1fr; gap: 4px; } }
+
+/* ------------------------------------------------------------------------
+   Numbered requirements: the operator's answers, and the side-by-side grid
+   the advisor compares them in.
+   ------------------------------------------------------------------------ */
+.answer-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.answer-list > li { padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--white); display: grid; gap: 6px; }
+.answer-list > li.answered.yes { border-color: #bcdccf; background: var(--mint-2); }
+.answer-list > li.answered.partly { border-color: #ead3a6; background: #fffaf0; }
+.answer-list > li.answered.no { border-color: #f0d5cf; background: var(--red-bg); }
+.requirement-statement { margin: 2px 0 0; font-size: .9rem; }
+.answer-list .requirement-ask { margin: 0; }
+.answer-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 4px; }
+.answer-choices { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--white); flex: none; }
+.answer-choice { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; font-size: .85rem; cursor: pointer; border-right: 1px solid var(--line); }
+.answer-choice:last-child { border-right: 0; }
+.answer-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.answer-choice:focus-within { outline: 3px solid #e3a14a; outline-offset: -3px; }
+.answer-choice.checked.yes { background: var(--green); color: var(--white); }
+.answer-choice.checked.partly { background: var(--gold); color: var(--white); }
+.answer-choice.checked.no { background: var(--red); color: var(--white); }
+.answer-note { flex: 1 1 260px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--white); }
+.answer-note:disabled { background: #f4f6f5; }
+.answer-quote, .requirement-grid q { display: block; font-size: .82rem; color: var(--muted); font-style: italic; border-left: 3px solid var(--line); padding-left: 10px; quotes: "\201C" "\201D"; }
+.return-list { margin: 10px 0 14px; padding-left: 18px; display: grid; gap: 8px; font-size: .9rem; }
+
+.requirement-grid-section { margin-top: 34px; }
+.requirement-grid-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--white); }
+.requirement-grid { width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 560px; }
+.requirement-grid th, .requirement-grid td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.requirement-grid thead th { background: var(--mint-2); font-size: .9rem; position: sticky; top: 0; }
+.requirement-grid thead th small, .requirement-grid tbody th small { display: block; margin-top: 4px; font-weight: 400; color: var(--muted); }
+.requirement-grid tbody th { width: 30%; font-weight: 600; background: var(--white); }
+.requirement-grid tbody th .tier { margin-left: 0; display: inline-block; width: fit-content; }
+.requirement-grid td b { display: block; margin-bottom: 3px; }
+.requirement-grid td span { display: block; color: var(--ink); margin-bottom: 4px; }
+.requirement-grid td.yes b { color: var(--green-dark); }
+.requirement-grid td.partly { background: #fffaf0; }
+.requirement-grid td.partly b { color: var(--gold); }
+.requirement-grid td.no { background: var(--red-bg); }
+.requirement-grid td.no b { color: var(--red); }
+.requirement-grid td.none b { color: var(--muted); font-weight: 400; }
+.requirement-grid tfoot th, .requirement-grid tfoot td { background: var(--mint-2); border-bottom: 0; }
+.requirement-grid tfoot td b { font-size: 1.2rem; }
+@media (max-width: 620px) {
+  .requirement-grid tbody th { width: auto; }
+  .answer-choice { padding: 7px 11px; }
+}

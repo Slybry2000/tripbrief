@@ -182,6 +182,18 @@ export const availability = v.union(
   v.literal("Unavailable"),
 );
 
+// One operator's answer to one numbered requirement (R1..Rn). Keyed by the
+// requirement's stable key rather than its number, so an answer still lines up
+// if the brief later gains or loses a requirement.
+export const requirementAnswer = v.object({
+  key: v.string(),
+  answer: v.union(v.literal("yes"), v.literal("partly"), v.literal("no")),
+  note: v.string(),
+  // The operator's own words, when the answer was drafted from an emailed reply.
+  // Always a verbatim quote of that reply, or absent.
+  quote: v.optional(v.string()),
+});
+
 // The structured proposal an operator returns. This is the object the advisor
 // compares, and after selection it is the source of every operational deadline.
 export const proposalRecord = v.object({
@@ -215,6 +227,9 @@ export const proposalRecord = v.object({
     v.object({ daysBefore: v.number(), penalty: v.string() }),
   ),
   operatorNotes: v.string(),
+  // Optional so proposals recorded before requirements were answerable stay valid;
+  // the comparison shows those as "not answered" rather than guessing.
+  requirementAnswers: v.optional(v.array(requirementAnswer)),
 });
 
 export default defineSchema({

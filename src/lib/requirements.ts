@@ -14,7 +14,7 @@
 // A constraint that must never be violated is deliberately NOT a numbered
 // requirement. It is shown on its own as a hard no: burying "no early starts"
 // inside a list of preferences is how a group ends up with a 6am departure.
-import type { TripRequest } from "./types";
+import type { RequirementAnswer, TripRequest } from "./types";
 import { calculateTargetNet } from "./matching";
 
 export type RequirementTier = "must" | "should" | "nice";
@@ -67,11 +67,15 @@ export const SPEC: Spec[] = [
     key: "budget",
     tier: "must",
     label: "Budget",
-    ask: "Can you build this trip inside that band, and say exactly what it covers?",
-    statement: (request) =>
-      request.targetRetailPricePerPerson
-        ? `${money(request.targetRetailPricePerPerson)} per person is what the group will pay, ${text(request.budgetBasis) || "land only"}. The operator's net is ${money(calculateTargetNet(request))}.`
-        : "",
+    ask: "Can you build this trip at or near that net, and say exactly what it covers?",
+    // Only the net the operator is asked to quote. What the client pays, and so
+    // the agency's margin, is the agency's business and never part of the packet.
+    statement: (request) => {
+      const net = calculateTargetNet(request);
+      return net > 0
+        ? `A net of ${money(net)} per person to you, ${text(request.budgetBasis) || "land only"}.`
+        : "";
+    },
   },
   {
     key: "dates",
@@ -93,7 +97,7 @@ export const SPEC: Spec[] = [
     ask: "Can you host a group this size at once, and at what size does the price change?",
     statement: (request) =>
       request.travelerCount
-        ? `${request.travelerCount} travellers to price, ${request.minimumViableTravelers} minimum viable, ${request.confirmedTravelers} confirmed so far. ${list(
+        ? `${request.travelerCount} travellers to price, ${request.minimumViableTravelers} minimum viable. ${list(
             request.travelerTypes,
           )}`
         : "",
@@ -236,6 +240,49 @@ export function missingMusts(request: TripRequest): { key: string; label: string
   return SPEC.filter(
     (spec) => spec.tier === "must" && spec.statement(request).trim().length < 3,
   ).map((spec) => ({ key: spec.key, label: spec.label }));
+}
+
+// How well one proposal covers the brief, from the operator's own answers. A must
+// weighs three times a nice, a "partly" counts half, and an unanswered
+// requirement counts as nothing: a blank is not an answer. This replaces a fit
+// number the operator typed about itself.
+const WEIGHT: Record<RequirementTier, number> = { must: 3, should: 2, nice: 1 };
+
+export type Coverage = {
+  score: number;
+  yes: number;
+  partly: number;
+  no: number;
+  unanswered: number;
+  total: number;
+  mustsOpen: string[];
+};
+
+export function requirementCoverage(
+  requirements: Requirement[],
+  answers: RequirementAnswer[] | undefined,
+): Coverage {
+  const byKey = new Map((answers ?? []).map((item) => [item.key, item.answer]));
+  let earned = 0;
+  let possible = 0;
+  const counts = { yes: 0, partly: 0, no: 0, unanswered: 0 };
+  const mustsOpen: string[] = [];
+  for (const requirement of requirements) {
+    const weight = WEIGHT[requirement.tier];
+    possible += weight;
+    const answer = byKey.get(requirement.key);
+    if (answer === "yes") { counts.yes += 1; earned += weight; }
+    else if (answer === "partly") { counts.partly += 1; earned += weight / 2; }
+    else if (answer === "no") counts.no += 1;
+    else counts.unanswered += 1;
+    if (requirement.tier === "must" && answer !== "yes") mustsOpen.push(requirement.id);
+  }
+  return {
+    score: possible ? Math.round((earned / possible) * 100) : 0,
+    ...counts,
+    total: requirements.length,
+    mustsOpen,
+  };
 }
 
 export const TIER_LABEL: Record<RequirementTier, string> = {

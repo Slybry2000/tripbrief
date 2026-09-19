@@ -1,7 +1,7 @@
 import { mutation, query } from "./_generated/server";
 import { ConvexError, v, type Infer } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
-import schema, { briefFields, briefStatus, proposalRecord } from "./schema";
+import schema, { briefFields, briefStatus, proposalRecord, requirementAnswer } from "./schema";
 import type { Doc } from "./_generated/dataModel";
 
 export const MAX_SHORTLIST = 5;
@@ -211,6 +211,7 @@ export const get = query({
             v.object({ daysBefore: v.number(), penalty: v.string() }),
           ),
           operatorNotes: v.string(),
+          requirementAnswers: v.array(requirementAnswer),
         }),
       ),
     }),
@@ -279,6 +280,7 @@ export const get = query({
         roomReleaseDaysBefore: proposal.roomReleaseDaysBefore,
         cancellationTerms: proposal.cancellationTerms,
         operatorNotes: proposal.operatorNotes,
+        requirementAnswers: proposal.requirementAnswers ?? [],
       })),
     };
   },
@@ -303,12 +305,15 @@ export const proposalDetail = query({
     if (!owner) return null;
     const proposal = await ctx.db.get("proposals", args.proposalId);
     if (!proposal || proposal.owner !== owner) return null;
-    const { _creationTime, owner: _owner, standardisedAt, standardisedBy, ...rest } =
+    // announcedAt is bookkeeping the return validator does not carry; leaving it in
+    // would fail the read the moment an arrival had been announced.
+    const { _creationTime, owner: _owner, standardisedAt, standardisedBy, announcedAt, ...rest } =
       proposal;
     void _creationTime;
     void _owner;
     void standardisedAt;
     void standardisedBy;
+    void announcedAt;
     return rest;
   },
 });
@@ -578,7 +583,9 @@ export const forOperatorToken = query({
       latestDepartureDate: v.string(),
       flexibleDates: v.boolean(),
       proposalDecisionDate: v.string(),
-      targetRetailPricePerPerson: v.number(),
+      // The net the agency wants quoted. The client's own price, and so the
+      // agency's margin, never reaches the operator.
+      targetNetPerPerson: v.number(),
       experienceLevel: v.number(),
       pace: v.string(),
       desiredExperiences: v.array(v.string()),
@@ -586,6 +593,15 @@ export const forOperatorToken = query({
       transportationNeeds: v.array(v.string()),
       accessibilityNeeds: v.array(v.string()),
       notes: v.string(),
+      // The customer-approved places, so the operator proposes one of them rather
+      // than whichever place a form defaulted to.
+      approvedDestinations: v.array(
+        v.object({ slug: v.string(), name: v.string() }),
+      ),
+      // Both shape the numbered requirements, so the operator's R1..Rn line up
+      // with the agency's.
+      climates: v.array(v.string()),
+      travelerTypes: v.array(v.string()),
       groupDescription: v.string(),
       ages: v.string(),
       rooms: v.string(),
@@ -609,6 +625,18 @@ export const forOperatorToken = query({
     if (!row) return null;
     const brief = await ctx.db.get("briefs", row.briefId);
     if (!brief) return null;
+    // A place the advisor added has its name stored; a catalog place is named by
+    // the interface, so an empty name here means "use the catalog's".
+    const approvedDestinations = [];
+    for (const slug of brief.selectedDestinationSlugs.slice(0, 12)) {
+      const added = await ctx.db
+        .query("destinations")
+        .withIndex("by_owner_and_slug", (q) =>
+          q.eq("owner", brief.owner).eq("slug", slug),
+        )
+        .first();
+      approvedDestinations.push({ slug, name: added?.name ?? "" });
+    }
     return {
       briefId: brief._id,
       name: brief.name,
@@ -621,7 +649,7 @@ export const forOperatorToken = query({
       latestDepartureDate: brief.latestDepartureDate,
       flexibleDates: brief.flexibleDates,
       proposalDecisionDate: brief.proposalDecisionDate,
-      targetRetailPricePerPerson: brief.targetRetailPricePerPerson,
+      targetNetPerPerson: Math.round(brief.targetRetailPricePerPerson * 0.75),
       experienceLevel: brief.experienceLevel,
       pace: brief.pace,
       desiredExperiences: brief.desiredExperiences,
@@ -629,6 +657,9 @@ export const forOperatorToken = query({
       transportationNeeds: brief.transportationNeeds,
       accessibilityNeeds: brief.accessibilityNeeds,
       notes: brief.notes,
+      approvedDestinations,
+      climates: brief.climates,
+      travelerTypes: brief.travelerTypes,
       // Coerced rather than optional: a brief written before these existed still
       // has to render as a packet, and an empty answer is what the gap list reports.
       groupDescription: brief.groupDescription ?? "",

@@ -816,3 +816,48 @@ desert destinations at the bottom.
 New table `destinations` (`owner, slug, name, country, strengths`) deployed with
 its index. 65 tests across 15 files, lint, typecheck and the build pass. Commit
 `b6173eb`, pushed, and the public address serves it.
+
+### 2026-09-19 - the operator's link works for an operator, and R1..Rn become a grid
+
+A walk through the public app, signed out and as a stranger would meet it, found
+that the operator's side only worked for someone already signed in to the agency's
+workspace. The portal read the operator's name from the agency's network, which
+answers nobody who is signed out, so every real operator, and a judge opening a
+link in a private window, got a blank page. Everything on the operator's side now
+comes from the link itself, and an operator added by hand, with no capability
+record yet, starts from an empty one instead of waiting forever.
+
+The same pass closed what it found around it:
+
+- **The operator is never told what the client pays.** The request, the packet's
+  R1 and the proposal form carried the retail price and an estimated margin. The
+  link now returns only the net to quote, so the margin is not in the page or the
+  network traffic behind it.
+- **Operators answer R1..Rn.** The packet always asked for an answer to every
+  numbered requirement; the form now takes one: yes, partly or no, with a line
+  saying how. Must-haves need an answer before a proposal can be submitted.
+- **Compare has a requirement grid.** Every operator's answer to every requirement,
+  side by side, with a blank shown as *not answered*. Coverage is worked out from
+  those answers (a must weighs three times a nice, a partly counts half) and it
+  replaces the fit percentage operators used to type about themselves.
+- **An emailed reply is drafted into the same answers.** The model is given the
+  numbered requirements and the travel window. An answer stands only on a quote
+  that is really in the reply; one without is dropped and named. A reply with no
+  start date can no longer be recorded, and a missing date is shown as missing
+  rather than taking three steps down with it.
+- **The schedule carries the operator's deposit and cancellation dates**, leaves
+  out a deadline the proposal never stated, drops sales checkpoints already in the
+  past, and uses the confirmed-traveller count the advisor now enters in step 1.
+- **Wording that was no longer true is gone**: "No real messages are sent in this
+  demo", "sent to N demo ITOs" for a trial that sent nothing, "Approved Demo ITO",
+  a hard-coded logo, "Bali Reset 92%" shown to every operator, and "fictional" on
+  operators an agency added itself. "New Client Brief" starts a new brief instead
+  of reopening the last one.
+- Reading back a proposal after its arrival had been announced failed validation;
+  both reads now return an explicit projection.
+
+Verified on the local deployment: a signed-out operator opened its link, answered
+all eighteen requirements and submitted; a real operator email was drafted by the
+live OpenAI model into five quoted requirement answers with the right start date;
+the grid and the schedule rendered from both. 74 tests across 16 files, lint,
+typecheck and the build pass.

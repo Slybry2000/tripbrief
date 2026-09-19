@@ -31,9 +31,9 @@ answered, and a comparison built from proposals rather than from a headline pric
 | 2. Destinations | Every destination is scored against the brief and the customer-approved locations are chosen. Only operators serving those locations are considered from here on. |
 | 3. Operator matches | Operators are ranked by **Capability Match** — 35% experiences, 20% operations, 15% destination, 10% group, 10% accommodation, 10% commercial — with the reason for every score, what is missing, and what has to be confirmed. |
 | 4. Choose partners | Up to five operators are shortlisted. Naming one creates its private request link. |
-| 5. Trip request | One core brief, plus the questions that operator specifically has to answer. It can be emailed from the brief's own inbox, or handed over as a link. |
-| 6. Operator responses | The operator opens its link, confirms the dates it can actually operate, and returns a structured proposal. A reply that arrives by email can be read, drafted into the same structure, reviewed and recorded. |
-| 7. Compare trips | Proposals are compared as **trips**: final fit, availability, price and margin, hotels, transport, remaining gaps, deposits and deadlines. |
+| 5. Trip request | One core brief as numbered requirements R1..Rn, plus the questions that operator specifically has to answer. It can be emailed from the workspace's mail inbox, or handed over as a link. |
+| 6. Operator responses | The operator opens its link, confirms the dates it can actually operate, answers **every numbered requirement with yes, partly or no**, and returns a structured proposal. A reply that arrives by email can be read, drafted into the same structure (requirement answers included, each resting on a verbatim quote), reviewed and recorded. |
+| 7. Compare trips | Proposals are compared as **trips**: requirement coverage worked out from the operators' own answers, availability, price and margin, hotels, transport, remaining gaps, deposits and deadlines, and a **requirement-by-requirement grid** that puts every operator's answer to R1..Rn side by side. |
 | 8. Selection & workback | The trip and the operating partner behind it are selected, and a workback schedule is built from that proposal's own deadlines. |
 
 A ready-made program is supporting evidence, never an entry requirement. An
@@ -55,7 +55,14 @@ appears in a request line, a referrer or a server log.
   operator network page.
 
 Either link can update the operator's capability record. Neither can read another
-operator's record, price or proposal. The owner and the operator slug are taken
+operator's record, price or proposal, and neither needs the operator to be signed in
+to anything: everything the operator's page shows comes from the link itself.
+
+**What the client pays is never sent to an operator.** A request carries the net
+the agency wants quoted, never the retail price, and neither the packet, the
+proposal form nor the network traffic behind them shows a retail figure or a
+margin. (The net is currently a fixed share of retail; an agency that wants a net
+set independently of retail would need its own field.) The owner and the operator slug are taken
 from the link server-side, never from the browser.
 
 A token identifies exactly one row. Two rows sharing one token would mean a link
@@ -155,9 +162,9 @@ column says what has actually been run.
 
 | Sponsor | Real work in the product | Status |
 |---|---|---|
-| **Convex** | Schema, indexes, live queries, mutations, actions, HTTP routes, authentication, per-workspace ownership, rate-limiter quotas, and hosting of the built frontend | Running. 35 tests cover ownership isolation, link scope, the shortlist cap, the cascade delete, reply matching and the provider paths |
+| **Convex** | Schema, indexes, live queries, mutations, actions, HTTP routes, authentication, per-workspace ownership, rate-limiter quotas, and hosting of the built frontend | Running. 74 tests cover ownership isolation, link scope, the shortlist cap, the cascade delete, reply matching, requirement answers, what an operator can and cannot see, and the provider paths |
 | **Firecrawl** | *Grow the network*: searches published websites for operators serving one destination, stores each result with the query that surfaced it, and lets an advisor add one as an operator | Wired, and previously verified against the live provider. Quota-limited per workspace and app-wide |
-| **OpenAI** | Reads an operator's emailed reply and drafts the structured proposal. Every claim carries an exact contiguous quote from the reply, and a quote that is not in the reply voids the whole draft | Wired and unit-tested. Review-only: it returns a draft, never writes, and refuses to run without a key |
+| **OpenAI** | Reads an operator's emailed reply and drafts the structured proposal, including its answer to each numbered requirement. Every claim carries an exact contiguous quote from the reply: a quote that is not in the reply is dropped and named for the advisor to check, a requirement answer without one is left as *not answered*, and a draft whose evidence is invented wholesale is refused | Wired, unit-tested and run against the live provider. Review-only: it returns a draft, never writes, and refuses to run without a key |
 | **AgentMail** | A small pool of mailboxes per workspace sends requests, and a reply is attributed to the exact request it answers by the thread it belongs to | Wired and exercised end to end, including the inbound route. **No email has been sent to a real supplier** (the one live send was to the project owner's own address) |
 
 ## What makes it safe to point at real suppliers
@@ -217,7 +224,7 @@ and the pool never grows past what the account allows. When the provider refuses
 one, the refusal is shown verbatim rather than hidden behind "service unavailable".
 
 ```text
-npm test        # 35 tests: matching baselines, and the backend's actual behaviour
+npm test        # 74 tests: matching baselines, requirements, and the backend's actual behaviour
 npm run lint
 npm run build
 npm run deploy  # builds the frontend and publishes it with the backend

@@ -116,7 +116,7 @@ async function fill(
   destinations: { slug: string; name: string }[],
   openai: string,
 ): Promise<ImportedDraft> {
-  const allowed = destinations.slice(0, 12);
+  const allowed = destinations.slice(0, 40);
   const request = [
     "THE REQUEST FROM THE AGENCY",
     `Destination options: ${allowed.map((item) => `${item.slug} (${item.name})`).join(", ")}`,
