@@ -70,10 +70,19 @@ await context.addInitScript(() => {
 const page = await context.newPage();
 const started = Date.now();
 const at = () => (Date.now() - started) / 1000;
-const markers = {};
+const markers = { captions: [] };
 const wait = (ms) => page.waitForTimeout(ms);
-const cap = async (text, hold = 0) => { await page.evaluate((value) => window.__cap(value), text); if (hold) await wait(hold); };
-const card = async (html, hold = 0) => { await page.evaluate((value) => window.__card(value), html); if (hold) await wait(hold); };
+// Each caption's moment is logged, so the voiceover can be placed on it later.
+const cap = async (text, hold = 0) => {
+  if (text) markers.captions.push({ at: at(), text });
+  await page.evaluate((value) => window.__cap(value), text);
+  if (hold) await wait(hold);
+};
+const card = async (html, hold = 0, spoken = "") => {
+  if (spoken) markers.captions.push({ at: at(), text: spoken });
+  await page.evaluate((value) => window.__card(value), html);
+  if (hold) await wait(hold);
+};
 const click = async (name) => { await page.getByRole("button", { name }).first().click(); };
 const scroll = async (to, ms = 1200) => {
   await page.evaluate(async ({ to, ms }) => {
@@ -94,7 +103,7 @@ await page.goto(base);
 await page.waitForTimeout(1500);
 
 // 1. Title
-await card(`<h1>TripBrief</h1><p>From a client brief to trips real operators will actually run.</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 3800);
+await card(`<h1>TripBrief</h1><p>From a client brief to trips real operators will actually run.</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 5200, "TripBrief turns a client brief into trips that real local operators will actually run.");
 await card("", 400);
 
 // 2. Home
@@ -158,11 +167,12 @@ await page.waitForTimeout(2600);
 await cap("AgentMail sends each operator its own request, to the address its own site publishes.", 4000);
 await scroll(460, 1200);
 await cap("Demo mode: every request goes to a stand-in inbox, never to the operator.", 3600);
-markers.waitStart = at();
 await click(/Send Trip Requests/);
 await page.waitForTimeout(4000);
-await cap("OpenAI now answers as each operator, the way a real one would.", 3000);
-await cap("The page updates itself as each reply lands.", 1000);
+await cap("OpenAI now answers as each operator, the way a real one would.", 5000);
+await cap("The page updates itself as each reply lands.", 4000);
+// Only the silent waiting is sped up, so no narration is ever compressed.
+markers.waitStart = at();
 await page.waitForFunction(() => /3 of 3 proposals received/.test(document.body.innerText), null, { timeout: 180_000 });
 markers.waitEnd = at();
 await wait(1200);
@@ -204,7 +214,7 @@ await wait(2600);
 await cap("", 300);
 
 // 11. End card
-await card(`<h1>TripBrief</h1><p>hip-minnow-543.convex.site</p><p style="font-size:21px">github.com/Slybry2000/tripbrief</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 4000);
+await card(`<h1>TripBrief</h1><p>hip-minnow-543.convex.site</p><p style="font-size:21px">github.com/Slybry2000/tripbrief</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 6000, "Built on Convex, with OpenAI, Firecrawl and AgentMail. It is live now, and the code is public.");
 
 markers.total = at();
 await page.close();
