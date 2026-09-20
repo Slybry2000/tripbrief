@@ -83,6 +83,17 @@ markers.shots.forEach((entry, index) => {
   }
 });
 if (!shots.length) throw new Error("No shots in markers.json - record with the current recorder.");
+// Four seconds of the finished comparison, reused at the very front as a
+// flash-forward. Nothing is staged for it: the grid it opens on is the one the
+// take goes on to build. Marked as a duplicate so the narration, which is
+// placed by where a moment first appears, is not dragged to the front with it.
+if (markers.coldOpen) {
+  shots.unshift({
+    from: mark(markers.coldOpen.from), to: mark(markers.coldOpen.to),
+    speed: 1, z0: 1.0, z1: 1.03, cx: 0.5, cy: 0.45, name: "cold-open", dup: true,
+  });
+  shots[1].xfadeIn = 0.5;
+}
 shots[0].xfadeIn = 0;
 
 const { graph, length } = assembleXfade(shots);
@@ -95,6 +106,8 @@ const toFinal = (rawTime) => {
   let out = 0;
   for (const shot of shots) {
     out -= shot.xfadeIn ?? 0;
+    // A reused stretch occupies time but is not where a moment belongs.
+    if (shot.dup) { out += shotLength(shot); continue; }
     if (point >= shot.to) { out += shotLength(shot); continue; }
     if (point > shot.from) return Math.max(0, out + (point - shot.from) / shot.speed);
     return Math.max(0, out);
@@ -127,18 +140,49 @@ const crowded = placed
   }))
   .filter((line) => line.room < 0.3);
 
+// Where the film's own moments land in the finished cut. Everything the score
+// and the sound design hang on comes from here, so nothing is a hand-entered
+// time that goes stale the next time the film is recorded.
+const shotStart = (name) => {
+  const found = shots.find((shot) => shot.name === name && !shot.dup);
+  return found ? toFinal(found.from) : null;
+};
+const cues = {
+  moneyShot: markers.moneyShot ? toFinal(markers.moneyShot.at) : finalLength * 0.72,
+  lookupStart: markers.lookupStart !== undefined ? toFinal(markers.lookupStart) : null,
+  lookupEnd: markers.lookupEnd !== undefined ? toFinal(markers.lookupEnd) : null,
+  waitStart: markers.waitStart !== undefined ? toFinal(markers.waitStart) : null,
+  waitEnd: markers.waitEnd !== undefined ? toFinal(markers.waitEnd) : null,
+  operators: shotStart("operators"),
+  send: shotStart("send-demo"),
+  gridScroll: shotStart("grid-scroll"),
+  selected: shotStart("selected"),
+  endCard: shotStart("end"),
+};
+
 const sfx = [];
 if (useSfx) {
-  for (const time of markers.clicks ?? []) sfx.push([toFinal(time), "tick.wav", -7]);
-  for (const shot of shots) if (shot.xfadeIn) sfx.push([toFinal(shot.from) - 0.15, "whoosh.wav", -10]);
-  if (markers.waitStart !== undefined) {
-    // Under the sped-up wait, which is otherwise the one dead hole in the film.
-    sfx.push([toFinal(markers.waitStart) + 0.4, "swell.wav", -8]);
-    const landed = toFinal(markers.waitEnd);
-    for (const [i, gap] of [-1.4, -0.8, -0.2].entries()) sfx.push([Math.max(0, landed + gap), "chime.wav", -9 + i * 0.5]);
-  }
+  const add = (time, name, gain) => { if (time !== null && time !== undefined) sfx.push([time, `${name}.wav`, gain]); };
+  for (const time of markers.clicks ?? []) add(toFinal(time), "tick", -9);
+  for (const shot of shots) if (shot.xfadeIn) add(Math.max(0, toFinal(shot.from) - 0.15), "whoosh", -12);
+  // The country being typed, and the two places where data fills a card in.
+  if (cues.lookupStart !== null) add(cues.lookupStart - 2.0, "type", -7);
+  add(cues.lookupEnd, "populate", -10);
+  add(cues.operators, "populate", -11);
+  // Three requests leaving, then three replies landing, tuned A, C and E so the
+  // arrivals spell out the chord the score is sitting on.
+  if (cues.waitStart !== null) for (const [i, gap] of [-1.5, -0.95, -0.4].entries()) add(cues.waitStart + gap, "send", -11 + i * 0);
+  if (cues.waitEnd !== null) for (const [i, gap] of [-1.43, -0.71, 0].entries()) add(cues.waitEnd + gap, `arrive-${i + 1}`, i === 2 ? -7 : -8);
+  // The reveal's two-second rise is started early so its hit lands exactly on
+  // the money shot.
+  add(cues.moneyShot - 2.0, "reveal", -9);
+  add(cues.gridScroll, "scroll", -12);
+  add(cues.selected, "confirm", -9);
+  add(cues.endCard, "seal", -9);
 }
-const sfxUsable = sfx.filter(([time, file]) => time >= 0 && time < finalLength - 0.5 && existsSync(join(assets, file)));
+const sfxUsable = sfx
+  .filter(([time, file]) => time >= 0 && time < finalLength - 0.3 && existsSync(join(assets, file)))
+  .sort((a, b) => a[0] - b[0]);
 
 // ------------------------------------------------------------------ assemble
 const args = ["-y", "-i", raw];
@@ -170,17 +214,25 @@ if (voiceLabels.length) {
     `acompressor=threshold=-20dB:ratio=2.5:attack=8:release=180:makeup=2,` +
     `deesser=i=0.35:m=0.5:f=0.25,aformat=channel_layouts=stereo[vox]`,
   );
-  filters.push(music ? `[vox]asplit=2[voxout][key]` : `[vox]anull[voxout]`);
+  filters.push(music ? `[vox]asplit=2[voxout][keyraw]` : `[vox]anull[voxout]`);
+  // sidechaincompress stops when its key stops, not when its input does, so
+  // the music died the instant the last word ended and the film finished on a
+  // second of digital silence. The key is padded to the full length instead.
+  if (music) filters.push(`[keyraw]apad=whole_dur=${finalLength.toFixed(2)}[key]`);
   busParts.push("[voxout]");
 }
 
 if (music) {
-  const bed = join(dir, "bed.wav");
+  // The score is written to this film: its tempo is set so the money shot
+  // falls on a downbeat, and its arc lifts where the operators are found and
+  // drops almost to nothing where the comparison has to be read.
+  const bed = join(dir, "score.wav");
   if (!existsSync(bed)) {
-    execFileSync("node", ["videos/make-bed.mjs", String(Math.ceil(finalLength) + 2), bed], { stdio: "inherit" });
+    execFileSync("node", ["videos/score.mjs", bed,
+      `--money=${cues.moneyShot.toFixed(3)}`, `--len=${finalLength.toFixed(2)}`], { stdio: "inherit" });
   }
   args.push("-i", bed);
-  filters.push(`[${input}:a]volume=-17dB,atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB[bedraw]`);
+  filters.push(`[${input}:a]volume=-19dB,atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB[bedraw]`);
   input += 1;
   if (voiceLabels.length) {
     // The bed gets out of the way under speech rather than sitting at a fixed
@@ -251,6 +303,12 @@ if (hasAudio) {
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-c", "copy", "-movflags", "+faststart", outFile], { stdio: "inherit" });
 }
 rmSync(silent, { force: true });
+
+// Where every line ended up, so the subtitle track can be built from the same
+// placement rather than guessing at it.
+writeFileSync(join(dir, "placed.json"), JSON.stringify(
+  placed.map((line) => ({ index: line.index, start: Number(line.start.toFixed(3)), seconds: line.seconds, text: line.text })),
+  null, 2));
 
 console.log(JSON.stringify({
   raw: Number(duration.toFixed(1)),

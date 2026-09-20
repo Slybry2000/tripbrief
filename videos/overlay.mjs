@@ -23,7 +23,7 @@ export const OVERLAY = () => {
   html{ scroll-behavior:auto !important; }
 
   /* Every film element cancels the document zoom. */
-  #${NS}-cur,#${NS}-cap,#${NS}-card,#${NS}-scrim,.${NS}-rib,.${NS}-ring{ zoom:calc(1 / var(--film-zoom,1)); }
+  #${NS}-cur,#${NS}-cap,#${NS}-card,#${NS}-scrim,#${NS}-url,.${NS}-rib,.${NS}-ring{ zoom:calc(1 / var(--film-zoom,1)); }
 
   /* ---------- cursor ---------- */
   #${NS}-cur{position:fixed;left:0;top:0;width:28px;height:28px;z-index:2147483645;
@@ -82,13 +82,25 @@ export const OVERLAY = () => {
     border-radius:3px;color:inherit;transition:background .35s var(--f-ease)}
   .${NS}-mark.hot{background:oklch(0.91 0.075 85)}
 
+  /* ---------- the live address ----------
+     On screen throughout, because the strongest claim the film makes is that
+     this is the running product, and the recording has no browser chrome to
+     prove it. The text is read from the page, not written here. */
+  #${NS}-url{position:fixed;top:0;left:0;right:0;z-index:2147483600;display:flex;
+    justify-content:center;pointer-events:none;padding:13px 0 0;opacity:0;
+    transition:opacity .4s var(--f-ease)}
+  #${NS}-url.on{opacity:1}
+  #${NS}-url span{font:600 14px/1 var(--f-body);letter-spacing:.02em;
+    color:var(--f-green-dark);background:oklch(0.975 0.01 85 / .9);
+    border:1px solid var(--f-line);border-radius:999px;padding:7px 15px}
+
   /* ---------- cards ---------- */
   #${NS}-card{position:fixed;inset:0;z-index:2147483630;opacity:0;pointer-events:none;
     background:var(--f-paper);transition:opacity .5s var(--f-ease);overflow:hidden;
     display:grid;grid-template-columns:1.02fr .98fr;column-gap:6vw;
     align-content:center;align-items:center;padding:0 7vw}
   #${NS}-card.on{opacity:1}
-  body:has(#${NS}-card.on) #${NS}-cur{opacity:0}
+  body:has(#${NS}-card.on) #${NS}-cur,body:has(#${NS}-card.on) #${NS}-url{opacity:0}
   #${NS}-card::after{content:"";position:absolute;inset:0;pointer-events:none;
     background:radial-gradient(105% 70% at 92% -14%,oklch(0.935 0.03 168/.85) 0,transparent 60%)}
   #${NS}-card .lead,#${NS}-card .credits{position:relative;z-index:1}
@@ -118,18 +130,27 @@ export const OVERLAY = () => {
       s.textContent = css;
       document.head.append(s);
     }
-    if (document.getElementById(`${NS}-cur`)) return;
-    const cur = document.createElement("div");
-    cur.id = `${NS}-cur`;
-    cur.innerHTML = `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.4 L4 21.4 L9 16.8 L12.2 24 L15.8 22.4 L12.6 15.3 L19.6 14.8 Z" fill="#ffffff" stroke="#173735" stroke-width="1.7" stroke-linejoin="round"/></svg>`;
-    const cap = document.createElement("div");
-    cap.id = `${NS}-cap`;
-    cap.innerHTML = `<div class="wrap"><b class="kicker"></b><i class="line"></i></div>`;
-    const scrim = document.createElement("div");
-    scrim.id = `${NS}-scrim`;
-    const card = document.createElement("div");
-    card.id = `${NS}-card`;
-    document.body.append(scrim, cur, cap, card);
+    // Each element is checked on its own. The caption and the scrim get moved
+    // into the reply reader's <dialog> while it is open, and React removes that
+    // dialog from the DOM when it closes, taking them with it. Recreating only
+    // when the cursor is missing left the film with no captions after the
+    // reader closed, which is where the grid sequence lost its narration.
+    const make = (id, html, cls) => {
+      if (document.getElementById(id)) return null;
+      const node = document.createElement("div");
+      node.id = id;
+      if (cls) node.className = cls;
+      if (html) node.innerHTML = html;
+      return node;
+    };
+    const fresh = [
+      make(`${NS}-scrim`),
+      make(`${NS}-cur`, `<svg viewBox="0 0 28 28" xmlns="http://www.w3.org/2000/svg"><path d="M4 2.4 L4 21.4 L9 16.8 L12.2 24 L15.8 22.4 L12.6 15.3 L19.6 14.8 Z" fill="#ffffff" stroke="#173735" stroke-width="1.7" stroke-linejoin="round"/></svg>`),
+      make(`${NS}-cap`, `<div class="wrap"><b class="kicker"></b><i class="line"></i></div>`),
+      make(`${NS}-card`),
+      make(`${NS}-url`, `<span></span>`),
+    ].filter(Boolean);
+    if (fresh.length) document.body.append(...fresh);
   };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
   else mount();
@@ -253,6 +274,24 @@ export const OVERLAY = () => {
         n.remove();
         p.normalize();
       });
+    },
+
+    // The address the page is actually served from. Read from location, so it
+    // cannot drift from the truth.
+    address(on = true) {
+      mount();
+      const bar = document.getElementById(`${NS}-url`);
+      if (!bar) return;
+      bar.querySelector("span").textContent = location.host + (location.pathname === "/" ? "" : location.pathname);
+      bar.classList.toggle("on", !!on);
+    },
+
+    // The grid is wider than the viewport at the film's usual zoom, so that one
+    // sequence is shot a little wider. Changing it here keeps the film layer's
+    // counter-zoom in step.
+    zoom(value) {
+      document.documentElement.style.setProperty("--film-zoom", String(value));
+      document.documentElement.style.zoom = String(value);
     },
 
     card(html) {

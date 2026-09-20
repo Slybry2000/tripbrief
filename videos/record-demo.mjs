@@ -80,6 +80,17 @@ const ribbon = async (selector, tech, did, hold = 2800) => {
   return ok;
 };
 const clearRibbon = () => page.evaluate(() => window.__tbfilm.clearRibbons());
+// The requirement grid is wider than the viewport at the film's usual zoom, so
+// the third operator's column fell off the right edge. That column carries the
+// two answers that are only partly met, which is the honest half of the
+// comparison, so the grid is shot a little wider instead.
+const setZoom = (value) => page.evaluate((z) => window.__tbfilm.zoom(z), value);
+// 1.35 is the largest zoom at which nothing clips. The app's wide sections are
+// sized in vw, and vw resolves against the unzoomed viewport before the zoom is
+// painted, so at 1.5 the grid is laid out 1420 CSS px wide and painted 2130
+// device px into a 1920 frame: 210 px, about half an operator column, off the
+// right edge.
+const GRID_ZOOM = 1.35;
 
 // The cursor travels, settles, and ripples before the real click fires.
 const click = async (name) => {
@@ -134,9 +145,10 @@ await page.evaluate((zoom) => {
   document.documentElement.style.setProperty("--film-zoom", String(zoom));
   document.documentElement.style.zoom = String(zoom);
 }, FILM_ZOOM);
+await page.evaluate(() => window.__tbfilm.address(true));
 
 // ---------------------------------------------------------------- title
-shot("title");
+shot("title", { z0: 1.0, z1: 1.012 });
 await card(`
   <div class="lead">
     <p class="eyebrow">All Gas Hackathon</p>
@@ -174,8 +186,10 @@ await click(/Add a location/);
 await wait(600);
 // Typed a character at a time, because the previous cut claimed a country was
 // typed over a field that stayed empty for the whole shot.
-await page.locator('input[list="country-names"]').pressSequentially("Portugal", { delay: 110 });
-await wait(800);
+await page.locator('input[list="country-names"]').pressSequentially("Portugal", { delay: 130 });
+// Held, because the point of the shot is that a person typed a country and the
+// rest was filled in from the web.
+await wait(1700);
 markers.lookupStart = at();
 await click(/Look it up/);
 shot("place-waiting", { cy: 0.3 });
@@ -201,17 +215,17 @@ await page.waitForFunction(() => document.querySelectorAll(".operator-result-car
 await wait(900);
 shot("operators", { z0: 1.0, z1: 1.05, cy: 0.36 });
 await cap("Firecrawl", "Real operators, found on the web.", 3200);
-shot("operators-list", { cx: 0.42, cy: 0.42 });
+shot("operators-list", { cy: 0.42 });
 await scroll(700);
-await cap("OpenAI", "It reads each company's own site for the address they publish.", 1000);
-await ribbon(".operator-result-card", "OpenAI", "read this company's own site", 3200);
+await cap("OpenAI", "It reads each site and decides which are really operators.", 1200);
+await ribbon(".operator-result-card", "OpenAI", "read this site and judged the company", 3400);
 await clearRibbon();
 
 // ---------------------------------------------------------------- shortlist
 await click(/^Choose Partners/);
 await wait(1200);
 shot("shortlist", { z0: 1.0, z1: 1.05, cy: 0.35 });
-await cap(null, "Shortlist three. Each gets a private link, no account.", 700);
+await cap("Convex", "Shortlist three. Each gets a private link, no account.", 700);
 const toggles = page.locator(".choose-list label.include-toggle");
 for (let i = 0; i < 3; i += 1) { await toggles.nth(i).click(); await wait(560); }
 await wait(1100);
@@ -237,8 +251,9 @@ markers.waitEnd = at();
 await wait(900);
 shot("arrived", { cy: 0.26 });
 await cap("Convex", "Nobody refreshed this page.", 1000);
-await ribbon(".success-banner", "Convex", "this page updated itself when the reply landed", 3200);
+await ribbon(".success-banner", "Convex", "caught the reply on an HTTP webhook", 3400);
 await clearRibbon();
+await cap("Convex", "A cron sweeps every fifteen minutes for any reply that missed.", 5400);
 shot("replies", { z0: 1.0, z1: 1.05, cy: 0.4 });
 await cap(null, "Three replies. Three prices, three sets of dates.", 3200);
 await jump(460);
@@ -249,13 +264,15 @@ await cap(null, null);
 const differing = page.locator(".proposal-response-grid article").filter({ hasNotText: "100% covered" }).getByRole("button", { name: /Read full reply/ }).first();
 await (await differing.count() ? differing : page.getByRole("button", { name: /^Read full reply/ }).first()).click();
 await wait(1500);
-shot("reader-prose", { z0: 1.0, z1: 1.05, cy: 0.3, xfadeIn: 0.4 });
+shot("reader-prose", { z0: 1.0, z1: 1.04, cy: 0.42, xfadeIn: 0.4 });
 await cap("AgentMail", "This is what the operator actually wrote back.", 4200);
 await page.keyboard.press("Escape");
 await wait(800);
 
 await click(/^Compare \d/);
 await page.waitForTimeout(2000);
+await setZoom(GRID_ZOOM);
+await wait(500);
 await page.locator(".requirement-grid-section").scrollIntoViewIfNeeded();
 await wait(900);
 
@@ -272,14 +289,16 @@ const linked = await page.evaluate(() => {
 markers.moneyShot = { at: at(), requirement: linked.rid ?? null, linked: linked.inGrid === 1 };
 if (!linked.inGrid) console.warn("quote link failed:", JSON.stringify(linked).slice(0, 200));
 await page.evaluate(() => window.__tbfilm.hotQuotes(true));
-shot("grid-wide", { cx: 0.34, cy: 0.4 });
+shot("grid-wide", { cy: 0.4 });
 await cap("OpenAI", "All eighteen requirements, answered.", 5000);
-shot("grid-detail", { z0: 1.06, z1: 1.06, cx: 0.3, cy: 0.45 });
+shot("grid-detail", { z0: 1.04, z1: 1.04, cy: 0.45 });
 await cap(null, "Every answer is quoted from their own email.", 4000);
-shot("grid-scroll", { cx: 0.34, cy: 0.45 });
+shot("grid-scroll", { cy: 0.45 });
 await scroll((await page.evaluate(() => document.body.scrollHeight)) - 1080, 2400);
-await cap(null, "Where an operator said nothing, it says so.", 3600);
+await cap(null, "A quote that is not in the email, word for word, never reaches the screen.", 4400);
+markers.coldOpen = { from: markers.moneyShot.at + 1.2, to: markers.moneyShot.at + 5.2 };
 await page.evaluate(() => { window.__tbfilm.hotQuotes(false); window.__tbfilm.clearMarks(); });
+await setZoom(FILM_ZOOM);
 
 // ---------------------------------------------------------------- the choice
 await cap(null, null);

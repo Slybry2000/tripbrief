@@ -17,8 +17,7 @@
     "Type a country.": "Type a country. Firecrawl fetches the published sources, and OpenAI reads them.",
     "Strengths, climate, what to plan around, and the sources.": "Strengths, climate, what to plan around, and where it came from.",
     "Real operators, found on the web.": "Now Firecrawl goes looking for the local operators.",
-    "It reads each company's own site for the address they publish.": "OpenAI reads each company's own site, and pulls out the address they publish.",
-    "Shortlist three. Each gets a private link, no account.": "Shortlist three. Each gets a private link, no account.",
+    "Shortlist three. Each gets a private link, no account.": "Shortlist three. Each gets its own private link, and no account.",
     "It writes to the address each site publishes.": "AgentMail sends each one its own request, from a real inbox.",
     "In demo mode it all goes to a stand-in inbox.": "In demo mode it all goes to a stand-in address. No operator is ever contacted.",
     "Each operator answers the way a real one would.": "OpenAI answers as each operator would.",
@@ -27,8 +26,10 @@
     "This is what the operator actually wrote back.": "This is what the operator actually wrote. Prose, from a person.",
     "All eighteen requirements, answered.": "OpenAI turned that email into all eighteen answers.",
     "Every answer is quoted from their own email.": "Every answer is quoted from their own email, word for word.",
-    "Where an operator said nothing, it says so.": "Where an operator said nothing, it says so. It does not guess.",
     "Pick the trip. The schedule works back from departure.": "Pick the trip. The schedule works back from departure.",
-    "Built on Convex, with OpenAI, Firecrawl and AgentMail. Live now, code public.": "Built on Convex, with OpenAI, Firecrawl and AgentMail. Live now, and the code is public."
+    "Built on Convex, with OpenAI, Firecrawl and AgentMail. Live now, code public.": "Built on Convex, with OpenAI, Firecrawl and AgentMail. Live now, and the code is public.",
+    "It reads each site and decides which are really operators.": "OpenAI reads each site and decides which are really local operators. The address is taken from the page itself.",
+    "A cron sweeps every fifteen minutes for any reply that missed.": "A Convex cron sweeps every fifteen minutes for any reply that missed.",
+    "A quote that is not in the email, word for word, never reaches the screen.": "A quote that is not in the email, word for word, never reaches the screen."
   }
 }
