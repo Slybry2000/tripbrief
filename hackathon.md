@@ -308,10 +308,10 @@ Three fixes, all of them about the end of the flow:
 **The search is the brief's, not the advisor's.** The free-text search box is
 gone. `research.searchForBrief` builds its queries from what the intake already
 knows — destination, who is travelling, the group's interests and the needs that
-have to be met (`convex/searchQueries.ts`) — and the model is asked to sharpen
-them when it is available, with the tested rules as the fallback. What was
-searched for is shown after the run, so the advisor can see what the brief
-decided. Accessibility needs are searched for before a second interest, because
+have to be met — using deterministic, tested rules (`buildOperatorQueries` in
+`convex/research.ts`). No model is involved in writing the queries: the brief
+alone decides them, which is what makes them reproducible. What was searched
+for is shown after the run, so the advisor can see what the brief decided. Accessibility needs are searched for before a second interest, because
 an accessible hotel is the harder constraint.
 
 The provider itself was never broken: `research.checkProvider`, a new ops probe
@@ -940,3 +940,55 @@ answers as each operator; one reply read in full, differences first; the
 requirement grid quoting each operator; and the selection with its workback
 schedule. `videos/submission-kit.md` holds the social post and the submission
 answers.
+
+### 2026-09-19 - the demo video, reshot
+
+The first cut was a screen recording with a voice on it. Measured: 68 of its
+144 seconds were a literally frozen frame, the proof lived in 9 to 11 pixel
+text, and the sequence that matters most - an operator's prose email turned
+into eighteen quoted answers - showed four of the eighteen for two and a half
+seconds. Worse, its captions handed OpenAI's work to Firecrawl, and the one
+time it said "OpenAI" it was pointing at the simulated replies. Firecrawl
+fetches; OpenAI reads. Reshot from that diagnosis.
+
+**Framing.** `deviceScaleFactor` turns out to have no effect on Playwright's
+`recordVideo`: recording the same page at 1 and at 2 produced byte-identical
+frames. Every earlier cut was therefore a 1280-wide raster. The recorder now
+takes 1920x1080 with the document zoomed 1.5x, which makes the product's own
+text large enough to read at delivery. `<html>` is what gets zoomed, because
+the reply reader is a `<dialog>` in the top layer and nothing below the
+document element reaches it.
+
+**The camera** (`videos/shots.mjs`). The take is cut into shots, each with its
+own framing and at most one ease-out push of up to 6%. A sped-up shot never
+moves. Pushes are built with `scale(eval=frame)` into a fixed `crop`,
+supersampled and downscaled once, because `zoompan` truncates its offsets to
+integers and shudders visibly on a slow move.
+
+**The film layer** (`videos/overlay.mjs`). A drawn cursor that travels, settles
+and ripples before each real click, since Playwright's recording contains no
+pointer and without one nothing appears to be clicked. A left-aligned lower
+third in the app's own serif over a scrim in the app's own paper colour. And an
+attribution ribbon that outlines the live element a technology just produced
+and names the job it did, drawn outside the element so it never covers it.
+
+**The money shot.** `proposals.ts` keeps a quote only if it appears in the
+operator's email character for character, so the same sentence is rendered
+twice: in the prose and in the grid cell citing it. The recorder finds it with
+a tree walk and lights both, which shows the answer was extracted rather than
+asserted. It lands on a requirement the operator only partly met.
+
+**Sound.** `gen-vo.mjs` was re-encoding every line to 32 kbps mono: the trim
+step called ffmpeg without a codec, and libmp3lame defaults low on a 24 kHz
+mono stream, so the top octave measured 25 dB down. WAV end to end now. The
+voice delivers about 132 words a minute whatever the instructions ask for, so
+lines are written to a measured budget instead and nothing is ever time
+stretched. The bed is four chords with real partials that change across the
+film, ducked under the voice, in place of two static sine tones. Two-pass
+loudness, because one pass is a live ramp that left the previous cut 3.2 LU
+under its own target. Three seconds are held on the end card so the closing
+line can finish; before, it was cut off mid-word.
+
+Final file 2:21, 1920x1080, 38 MB, -14.0 LUFS integrated, -1.2 dBTP. Checked
+by transcribing the finished audio: all twenty lines present, in order, none
+overlapping, the last one complete.

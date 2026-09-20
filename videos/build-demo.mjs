@@ -1,113 +1,266 @@
-// Turns the raw recording into the submission file. The product runs at its own
-// speed in the recording; the two stretches where a person would wait (the place
-// lookup, and the operators writing back) are sped up so the whole thing fits
-// under three minutes. Nothing else is cut or re-ordered.
+// Turns the raw recording into the submission file.
 //
-// When videos/<take>/vo.json exists (see gen-vo.mjs), each narration line is
-// placed on the moment its caption appears, over a quiet ambient bed.
+// Picture: the single take is cut into the shots the recorder marked, each with
+// its own framing and at most one slow push (videos/shots.mjs). The two
+// stretches where a person would wait are sped up; nothing else is cut or
+// re-ordered, and a sped-up shot never moves the camera.
 //
-//   node videos/build-demo.mjs videos/take4 [--no-music]
-import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
+// Sound: each narration line is gain-matched and placed on the moment its
+// caption appears, over a musical bed that ducks under the voice, with a few
+// sound-design events on the clicks and the arriving replies. Loudness is
+// normalised in two passes, because a single pass is a live ramp that misses
+// its own target.
+//
+//   node videos/build-demo.mjs videos/take6 [--no-music] [--no-sfx]
+import { execFileSync, spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { assembleXfade, shotLength } from "./shots.mjs";
 
 const dir = process.argv[2] ?? "videos/out";
 const music = !process.argv.includes("--no-music");
+const useSfx = !process.argv.includes("--no-sfx");
 const raw = join(dir, "raw.webm");
 const outFile = join(dir, "tripbrief-demo.mp4");
 if (!existsSync(raw)) throw new Error(`No recording at ${raw}`);
 const markers = JSON.parse(readFileSync(join(dir, "markers.json"), "utf8"));
 
+const TAIL = 3;          // held on the end card, so the last line never clips
+const VOICE_TARGET = -18; // LUFS per line, before the bus
+const assets = "videos/assets";
+
+const ff = (args) => {
+  const result = spawnSync("ffmpeg", args, { encoding: "utf8" });
+  return { text: String(result.stdout ?? "") + String(result.stderr ?? ""), code: result.status };
+};
+
 const seconds = (file) => {
-  try {
-    execFileSync("ffmpeg", ["-i", file, "-hide_banner"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-  } catch (error) {
-    const found = /Duration: (\d+):(\d+):(\d+\.\d+)/.exec(String(error.stderr ?? ""));
-    if (found) return Number(found[1]) * 3600 + Number(found[2]) * 60 + Number(found[3]);
-  }
-  throw new Error(`Could not measure ${file}`);
+  const { text } = ff(["-i", file, "-hide_banner"]);
+  const found = /Duration: (\d+):(\d+):(\d+\.\d+)/.exec(text);
+  if (!found) throw new Error(`Could not measure ${file}`);
+  return Number(found[1]) * 3600 + Number(found[2]) * 60 + Number(found[3]);
 };
 
 const duration = seconds(raw);
 // The recorder's clock starts a moment before the video does; align on the end.
 const shift = duration - markers.total;
 const mark = (value) => Math.max(0, Math.min(duration, value + shift));
-const spans = [
-  { from: 0, to: mark(markers.lookupStart), speed: 1 },
-  { from: mark(markers.lookupStart), to: mark(markers.lookupEnd), speed: 4 },
-  { from: mark(markers.lookupEnd), to: mark(markers.waitStart), speed: 1 },
-  { from: mark(markers.waitStart), to: mark(markers.waitEnd), speed: 6 },
-  { from: mark(markers.waitEnd), to: duration, speed: 1 },
-].filter((span) => span.to - span.from > 0.2);
-const finalLength = spans.reduce((total, span) => total + (span.to - span.from) / span.speed, 0);
 
-// Where a moment in the recording lands once the waits are sped up.
+// ------------------------------------------------------------------- picture
+// The stretches a viewer should not have to sit through, and how much faster.
+const fast = [
+  { from: mark(markers.lookupStart), to: mark(markers.lookupEnd), speed: 4 },
+  { from: mark(markers.waitStart), to: mark(markers.waitEnd), speed: 6 },
+].filter((span) => span.to - span.from > 1);
+
+const speedAt = (time) => fast.find((span) => time >= span.from && time < span.to)?.speed ?? 1;
+
+// Each marked shot runs until the next one. Where a shot crosses into or out of
+// a sped-up stretch it is split there, because one shot cannot have two speeds.
+const shots = [];
+markers.shots.forEach((entry, index) => {
+  const from = mark(entry.at);
+  const to = index + 1 < markers.shots.length ? mark(markers.shots[index + 1].at) : duration;
+  if (to - from < 0.25) return;
+  const cuts = [from, to];
+  for (const span of fast) {
+    for (const edge of [span.from, span.to]) if (edge > from && edge < to) cuts.push(edge);
+  }
+  cuts.sort((a, b) => a - b);
+  for (let i = 0; i < cuts.length - 1; i += 1) {
+    const piece = { from: cuts[i], to: cuts[i + 1], speed: speedAt(cuts[i] + 0.01), name: entry.name };
+    const first = i === 0;
+    // A push only on the first piece of a shot, and never while sped up.
+    const moving = first && piece.speed === 1;
+    shots.push({
+      ...piece,
+      z0: moving ? entry.z0 : entry.z1 ?? 1,
+      z1: moving ? entry.z1 : entry.z1 ?? 1,
+      cx: entry.cx ?? 0.5,
+      cy: entry.cy ?? 0.5,
+      xfadeIn: first ? entry.xfadeIn ?? 0 : 0,
+    });
+  }
+});
+if (!shots.length) throw new Error("No shots in markers.json - record with the current recorder.");
+shots[0].xfadeIn = 0;
+
+const { graph, length } = assembleXfade(shots);
+const finalLength = length + TAIL;
+
+// Where a moment in the recording lands in the finished cut. Walks the shots in
+// order, so it accounts for the speed-ups and the dissolves together.
 const toFinal = (rawTime) => {
   const point = mark(rawTime);
   let out = 0;
-  for (const span of spans) {
-    if (point >= span.to) out += (span.to - span.from) / span.speed;
-    else { if (point > span.from) out += (point - span.from) / span.speed; break; }
+  for (const shot of shots) {
+    out -= shot.xfadeIn ?? 0;
+    if (point >= shot.to) { out += shotLength(shot); continue; }
+    if (point > shot.from) return Math.max(0, out + (point - shot.from) / shot.speed);
+    return Math.max(0, out);
   }
-  return out;
+  return Math.max(0, out);
 };
 
-const parts = spans.map((span, index) =>
-  `[0:v]trim=start=${span.from.toFixed(2)}:end=${span.to.toFixed(2)},setpts=(PTS-STARTPTS)/${span.speed}[v${index}]`,
-);
-const filters = [...parts, `${spans.map((_, index) => `[v${index}]`).join("")}concat=n=${spans.length}:v=1:a=0[out]`];
-const args = ["-y", "-i", raw];
-
+// --------------------------------------------------------------------- sound
 const voFile = join(dir, "vo.json");
 const narration = existsSync(voFile) ? JSON.parse(readFileSync(voFile, "utf8")) : [];
 const placed = narration
   .map((line) => ({ ...line, start: toFinal(line.at) + 0.12 }))
-  .sort((a, b) => a.start - b.start)
-  .map((line, index, all) => {
-    // A line never runs into the next one: if it would, it is spoken slightly
-    // faster, up to a quarter again, and only then allowed to overlap.
-    const room = (all[index + 1]?.start ?? finalLength) - line.start - 0.25;
-    const tempo = line.seconds > room && room > 0.5 ? Math.min(1.35, line.seconds / room) : 1;
-    return { ...line, tempo, room };
-  });
+  .sort((a, b) => a.start - b.start);
 
-if (placed.length) {
-  placed.forEach((line, index) => {
-    args.push("-i", line.file);
-    const chain = [
-      `[${index + 1}:a]aresample=48000`,
-      line.tempo > 1 ? `atempo=${line.tempo.toFixed(3)}` : null,
-      `adelay=${Math.round(line.start * 1000)}|${Math.round(line.start * 1000)}`,
-      "volume=1.0",
-    ].filter(Boolean).join(",");
-    filters.push(`${chain}[a${index}]`);
-  });
-  if (music) {
-    // A quiet room tone: two low sines and a little brown noise, well under the
-    // voice. It is there to stop the silence, not to be listened to.
-    args.push("-f", "lavfi", "-i", `sine=frequency=110:duration=${finalLength.toFixed(2)}`);
-    args.push("-f", "lavfi", "-i", `sine=frequency=164.81:duration=${finalLength.toFixed(2)}`);
-    args.push("-f", "lavfi", "-i", `anoisesrc=color=brown:duration=${finalLength.toFixed(2)}`);
-    const first = placed.length + 1;
-    filters.push(`[${first}:a]volume=0.035,tremolo=f=0.12:d=0.4[m1]`);
-    filters.push(`[${first + 1}:a]volume=0.022,tremolo=f=0.11:d=0.5[m2]`);
-    filters.push(`[${first + 2}:a]volume=0.012,lowpass=f=700[m3]`);
-    filters.push(`[m1][m2][m3]amix=inputs=3:normalize=0,lowpass=f=1200,afade=t=in:st=0:d=2,afade=t=out:st=${(finalLength - 3).toFixed(2)}:d=3[bed]`);
-  }
-  const voices = placed.map((_, index) => `[a${index}]`).join("");
-  filters.push(`${voices}${music ? "[bed]" : ""}amix=inputs=${placed.length + (music ? 1 : 0)}:normalize=0:dropout_transition=0,alimiter=limit=0.95,loudnorm=I=-16:TP=-1.5:LRA=11,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo[mix]`);
+// Every line is gain-matched to the same loudness before the bus, which removes
+// the level swing between lines without a compressor pumping to do it.
+for (const line of placed) {
+  const { text } = ff(["-hide_banner", "-nostats", "-i", line.file, "-af", "ebur128", "-f", "null", "-"]);
+  const summary = text.slice(text.lastIndexOf("Summary"));
+  const measured = Number((/ {4}I: +(-?[0-9.]+)/.exec(summary) ?? [])[1]);
+  line.gain = Number.isFinite(measured) ? VOICE_TARGET - measured : 0;
 }
 
-args.push("-filter_complex", filters.join(";"), "-map", "[out]");
-if (placed.length) args.push("-map", "[mix]", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2");
-args.push("-r", "30", "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-t", finalLength.toFixed(2), outFile);
-execFileSync("ffmpeg", args, { stdio: "inherit" });
+// Lines that would run into the next one. Nothing is time-stretched to fix it:
+// the line is rewritten in voiceover.json instead, and this is the check.
+const crowded = placed
+  .map((line, index) => ({
+    text: line.text,
+    room: Number((((placed[index + 1]?.start ?? finalLength) - line.start) - line.seconds).toFixed(2)),
+  }))
+  .filter((line) => line.room < 0.3);
+
+const sfx = [];
+if (useSfx) {
+  for (const time of markers.clicks ?? []) sfx.push([toFinal(time), "tick.wav", -7]);
+  for (const shot of shots) if (shot.xfadeIn) sfx.push([toFinal(shot.from) - 0.15, "whoosh.wav", -10]);
+  if (markers.waitStart !== undefined) {
+    // Under the sped-up wait, which is otherwise the one dead hole in the film.
+    sfx.push([toFinal(markers.waitStart) + 0.4, "swell.wav", -8]);
+    const landed = toFinal(markers.waitEnd);
+    for (const [i, gap] of [-1.4, -0.8, -0.2].entries()) sfx.push([Math.max(0, landed + gap), "chime.wav", -9 + i * 0.5]);
+  }
+}
+const sfxUsable = sfx.filter(([time, file]) => time >= 0 && time < finalLength - 0.5 && existsSync(join(assets, file)));
+
+// ------------------------------------------------------------------ assemble
+const args = ["-y", "-i", raw];
+const filters = [graph];
+// The end card is held past the last shot so the closing line has room to
+// finish. The previous cut ran 0.75s past the file and lost its last three
+// words mid-syllable.
+filters.push(`[out]tpad=stop_mode=clone:stop_duration=${TAIL}[vout]`);
+
+let input = 1;
+const voiceLabels = [];
+for (const line of placed) {
+  args.push("-i", line.file);
+  filters.push(
+    `[${input}:a]aresample=48000:resampler=soxr,aformat=channel_layouts=mono,` +
+    `volume=${line.gain.toFixed(2)}dB,highpass=f=85,` +
+    `equalizer=f=250:width_type=o:w=1.1:g=-2,` +
+    `equalizer=f=3200:width_type=o:w=1.4:g=2,` +
+    `adelay=${Math.round(line.start * 1000)}:all=1[v${input}]`,
+  );
+  voiceLabels.push(`[v${input}]`);
+  input += 1;
+}
+
+const busParts = [];
+if (voiceLabels.length) {
+  filters.push(
+    `${voiceLabels.join("")}amix=inputs=${voiceLabels.length}:normalize=0:dropout_transition=0,` +
+    `acompressor=threshold=-20dB:ratio=2.5:attack=8:release=180:makeup=2,` +
+    `deesser=i=0.35:m=0.5:f=0.25,aformat=channel_layouts=stereo[vox]`,
+  );
+  filters.push(music ? `[vox]asplit=2[voxout][key]` : `[vox]anull[voxout]`);
+  busParts.push("[voxout]");
+}
+
+if (music) {
+  const bed = join(dir, "bed.wav");
+  if (!existsSync(bed)) {
+    execFileSync("node", ["videos/make-bed.mjs", String(Math.ceil(finalLength) + 2), bed], { stdio: "inherit" });
+  }
+  args.push("-i", bed);
+  filters.push(`[${input}:a]volume=-17dB,atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB[bedraw]`);
+  input += 1;
+  if (voiceLabels.length) {
+    // The bed gets out of the way under speech rather than sitting at a fixed
+    // level underneath it.
+    filters.push(`[bedraw][key]sidechaincompress=threshold=0.02:ratio=9:attack=20:release=400:makeup=1:level_sc=1[bedduck]`);
+    busParts.push("[bedduck]");
+  } else busParts.push("[bedraw]");
+}
+
+if (sfxUsable.length) {
+  const labels = [];
+  for (const [time, file, gain] of sfxUsable) {
+    args.push("-i", join(assets, file));
+    filters.push(`[${input}:a]volume=${gain}dB,adelay=${Math.round(time * 1000)}:all=1[e${input}]`);
+    labels.push(`[e${input}]`);
+    input += 1;
+  }
+  filters.push(`${labels.join("")}amix=inputs=${labels.length}:normalize=0:dropout_transition=0[sfxbus]`);
+  busParts.push("[sfxbus]");
+}
+
+const hasAudio = busParts.length > 0;
+if (hasAudio) {
+  filters.push(
+    `${busParts.join("")}${busParts.length > 1 ? `amix=inputs=${busParts.length}:normalize=0:dropout_transition=0,` : "anull,"}` +
+    `atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB,` +
+    `afade=t=out:st=${(finalLength - 2.5).toFixed(2)}:d=2.5,` +
+    `alimiter=limit=0.89:level=disabled:attack=5:release=60,` +
+    `aformat=sample_fmts=s16:sample_rates=48000:channel_layouts=stereo[premix]`,
+  );
+}
+
+const silent = join(dir, "picture.mp4");
+const premix = join(dir, "premix.wav");
+// The graph runs to tens of thousands of characters, which is past what
+// Windows will accept on a command line, so it goes in a file.
+const graphFile = join(dir, "filtergraph.txt");
+writeFileSync(graphFile, filters.join(";\n"));
+args.push("-/filter_complex", graphFile, "-map", "[vout]");
+args.push("-r", "30", "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p",
+  "-x264-params", "keyint=60:min-keyint=30",
+  "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709",
+  "-t", finalLength.toFixed(2), silent);
+if (hasAudio) args.push("-map", "[premix]", "-t", finalLength.toFixed(2), premix);
+const render = ff(args);
+if (render.code !== 0) {
+  console.error(render.text.split("\n").slice(-25).join("\n"));
+  throw new Error(`ffmpeg failed (${render.code})`);
+}
+
+let loudness = null;
+if (hasAudio) {
+  // Two passes: measure, then apply with the measured values. One pass is a
+  // live ramp, and left the previous cut 3.2 LU under its own target.
+  const { text } = ff(["-hide_banner", "-nostats", "-i", premix, "-af",
+    "loudnorm=I=-14:TP=-1.5:LRA=9:print_format=json", "-f", "null", "-"]);
+  const report = JSON.parse(text.slice(text.lastIndexOf("{"), text.lastIndexOf("}") + 1));
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-i", premix,
+    "-af", `loudnorm=I=-14:TP=-1.5:LRA=9:measured_I=${report.input_i}:measured_TP=${report.input_tp}:measured_LRA=${report.input_lra}:measured_thresh=${report.input_thresh}:offset=${report.target_offset}:linear=true,aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo`,
+    "-map", "0:v", "-map", "1:a", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+    "-movflags", "+faststart", outFile], { stdio: "inherit" });
+  const check = ff(["-hide_banner", "-nostats", "-i", outFile, "-af", "ebur128=peak=true", "-f", "null", "-"]).text;
+  const summary = check.slice(check.lastIndexOf("Summary"));
+  const read = (key) => Number((new RegExp(`${key}: +(-?[0-9.]+)`).exec(summary) ?? [])[1]);
+  loudness = { integrated: read("I"), lra: read("LRA"), truePeak: read("Peak") };
+  rmSync(premix, { force: true });
+} else {
+  execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-c", "copy", "-movflags", "+faststart", outFile], { stdio: "inherit" });
+}
+rmSync(silent, { force: true });
 
 console.log(JSON.stringify({
   raw: Number(duration.toFixed(1)),
   final: Number(finalLength.toFixed(1)),
+  shots: shots.length,
+  spedUp: shots.filter((shot) => shot.speed > 1).length,
+  pushes: shots.filter((shot) => shot.z0 !== shot.z1).length,
   narrationLines: placed.length,
-  tightest: placed.length ? Number(Math.min(...placed.map((line) => line.room)).toFixed(2)) : null,
-  spedUp: placed.filter((line) => line.tempo > 1).length,
+  crowded,
+  soundEvents: sfxUsable.length,
+  loudness,
   outFile,
 }, null, 2));

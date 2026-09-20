@@ -505,6 +505,14 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
 .destination-discovery-card h2 { margin: 2px 0 6px; font: 1.55rem Georgia, serif; }
 .destination-discovery-card > div > p { color: var(--gold); font-size: .62rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin: 0; }
 .destination-discovery-card > div > span { color: var(--muted); font-size: .74rem; line-height: 1.45; }
+/* The description, where the place came from, the sources and the remove
+   control are separate statements. Inline they ran into one another and read
+   as one broken sentence. */
+.destination-discovery-card > div > span,
+.destination-discovery-card > div > small,
+.destination-discovery-card > div > .link-button { display: block; }
+.destination-discovery-card > div > small { margin-top: 5px; }
+.destination-discovery-card > div > .link-button { margin-top: 7px; }
 .watchouts { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: .68rem; line-height: 1.35; }
 .watchouts strong { color: var(--ink); }
 .method-note { margin: 16px 0 80px; display: flex; gap: 10px; background: var(--mint); color: var(--green); border-radius: 9px; padding: 13px 15px; font-size: .75rem; }

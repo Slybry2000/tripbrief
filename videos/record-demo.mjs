@@ -1,90 +1,116 @@
 // Records the TripBrief demo against a live deployment: one take of the real
-// product, with captions drawn over it. Writes the raw recording plus a
-// markers.json saying when the wait for replies started and ended, which
-// build-demo.mjs uses to speed that stretch up.
+// product, with the film layer (videos/overlay.mjs) drawn over it. Writes the
+// raw recording plus a markers.json describing the captions, the shot
+// boundaries and framing, the two stretches where a person would wait, and the
+// money shot.
 //
 //   node videos/record-demo.mjs https://hip-minnow-543.convex.site videos/out
+//
+// Two things here are not obvious. The page is zoomed 1.5x for the recording,
+// because Playwright's recordVideo ignores deviceScaleFactor entirely and a
+// 1920x1080 capture of an unzoomed page still renders the product's text too
+// small to read at delivery. And the cursor is drawn by us: Playwright's
+// recording has no pointer in it, so without this nothing ever appears to be
+// clicked and the film reads as a slideshow.
 import { chromium } from "playwright";
 import { mkdirSync, writeFileSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
+import { OVERLAY } from "./overlay.mjs";
 
 const base = process.argv[2] ?? "https://hip-minnow-543.convex.site";
 const out = process.argv[3] ?? "videos/out";
+const FILM_ZOOM = 1.5;
 mkdirSync(out, { recursive: true });
 
 const browser = await chromium.launch();
 const context = await browser.newContext({
-  viewport: { width: 1280, height: 720 },
-  deviceScaleFactor: 2,
-  recordVideo: { dir: out, size: { width: 1280, height: 720 } },
+  viewport: { width: 1920, height: 1080 },
+  recordVideo: { dir: out, size: { width: 1920, height: 1080 } },
+  colorScheme: "light",
+  reducedMotion: "no-preference",
 });
 
-// The caption bar and the title cards live in the page, so they are recorded
-// with it. Added before any script runs, so a reload keeps them.
-await context.addInitScript(() => {
-  const paint = () => {
-    if (document.getElementById("tb-cap")) return;
-    const style = document.createElement("style");
-    style.textContent = `
-      #tb-cap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 2147483647; display: flex; justify-content: center; pointer-events: none; padding: 0 0 28px; }
-      #tb-cap span { max-width: 62ch; margin: 0 24px; padding: 14px 24px; border-radius: 14px; background: oklch(0.24 0.03 170 / .92); color: oklch(0.99 0.004 85); font: 600 25px/1.35 "Figtree", system-ui, sans-serif; text-align: center; opacity: 0; transition: opacity .35s ease; box-shadow: 0 10px 40px oklch(0.2 0.02 170 / .35); }
-      #tb-cap span.on { opacity: 1; }
-      #tb-card { position: fixed; inset: 0; z-index: 2147483646; display: grid; place-content: center; gap: 18px; text-align: center; background: oklch(0.975 0.01 85); opacity: 0; transition: opacity .4s ease; pointer-events: none; padding: 40px; }
-      #tb-card.on { opacity: 1; }
-      #tb-card h1 { font: 500 66px/1.05 "Newsreader", Georgia, serif; color: oklch(0.28 0.035 170); margin: 0; letter-spacing: -.02em; }
-      #tb-card p { font: 500 26px/1.45 "Figtree", system-ui, sans-serif; color: oklch(0.42 0.03 170); margin: 0; }
-      #tb-card .row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 8px; }
-      #tb-card .row span { font: 700 19px/1 "Figtree", system-ui, sans-serif; color: oklch(0.39 0.075 168); background: oklch(0.935 0.03 168); padding: 11px 16px; border-radius: 999px; }
-    `;
-    document.head.append(style);
-    const bar = document.createElement("div");
-    bar.id = "tb-cap";
-    bar.innerHTML = "<span></span>";
-    const card = document.createElement("div");
-    card.id = "tb-card";
-    document.body.append(bar, card);
+// Zoom <html>, not #root: the reply reader is a <dialog> in the browser's top
+// layer, and only zooming the document element reaches it. That dialog is the
+// money shot, so it has to scale with everything else.
+await context.addInitScript((zoom) => {
+  const apply = () => {
+    document.documentElement.style.setProperty("--film-zoom", String(zoom));
+    document.documentElement.style.zoom = String(zoom);
   };
-  const ready = () => { paint(); };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
-  else ready();
-  window.__cap = (text) => {
-    const bar = document.getElementById("tb-cap");
-    const span = bar?.querySelector("span");
-    if (!bar || !span) return;
-    const dialog = document.querySelector("dialog[open]");
-    const host = dialog ?? document.body;
-    if (bar.parentElement !== host) host.append(bar);
-    if (!text) { span.classList.remove("on"); return; }
-    span.classList.remove("on");
-    setTimeout(() => { span.textContent = text; span.classList.add("on"); }, 120);
-  };
-  window.__card = (html) => {
-    const card = document.getElementById("tb-card");
-    if (!card) return;
-    if (!html) { card.classList.remove("on"); return; }
-    card.innerHTML = html;
-    card.classList.add("on");
-  };
-});
+  apply();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", apply);
+}, FILM_ZOOM);
+await context.addInitScript(OVERLAY);
 
 const page = await context.newPage();
 const started = Date.now();
 const at = () => (Date.now() - started) / 1000;
-const markers = { captions: [] };
+const markers = { captions: [], shots: [], clicks: [] };
 const wait = (ms) => page.waitForTimeout(ms);
-// Each caption's moment is logged, so the voiceover can be placed on it later.
-const cap = async (text, hold = 0) => {
-  if (text) markers.captions.push({ at: at(), text });
-  await page.evaluate((value) => window.__cap(value), text);
+
+// A shot boundary. Everything from here until the next one is one continuous
+// frame of camera, with its own framing and at most one move.
+const shot = (name, opts = {}) => {
+  markers.shots.push({ at: at(), name, z0: 1, z1: 1, cx: 0.5, cy: 0.5, ...opts });
+};
+
+// Each caption's moment is logged, so the narration can be placed on it later.
+const cap = async (kicker, line, hold = 0) => {
+  if (line) markers.captions.push({ at: at(), text: line, kicker: kicker ?? "" });
+  await page.evaluate(([k, l]) => window.__tbfilm.cap(k, l), [kicker, line]);
   if (hold) await wait(hold);
 };
+
 const card = async (html, hold = 0, spoken = "") => {
-  if (spoken) markers.captions.push({ at: at(), text: spoken });
-  await page.evaluate((value) => window.__card(value), html);
+  if (spoken) markers.captions.push({ at: at(), text: spoken, kicker: "" });
+  await page.evaluate((value) => window.__tbfilm.card(value), html);
   if (hold) await wait(hold);
 };
-const click = async (name) => { await page.getByRole("button", { name }).first().click(); };
-const scroll = async (to, ms = 1200) => {
+
+// Points at the live element a technology just produced, and names the job it
+// did. The outline is drawn outside the element, so it never covers its target.
+const ribbon = async (selector, tech, did, hold = 2800) => {
+  const ok = await page.evaluate(
+    ([s, t, d]) => window.__tbfilm.ribbon(s, t, d),
+    [selector, tech, did],
+  );
+  if (!ok) console.warn(`ribbon missed: ${selector}`);
+  if (hold) await wait(hold);
+  return ok;
+};
+const clearRibbon = () => page.evaluate(() => window.__tbfilm.clearRibbons());
+
+// The cursor travels, settles, and ripples before the real click fires.
+const click = async (name) => {
+  const target = page.getByRole("button", { name }).first();
+  await target.scrollIntoViewIfNeeded();
+  const box = await target.boundingBox();
+  if (box) {
+    await page.evaluate(
+      ([x, y]) => window.__tbfilm.cursorTo(x, y, 480),
+      [box.x + box.width / 2, box.y + box.height / 2],
+    );
+    await wait(140);
+    // Logged so the mix can put a click under it.
+    markers.clicks.push(at());
+    await page.evaluate(() => window.__tbfilm.press());
+    await wait(170);
+  }
+  await target.click();
+  await wait(320);
+};
+
+// A scroll that only relocates the viewport is not a shot, it is a cut. The
+// jump happens instantly and the cut is placed on it, so it is never seen.
+const jump = async (to) => {
+  await page.evaluate((y) => window.scrollTo(0, y), to);
+  await wait(650);
+};
+
+// Kept only where the length of a thing is the point: the operator list, and
+// the eighteen rows of the grid. The camera stays locked during these.
+const scroll = async (to, ms = 2200) => {
   await page.evaluate(async ({ to, ms }) => {
     const from = window.scrollY;
     const start = performance.now();
@@ -97,124 +123,192 @@ const scroll = async (to, ms = 1200) => {
       requestAnimationFrame(frame);
     });
   }, { to, ms });
+  await wait(1200);
 };
 
-await page.goto(base);
-await page.waitForTimeout(1500);
+// domcontentloaded plus an immediate card, so the sign-in screen is never a
+// frame of the film.
+await page.goto(base, { waitUntil: "domcontentloaded" });
+await page.evaluate(OVERLAY).catch(() => {});
+await page.evaluate((zoom) => {
+  document.documentElement.style.setProperty("--film-zoom", String(zoom));
+  document.documentElement.style.zoom = String(zoom);
+}, FILM_ZOOM);
 
-// 1. Title
-await card(`<h1>TripBrief</h1><p>From a client brief to trips real operators will actually run.</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 5200, "TripBrief turns a client brief into trips that real local operators will actually run.");
-await card("", 400);
+// ---------------------------------------------------------------- title
+shot("title");
+await card(`
+  <div class="lead">
+    <p class="eyebrow">All Gas Hackathon</p>
+    <h1>TripBrief</h1>
+    <p class="sub">A client brief becomes trips real operators have agreed to run.</p>
+  </div>
+  <div class="credits">
+    <div><b>The problem</b><span>An agency has a group, a budget and eighteen requirements. Finding operators who can actually meet them takes weeks of email.</span></div>
+    <div><b>This film</b><span>One brief, start to finish, against the live deployment. Nothing is mocked.</span></div>
+  </div>`, 4600, "TripBrief turns a client brief into trips real operators will actually run.");
+await page.waitForTimeout(400);
 
-// 2. Home
+// ---------------------------------------------------------------- the brief
 await click(/trial workspace/i);
-await page.waitForTimeout(3000);
-await cap("An agency has a group and a budget. No destination yet.", 3200);
-
-// 3. The brief
+await page.waitForTimeout(2600);
+await card("", 300);
 await click(/^New brief$/);
 await wait(900);
-await cap("The brief is the group, the dates, the money and what they need.", 2600);
-await scroll(700, 1400);
-await wait(1400);
-await scroll(1500, 1400);
-await cap("Answers here become numbered requirements every operator must answer.", 3000);
-await scroll(0, 800);
+shot("brief-form", { z0: 1.0, z1: 1.06, cy: 0.28, xfadeIn: 0.4 });
+await cap(null, "A group, a budget, no destination.", 3400);
+await jump(760);
+shot("brief-needs", { z0: 1.0, z1: 1.05, cy: 0.35 });
+await cap(null, "Who is travelling, when, the money, and what they need.", 4400);
+await jump(1500);
+shot("requirements", { cy: 0.32 });
+await cap(null, "Each answer becomes a numbered requirement.", 3400);
+await jump(0);
 
-// 4. A place, looked up live
+// ---------------------------------------------------------- a place, live
 await click(/Discover Destinations/);
-await page.waitForTimeout(2200);
-await cap("Type a country. Firecrawl reads published travel sources and fills in the rest.", 2200);
+await page.waitForTimeout(2000);
+shot("place-type", { cy: 0.3 });
+await cap("Firecrawl", "Type a country.", 900);
 await click(/Add a location/);
 await wait(600);
-await page.locator('input[list="country-names"]').fill("Portugal");
-await wait(900);
+// Typed a character at a time, because the previous cut claimed a country was
+// typed over a field that stayed empty for the whole shot.
+await page.locator('input[list="country-names"]').pressSequentially("Portugal", { delay: 110 });
+await wait(800);
 markers.lookupStart = at();
 await click(/Look it up/);
+shot("place-waiting", { cy: 0.3 });
 await page.waitForFunction(() => /is on the list/.test(document.body.innerText), null, { timeout: 90_000 });
 markers.lookupEnd = at();
-await wait(600);
+await wait(700);
 const portugal = page.locator("article.destination-discovery-card", { hasText: "Portugal" }).first();
 await portugal.scrollIntoViewIfNeeded();
-await wait(400);
-await cap("What it is strong for, its climate, what to plan around, and the sources it came from.", 4600);
+await wait(500);
+shot("place-card", { z0: 1.0, z1: 1.06, cy: 0.42 });
+await cap("Firecrawl", "Strengths, climate, what to plan around, and the sources.", 1000);
+await ribbon("article.destination-discovery-card", "Firecrawl", "fetched the published sources behind this", 3000);
+await clearRibbon();
 
-// 5. Operators, found on the web
+// -------------------------------------------------- operators, from the web
 const bali = page.locator("article.destination-discovery-card", { hasText: "Bali" }).first();
 await bali.locator("label.destination-select").click();
-await wait(600);
-await cap("", 200);
+await wait(500);
+await cap(null, null);
 await click(/Find ITOs in Selected/);
+shot("operators-waiting", { cy: 0.3 });
 await page.waitForFunction(() => document.querySelectorAll(".operator-result-card").length > 2, null, { timeout: 120_000 });
 await wait(900);
-await cap("Firecrawl finds real incoming tour operators and reads each company's own site.", 4000);
-await scroll(620, 1400);
-await cap("Real companies, ranked on what their own sites say they can deliver.", 4200);
-await scroll(1400, 1600);
-await wait(1400);
+shot("operators", { z0: 1.0, z1: 1.05, cy: 0.36 });
+await cap("Firecrawl", "Real operators, found on the web.", 3200);
+shot("operators-list", { cx: 0.42, cy: 0.42 });
+await scroll(700);
+await cap("OpenAI", "It reads each company's own site for the address they publish.", 1000);
+await ribbon(".operator-result-card", "OpenAI", "read this company's own site", 3200);
+await clearRibbon();
 
-// 6. Shortlist
+// ---------------------------------------------------------------- shortlist
 await click(/^Choose Partners/);
-await wait(1400);
+await wait(1200);
+shot("shortlist", { z0: 1.0, z1: 1.05, cy: 0.35 });
+await cap(null, "Shortlist three. Each gets a private link, no account.", 700);
 const toggles = page.locator(".choose-list label.include-toggle");
-await cap("Shortlist. Each operator gets its own private link, and needs no account.", 900);
-for (let i = 0; i < 3; i += 1) { await toggles.nth(i).click(); await wait(600); }
-await wait(1400);
+for (let i = 0; i < 3; i += 1) { await toggles.nth(i).click(); await wait(560); }
+await wait(1100);
 
-// 7. Send
+// ------------------------------------------------------------- the email out
 await click(/Prepare Trip Request/);
-await page.waitForTimeout(2600);
-await cap("AgentMail sends each operator its own request, to the address its own site publishes.", 4000);
-await scroll(460, 1200);
-await cap("Demo mode: every request goes to a stand-in inbox, never to the operator.", 3600);
+await page.waitForTimeout(2200);
+shot("send", { cy: 0.34 });
+await cap("AgentMail", "It writes to the address each site publishes.", 4600);
+await jump(460);
+shot("send-demo", { cy: 0.4 });
+await cap(null, "In demo mode it all goes to a stand-in inbox.", 3000);
 await click(/Send Trip Requests/);
-await page.waitForTimeout(4000);
-await cap("OpenAI now answers as each operator, the way a real one would.", 5000);
-await cap("The page updates itself as each reply lands.", 4000);
-// Only the silent waiting is sped up, so no narration is ever compressed.
+await page.waitForTimeout(3200);
+
+// ------------------------------------------------- the replies come back
+shot("waiting", { cy: 0.3 });
+await cap("OpenAI", "Each operator answers the way a real one would.", 3400);
+// Only silence is sped up, so no narration is ever compressed.
 markers.waitStart = at();
 await page.waitForFunction(() => /3 of 3 proposals received/.test(document.body.innerText), null, { timeout: 180_000 });
 markers.waitEnd = at();
-await wait(1200);
-await cap("Three replies, each with its own price, dates and differences.", 3400);
-await scroll(460, 1200);
-await wait(1600);
+await wait(900);
+shot("arrived", { cy: 0.26 });
+await cap("Convex", "Nobody refreshed this page.", 1000);
+await ribbon(".success-banner", "Convex", "this page updated itself when the reply landed", 3200);
+await clearRibbon();
+shot("replies", { z0: 1.0, z1: 1.05, cy: 0.4 });
+await cap(null, "Three replies. Three prices, three sets of dates.", 3200);
+await jump(460);
 
-// 8. Read one reply
-await cap("", 200);
-// Open a reply that differs from the brief: that is the one worth reading.
+// ------------------------------------------------------------- the money shot
+await cap(null, null);
+// A reply that differs from the brief is the one worth reading.
 const differing = page.locator(".proposal-response-grid article").filter({ hasNotText: "100% covered" }).getByRole("button", { name: /Read full reply/ }).first();
 await (await differing.count() ? differing : page.getByRole("button", { name: /^Read full reply/ }).first()).click();
-await wait(1600);
-await cap("Every reply answers all eighteen numbered requirements, in the operator's own words.", 4200);
-await page.evaluate(() => document.querySelector(".reader-body")?.scrollTo({ top: 420, behavior: "smooth" }));
-await cap("What a reply does not fully meet comes first, so nothing hides in the prose.", 4000);
+await wait(1500);
+shot("reader-prose", { z0: 1.0, z1: 1.05, cy: 0.3, xfadeIn: 0.4 });
+await cap("AgentMail", "This is what the operator actually wrote back.", 4200);
 await page.keyboard.press("Escape");
-await wait(900);
+await wait(800);
 
-// 9. Compare
 await click(/^Compare \d/);
-await page.waitForTimeout(2200);
-await cap("The comparison is built from the operators' own answers, not a score they gave themselves.", 4000);
-await scroll(700, 1400);
-await wait(1200);
+await page.waitForTimeout(2000);
 await page.locator(".requirement-grid-section").scrollIntoViewIfNeeded();
 await wait(900);
-await cap("Every operator's answer to every requirement, side by side, quoted from their email.", 4600);
-await scroll((await page.evaluate(() => document.body.scrollHeight)) - 720, 2000);
-await wait(1600);
-await cap("", 200);
 
-// 10. Decide
+// The same sentence is rendered twice by the app: in the operator's prose and
+// in the grid cell that cites it. Lighting both proves the answer was taken
+// from the email rather than written about it.
+const linked = await page.evaluate(() => {
+  const cell = [...document.querySelectorAll(".requirement-grid td.answer")]
+    .find((td) => td.querySelector("q") && /\b(no|partly)\b/.test(td.className));
+  const quote = cell?.querySelector("q")?.textContent ?? "";
+  const rid = cell?.closest("tr")?.querySelector(".requirement-id")?.textContent?.trim();
+  return { quote, rid, inGrid: window.__tbfilm.markQuote(".requirement-grid", quote) };
+});
+markers.moneyShot = { at: at(), requirement: linked.rid ?? null, linked: linked.inGrid === 1 };
+if (!linked.inGrid) console.warn("quote link failed:", JSON.stringify(linked).slice(0, 200));
+await page.evaluate(() => window.__tbfilm.hotQuotes(true));
+shot("grid-wide", { cx: 0.34, cy: 0.4 });
+await cap("OpenAI", "All eighteen requirements, answered.", 5000);
+shot("grid-detail", { z0: 1.06, z1: 1.06, cx: 0.3, cy: 0.45 });
+await cap(null, "Every answer is quoted from their own email.", 4000);
+shot("grid-scroll", { cx: 0.34, cy: 0.45 });
+await scroll((await page.evaluate(() => document.body.scrollHeight)) - 1080, 2400);
+await cap(null, "Where an operator said nothing, it says so.", 3600);
+await page.evaluate(() => { window.__tbfilm.hotQuotes(false); window.__tbfilm.clearMarks(); });
+
+// ---------------------------------------------------------------- the choice
+await cap(null, null);
 await page.locator(".proposal-compare-table article.recommended").getByRole("button", { name: /Select Trip/ }).first().click();
-await page.waitForTimeout(2200);
-await cap("Pick the trip. The schedule works back from departure, on that operator's own deadlines.", 4200);
-await scroll(900, 1800);
+await page.waitForTimeout(2000);
+shot("selected", { z0: 1.0, z1: 1.05, cy: 0.3 });
+await cap(null, "Pick the trip. The schedule works back from departure.", 3800);
+await jump(900);
+shot("workback", { cy: 0.42 });
 await wait(2600);
-await cap("", 300);
+await cap(null, null);
+await wait(400);
 
-// 11. End card
-await card(`<h1>TripBrief</h1><p>hip-minnow-543.convex.site</p><p style="font-size:21px">github.com/Slybry2000/tripbrief</p><div class="row"><span>Convex</span><span>OpenAI</span><span>Firecrawl</span><span>AgentMail</span></div>`, 6000, "Built on Convex, with OpenAI, Firecrawl and AgentMail. It is live now, and the code is public.");
+// ---------------------------------------------------------------- end card
+shot("end", { xfadeIn: 0.4 });
+await card(`
+  <div class="lead">
+    <p class="eyebrow">All Gas Hackathon</p>
+    <h1>TripBrief</h1>
+    <p class="sub">A client brief becomes trips real operators have agreed to run.</p>
+  </div>
+  <div class="credits">
+    <div><b>Convex</b><span>Holds every brief, reply and comparison, and updates the page the moment one lands.</span></div>
+    <div><b>Firecrawl</b><span>Read published travel sources and each operator's own site to find them.</span></div>
+    <div><b>OpenAI</b><span>Turned each free-prose reply into answers to all 18 numbered requirements.</span></div>
+    <div><b>AgentMail</b><span>Sent every operator its own request and caught the reply that came back.</span></div>
+  </div>
+  <div class="foot"><b>hip-minnow-543.convex.site</b><span>github.com/Slybry2000/tripbrief</span></div>`,
+  7000, "Built on Convex, with OpenAI, Firecrawl and AgentMail. Live now, code public.");
 
 markers.total = at();
 await page.close();
@@ -224,4 +318,9 @@ await browser.close();
 const file = readdirSync(out).filter((name) => name.endsWith(".webm")).sort().pop();
 renameSync(join(out, file), join(out, "raw.webm"));
 writeFileSync(join(out, "markers.json"), JSON.stringify(markers, null, 2));
-console.log(JSON.stringify(markers, null, 2));
+console.log(JSON.stringify({
+  total: Number(markers.total.toFixed(1)),
+  shots: markers.shots.length,
+  captions: markers.captions.length,
+  moneyShot: markers.moneyShot,
+}, null, 2));
