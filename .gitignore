@@ -28,3 +28,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Recorded demo footage (large, regenerate with videos/record-demo.mjs)
+videos/out/
+videos/take*/

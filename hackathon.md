@@ -920,3 +920,23 @@ the grid. 80 tests across 17 files, lint, typecheck and build pass.
   the interface copy. Checked with phone- and desktop-size screenshots of the
   whole flow, from a new trial workspace to simulated replies and the comparison.
   80 tests, lint, typecheck and build pass.
+
+### 2026-09-19 - the demo video
+
+Recorded as one take of the live deployment rather than a reel: a scripted
+Playwright run drives https://hip-minnow-543.convex.site while captions are drawn
+over the page, so everything on screen is the real product doing real work
+(`videos/record-demo.mjs`, shot list in `videos/demo-script.md`). The only
+post-production is speed: the place lookup and the wait for the operators'
+replies are sped up by ffmpeg between markers the run records
+(`videos/build-demo.mjs`). Final file 2:11, 1280x720, 11 MB.
+
+What it shows, in order: a trial workspace; the brief; typing "Portugal" and
+Firecrawl filling the place in from published sources; Firecrawl finding real
+Bali and Portugal operators and reading their own sites; a shortlist of three;
+AgentMail sending each operator its own request to the address its site
+publishes, with the demo-mode notice; the replies landing on their own as OpenAI
+answers as each operator; one reply read in full, differences first; the
+requirement grid quoting each operator; and the selection with its workback
+schedule. `videos/submission-kit.md` holds the social post and the submission
+answers.
