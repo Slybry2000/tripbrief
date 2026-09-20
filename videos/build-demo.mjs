@@ -160,6 +160,17 @@ const cues = {
   endCard: shotStart("end"),
 };
 
+// Written here rather than at the end of the build, because the score is
+// rendered in the middle of it and reads both files. Written at the end, a
+// fresh take's first build scored itself against the previous take's cues.
+// They are pure functions of what has already been computed, so nothing is
+// lost by writing them early - and a render that fails no longer takes the
+// cue list down with it.
+writeFileSync(join(dir, "cues.json"), JSON.stringify({ length: Number(finalLength.toFixed(3)), ...cues }, null, 2));
+writeFileSync(join(dir, "placed.json"), JSON.stringify(
+  placed.map((line) => ({ index: line.index, start: Number(line.start.toFixed(3)), seconds: line.seconds, text: line.text })),
+  null, 2));
+
 const sfx = [];
 if (useSfx) {
   const add = (time, name, gain) => { if (time !== null && time !== undefined) sfx.push([time, `${name}.wav`, gain]); };
@@ -172,13 +183,18 @@ if (useSfx) {
   // Three requests leaving, then three replies landing, tuned A, C and E so the
   // arrivals spell out the chord the score is sitting on.
   if (cues.waitStart !== null) for (const [i, gap] of [-1.5, -0.95, -0.4].entries()) add(cues.waitStart + gap, "send", -11 + i * 0);
-  if (cues.waitEnd !== null) for (const [i, gap] of [-1.43, -0.71, 0].entries()) add(cues.waitEnd + gap, `arrive-${i + 1}`, i === 2 ? -7 : -8);
-  // The reveal's two-second rise is started early so its hit lands exactly on
-  // the money shot.
-  add(cues.moneyShot - 2.0, "reveal", -9);
+  // Only the last one. The score writes its own struck chord on the frame the
+  // counter flips, and three bells in front of it is clutter; this one stays
+  // for the low body the score has nothing like.
+  add(cues.waitEnd, "arrive-3", -7);
+  // The reveal's two-second rise is started early so its rise fills the
+  // decrescendo into the money shot. Its hit is kept well down, because it
+  // lands on the instant the score pulls back to almost nothing.
+  add(cues.moneyShot - 2.0, "reveal", -16);
   add(cues.gridScroll, "scroll", -12);
   add(cues.selected, "confirm", -9);
-  add(cues.endCard, "seal", -9);
+  // Under the score's own cadence, not over it.
+  add(cues.endCard, "seal", -15);
 }
 const sfxUsable = sfx
   .filter(([time, file]) => time >= 0 && time < finalLength - 0.3 && existsSync(join(assets, file)))
@@ -229,15 +245,21 @@ if (music) {
   const bed = join(dir, "score.wav");
   if (!existsSync(bed)) {
     execFileSync("node", ["videos/score.mjs", bed,
+      `--cues=${join(dir, "cues.json")}`, `--lines=${join(dir, "placed.json")}`,
       `--money=${cues.moneyShot.toFixed(3)}`, `--len=${finalLength.toFixed(2)}`], { stdio: "inherit" });
   }
   args.push("-i", bed);
-  filters.push(`[${input}:a]volume=-19dB,atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB[bedraw]`);
+  // -10 rather than -19, and a gentler duck below: the score has 26 dB of
+  // written dynamic range and no drums, so its average level is far lower
+  // than its peak. At -19 with a 9:1 duck it measured 35.6 dB under the
+  // voice, which is not quiet, it is absent. At -10 with 4:1 it sits 16 to
+  // 20 dB under in the talky sections and still gets out of the way.
+  filters.push(`[${input}:a]volume=-10dB,atrim=0:${finalLength.toFixed(2)},asetpts=N/SR/TB[bedraw]`);
   input += 1;
   if (voiceLabels.length) {
     // The bed gets out of the way under speech rather than sitting at a fixed
     // level underneath it.
-    filters.push(`[bedraw][key]sidechaincompress=threshold=0.02:ratio=9:attack=20:release=400:makeup=1:level_sc=1[bedduck]`);
+    filters.push(`[bedraw][key]sidechaincompress=threshold=0.04:ratio=4:attack=20:release=320:makeup=1:level_sc=1[bedduck]`);
     busParts.push("[bedduck]");
   } else busParts.push("[bedraw]");
 }
@@ -303,12 +325,6 @@ if (hasAudio) {
   execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", silent, "-c", "copy", "-movflags", "+faststart", outFile], { stdio: "inherit" });
 }
 rmSync(silent, { force: true });
-
-// Where every line ended up, so the subtitle track can be built from the same
-// placement rather than guessing at it.
-writeFileSync(join(dir, "placed.json"), JSON.stringify(
-  placed.map((line) => ({ index: line.index, start: Number(line.start.toFixed(3)), seconds: line.seconds, text: line.text })),
-  null, 2));
 
 console.log(JSON.stringify({
   raw: Number(duration.toFixed(1)),

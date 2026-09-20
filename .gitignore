@@ -32,3 +32,6 @@ dist-ssr
 # Recorded demo footage (large, regenerate with videos/record-demo.mjs)
 videos/out/
 videos/take*/
+
+# Voice comparison takes (regenerate with the bakeoff scripts)
+bakeoff/

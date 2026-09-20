@@ -1,308 +1,589 @@
-// "Signal" - the score for the TripBrief demo film.
+// "Incoming" - the score for the TripBrief demo film.
 //
-// 84 BPM, A minor, 50 bars. The tempo is chosen so the film's two most
-// important frames land on downbeats: the money shot at 105.72s is bar 38
-// (105.71s) and the end card at 131.30s is bar 47 (131.43s).
+//   node videos/score.mjs out.wav --cues=videos/takeN/cues.json
+//   node videos/score.mjs out.wav --money=115.263 --len=151.47     (fallback)
 //
-// Nine sections with their own instrumentation, so the music has an arc
-// instead of one continuous texture:
-//   open    bars  1-4   pad, sub, a single plucked figure
-//   brief   bars  5-10  + eighth-note plucks, shaker
-//   search  bars 11-14  + kick, walking bass
-//   LIFT    bars 15-19  full band, the theme enters on the bell
-//   send    bars 20-27  sustained energy, the theme develops
-//   wait    bars 28-30  everything strips away but a rising, unresolved pad
-//   land    bars 31-37  full return, theme an octave up, brightest point
-//   MONEY   bars 38-42  drums and bell out; a held suspension under the voice
-//   rebuild bars 43-46  the band comes back
-//   end     bars 47-50  the theme once more, halving in density, resolving to Am
+// D Dorian. Felt piano, bowed strings, harp, pizzicato bass and vibraphone,
+// with the piano's sustain pedal modelled as a bank of undamped strings
+// (videos/instruments.mjs). No drums: the film is warm cream, deep green and
+// a serif, and it is making an argument, not an announcement.
 //
-//   node score.mjs [out.wav]
+// NOTHING IN THIS FILE IS A TIMESTAMP.
+//
+// The score reads videos/takeN/cues.json for the film's own moments and
+// videos/takeN/placed.json for where every narration line landed, and then:
+//
+//   * searches for the tempo, in a band where this arrangement works, that
+//     puts the most beats on the most cues. It reports what it found and how
+//     far off each cue it is.
+//   * changes chord once per narration line while somebody is speaking, and
+//     every two beats while nobody is, so the harmonic rhythm follows the
+//     film rather than a bar count.
+//   * takes its dynamic arc from the named cues, so the lift lands where the
+//     operators are found and the pull-back covers the money shot whatever
+//     second they happen to fall on.
+//
+// The film has been re-recorded three times while this was being written.
+// That is why.
+import { readFileSync, existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { writeWav, SR, db, rms } from "./dsp.mjs";
-import { mtof, pluck, fmBell, padVoice, bass, kick, shaker, rim, reverb, add, stereoBuf, mixInto, highpass, lowpass, resetRnd, rnd } from "./synth.mjs";
+import { add, stereoBuf, mixInto } from "./synth.mjs";
+import {
+  mtof, feltPiano, harp, pizzBass, bowedString, vibes, sympathetic, hall,
+  biquad, applyBiquad, rndi, resetInstruments,
+} from "./instruments.mjs";
 
-// The tempo is taken from the film rather than fixed, so the money shot lands
-// on bar 38 whatever a given take's timings turn out to be. Fixed, the score
-// drifts out of step with the picture every time the film is re-recorded.
-//
-//   node videos/score.mjs out.wav --money=<seconds> --len=<seconds>
+// ------------------------------------------------------------------- inputs
+const OUT = process.argv[2] ?? "score.wav";
 const arg = (name, fallback) => {
   const found = process.argv.find((item) => item.startsWith(`--${name}=`));
-  return found ? Number(found.split("=")[1]) : fallback;
+  return found ? found.split("=")[1] : fallback;
 };
-const BARS = 50;
-const MONEY_BAR = 38;
-const BEAT = arg("money", 105.71) / ((MONEY_BAR - 1) * 4);
-const BPM = 60 / BEAT;
+const num = (name, fallback) => {
+  const v = arg(name, null);
+  return v === null ? fallback : Number(v);
+};
+
+const near = dirname(OUT);
+const cuesPath = arg("cues", join(near, "cues.json"));
+const linesPath = arg("lines", join(near, "placed.json"));
+
+// cues.json is the contract. If it is not there yet - the very first build of
+// a fresh take, before build-demo has written it - the score still renders
+// from --money and --len, with the rest of the arc placed proportionally.
+const haveCues = existsSync(cuesPath);
+const file = haveCues ? JSON.parse(readFileSync(cuesPath, "utf8")) : {};
+const LEN = Number((file.length ?? num("len", 151.47)).toFixed(3));
+const cues = {
+  moneyShot: file.moneyShot ?? num("money", LEN * 0.761),
+  lookupStart: file.lookupStart ?? LEN * 0.241,
+  lookupEnd: file.lookupEnd ?? LEN * 0.243,
+  operators: file.operators ?? LEN * 0.296,
+  send: file.send ?? LEN * 0.468,
+  waitStart: file.waitStart ?? LEN * 0.542,
+  waitEnd: file.waitEnd ?? LEN * 0.592,
+  gridScroll: file.gridScroll ?? LEN * 0.819,
+  selected: file.selected ?? LEN * 0.886,
+  endCard: file.endCard ?? LEN * 0.935,
+};
+
+// placed.json gives every spoken line's start and length. The score needs it
+// for two things it cannot guess: where the harmony is allowed to move, and
+// where the last words are, so it can be finished before them.
+const lines = existsSync(linesPath)
+  ? JSON.parse(readFileSync(linesPath, "utf8"))
+    .map((l) => ({ start: l.start, end: l.start + l.seconds }))
+    .sort((a, b) => a.start - b.start)
+  : [];
+const hasLines = lines.length > 2;
+const firstVoice = hasLines ? lines[0].start : 3.5;
+const lastVoice = hasLines ? lines.at(-1) : { start: cues.endCard, end: LEN - 2.5 };
+const linesIn = (a, b) => lines.filter((l) => l.start >= a - 0.25 && l.start < b - 0.25);
+const lastLineBefore = (t) => lines.filter((l) => l.start < t).at(-1) ?? { start: t - 3.3, end: t };
+
+// =============================================================== THE TEMPO ==
+// Searched, not chosen. Every cue the film reports, plus every line start at a
+// lower weight, against every tempo in the band this arrangement sits in; the
+// winner is the one with the least weighted distance from a cue to a beat.
+//
+// The other way to do this is to derive one beat length from one cue - which
+// guarantees that cue and leaves the other twenty wherever they fall.
+const WEIGHTED = [
+  [cues.operators, 4], [cues.waitEnd, 4], [cues.moneyShot, 4], [cues.endCard, 4],
+  [cues.waitStart, 3], [cues.selected, 3],
+  [cues.lookupEnd, 2], [cues.send, 2], [cues.gridScroll, 2], [firstVoice, 2],
+  ...lines.map((l) => [l.start, 1]),
+].filter(([t]) => Number.isFinite(t) && t > 0);
+
+let best = null;
+for (let bpm = 62; bpm <= 72.0001; bpm += 0.05) {
+  const beat = 60 / bpm;
+  let sum = 0, weight = 0;
+  for (const [t, w] of WEIGHTED) {
+    const d = Math.abs(t / beat - Math.round(t / beat)) * beat;
+    sum += w * d; weight += w;
+  }
+  const score = sum / weight;
+  if (!best || score < best.score) best = { bpm: Number(bpm.toFixed(2)), beat, score };
+}
+const BPM = best.bpm;
+const BEAT = best.beat;
 const BAR = BEAT * 4;
-const LEN = Math.max(BARS * BAR + 6, arg("len", 0) + 1);
-const barAt = (bar, beat = 0) => (bar - 1) * BAR + beat * BEAT;
+/** seconds -> the nearest beat, in seconds. Chord changes land here. */
+const snap = (t) => Math.round(t / BEAT) * BEAT;
+const beatsBetween = (a, b) => Math.max(0, Math.round((b - a) / BEAT));
 
-resetRnd();
+resetInstruments();
 
-// ------------------------------------------------------- harmony, voice-led
-// Four upper voices per chord, chosen so that between any two neighbouring
-// chords at most two voices move, and never by more than a tone. That is what
-// makes the progression sound written rather than transposed.
-const V = {
-  Am:    [57, 60, 64, 69],   // A3 C4 E4 A4
-  F:     [57, 60, 65, 69],   // F/A  - only E4 -> F4 moves
-  C:     [55, 60, 64, 67],   // C/G  - A3 -> G3, A4 -> G4
-  G:     [55, 59, 62, 67],   // C4 -> B3, E4 -> D4
-  Em:    [55, 59, 64, 67],   // D4 -> E4
-  Dm:    [57, 62, 65, 69],
-  Asus2: [57, 59, 64, 69],   // the unresolved colour
-  E:     [56, 59, 64, 71],   // G#3 - the leading tone, held under the wait
-  Fmaj7: [57, 60, 64, 65],   // only the top voice moves out of Am
+// ============================================================== THE HARMONY ==
+// D Dorian: D E F G A B C. The one harmonic idea is that the mode's major IV -
+// G, with a B natural sounding against a D minor tonic - is withheld until the
+// operators are found, spent on that cut, and spent once more at the top of
+// the build. Nothing else in the piece is brighter.
+const P = { A1: 33, C2: 36, D2: 38, E2: 40, F2: 41, G2: 43, A2: 45, C3: 48, D3: 50, E3: 52, F3: 53, G3: 55, A3: 57, B3: 59, C4: 60, D4: 62, E4: 64, F4: 65, G4: 67, A4: 69, B4: 71, C5: 72, D5: 74, E5: 76, F5: 77, G5: 79, A5: 81, B5: 83, D6: 86 };
+
+// Voicings follow a rule that came out of measuring the narration, not out of
+// taste: this voice puts 42% of its energy in 160-320 Hz and 27% in 320-640,
+// so the strings keep their root below 135 Hz and their colour tones above
+// 290 Hz and leave the tenth in between to the speaker. An open voicing with
+// a hole in the middle. The exception is the build, where nobody is talking
+// and the strings close up into the midrange and take their weight back.
+const CH = {
+  Dm9:    [P.D2, P.A2, P.D4, P.F4, P.A4],
+  Dm:     [P.D2, P.A2, P.D4],
+  Am7:    [P.A2, P.E4, P.G4, P.C5],
+  Cmaj9:  [P.C3, P.E4, P.G4, P.B4],
+  Cmaj9b: [P.C3, P.E4, P.G4, P.B4, P.D5],
+  Fmaj9:  [P.F2, P.C3, P.E4, P.A4, P.C5],
+  Fmaj9b: [P.F2, P.C3, P.A4, P.C5, P.E5],
+  G69:    [P.G2, P.D3, P.D4, P.B4, P.E5],
+  // closed voicings, for the build only
+  cAm7:   [P.A2, P.E3, P.G3, P.C4],
+  cEm7:   [P.E3, P.B3, P.D4, P.G4],
+  cDm9:   [P.D3, P.A3, P.C4, P.E4],
+  cG69:   [P.G2, P.D3, P.B3, P.E4],
+  cCmaj9: [P.C3, P.G3, P.E4, P.B4],
+  // filled out again for the end card, where the last words are already past
+  eCmaj9: [P.C3, P.G3, P.E4, P.G4, P.B4],
+  eFmaj9: [P.F2, P.C3, P.A3, P.E4, P.A4],
+  eDm9:   [P.D2, P.A2, P.D3, P.F3, P.A3],
 };
-// An octave higher than they "should" be: below about 80 Hz nothing a viewer
-// watches this on can reproduce it, and it only eats headroom.
-const ROOT = { Am: 45, F: 41, C: 48, G: 43, Em: 40, Dm: 50, Asus2: 45, E: 40, Fmaj7: 41 };
+// what the harp runs through, per chord
+const ARP = {
+  Dm9: [P.D4, P.F4, P.A4, P.C5, P.E5], Am7: [P.A3, P.C4, P.E4, P.G4, P.A4, P.C5, P.E5],
+  Cmaj9: [P.C4, P.E4, P.G4, P.B4, P.D5, P.E5], Cmaj9b: [P.C4, P.E4, P.G4, P.B4, P.D5],
+  Fmaj9: [P.F3, P.A3, P.C4, P.E4, P.G4, P.A4], Fmaj9b: [P.F3, P.A3, P.C4, P.E4, P.A4],
+  G69: [P.G3, P.B3, P.D4, P.E4, P.A4, P.B4, P.D5], Dm: [P.D4, P.F4, P.A4, P.C5],
+  cAm7: [P.A3, P.C4, P.E4, P.G4, P.A4], cEm7: [P.B3, P.D4, P.E4, P.G4, P.B4],
+  cDm9: [P.A3, P.C4, P.D4, P.F4, P.A4], cG69: [P.B3, P.D4, P.E4, P.G4, P.B4],
+  cCmaj9: [P.C4, P.E4, P.G4, P.B4, P.D5],
+};
+const ROOT = { Dm9: P.D2, Dm: P.D2, Am7: P.A1, Cmaj9: P.C2, Cmaj9b: P.C2, Fmaj9: P.F2, Fmaj9b: P.F2, G69: P.G2, cAm7: P.A1, cEm7: P.E2, cDm9: P.D2, cG69: P.G2, cCmaj9: P.C2 };
 
-const chords = {};
-const put = (from, to, name) => { for (let b = from; b <= to; b += 1) chords[b] = name; };
-put(1, 2, "Am"); put(3, 3, "F"); put(4, 4, "G");
-put(5, 5, "Am"); put(6, 6, "F"); put(7, 7, "C"); put(8, 8, "G"); put(9, 9, "Am"); put(10, 10, "F");
-put(11, 11, "C"); put(12, 12, "G"); put(13, 13, "Am"); put(14, 14, "F");
-put(15, 15, "Am"); put(16, 16, "F"); put(17, 17, "C"); put(18, 18, "G"); put(19, 19, "Am");
-put(20, 20, "Am"); put(21, 21, "Em"); put(22, 22, "F"); put(23, 23, "C");
-put(24, 24, "Dm"); put(25, 25, "Am"); put(26, 26, "F"); put(27, 27, "G");
-put(28, 29, "Asus2"); put(30, 30, "E");
-put(31, 31, "Am"); put(32, 32, "F"); put(33, 33, "C"); put(34, 34, "G");
-put(35, 35, "Am"); put(36, 36, "F"); put(37, 37, "G");
-put(38, 39, "Asus2"); put(40, 41, "Fmaj7"); put(42, 42, "C");
-put(43, 43, "Am"); put(44, 44, "F"); put(45, 45, "C"); put(46, 46, "G");
-put(47, 47, "Am"); put(48, 48, "F"); put(49, 49, "C"); put(50, 50, "Am");
+// The three-note theme: A, C, D. Stated alone under the title, reharmonised
+// over Cmaj9 among the operators, brought back when the trip is picked, and
+// played in octaves on the end card.
+const THEME = [P.A4, P.C5, P.D5];
 
-// ------------------------------------------------------------------ sections
-// `level` is the section's place in the dynamic arc, in dB. This is the
-// difference between a score and a loop: the quiet sections are actually quiet.
-const sections = [
-  { name: "open",    from: 1,  to: 4,  level: -10.5, pad: 0.34, plucks: "sparse", perc: "none",   bassPat: "whole" },
-  { name: "brief",   from: 5,  to: 10, level: -7.0,  pad: 0.42, plucks: "eighth", perc: "shaker", bassPat: "half" },
-  { name: "search",  from: 11, to: 14, level: -4.5,  pad: 0.48, plucks: "eighth", perc: "light",  bassPat: "half" },
-  { name: "LIFT",    from: 15, to: 19, level: 0,     pad: 0.60, plucks: "six",    perc: "full",   bassPat: "eighth" },
-  { name: "send",    from: 20, to: 27, level: -3.0,  pad: 0.55, plucks: "eighth", perc: "full",   bassPat: "half" },
-  { name: "wait",    from: 28, to: 30, level: -9.0,  pad: 0.50, plucks: "none",   perc: "none",   bassPat: "whole" },
-  { name: "land",    from: 31, to: 37, level: +1.0,  pad: 0.62, plucks: "six",    perc: "full",   bassPat: "eighth" },
-  { name: "MONEY",   from: 38, to: 42, level: -11.0, pad: 0.46, plucks: "sparse", perc: "none",   bassPat: "whole" },
-  { name: "rebuild", from: 43, to: 46, level: -4.0,  pad: 0.55, plucks: "eighth", perc: "light",  bassPat: "half" },
-  { name: "end",     from: 47, to: 50, level: -0.5,  pad: 0.62, plucks: "half",   perc: "tail",   bassPat: "whole" },
-];
-const sectionAt = (bar) => sections.find((s) => bar >= s.from && bar <= s.to);
+// ================================================================ THE PLAN ==
+// Sections are spans between named cues, never between timestamps. Each one
+// says how loud it is, what is playing, and which chords the lines inside it
+// get. This is the whole score; everything below just renders it.
+const LIFT_BARS = 2;
+const plan = [];
+const push = (name, from, to, opts) => { if (to > from + 0.15) plan.push({ name, from, to, ...opts }); };
 
-// -------------------------------------------------------------- the theme
-// One phrase, stated three times: quietly at the lift, an octave up when the
-// replies land, and slowed down over the end card.
-const THEME = [                       // [bar offset, beat, midi, length in beats]
-  [0, 0,   76, 2],   // E5
-  [0, 2.5, 81, 1.5], // A5
-  [1, 0,   79, 1.5], // G5
-  [1, 2,   76, 2],   // E5
-  [2, 0,   79, 1],   // G5
-  [2, 1,   76, 1],   // E5
-  [2, 2,   72, 2],   // C5
-  [3, 0,   74, 1.5], // D5
-  [3, 2,   71, 2],   // B4
-  [4, 0,   69, 4],   // A4 - home
-];
+// A flash-forward: the film opens on the finished comparison for four seconds
+// before the title. The music opens the same way - the last two notes of the
+// theme, out of context, over the chord the piece will end on - and then the
+// title card starts the piece properly.
+const hasColdOpen = firstVoice > 2.5;
+if (hasColdOpen) push("coldOpen", 0, firstVoice, { level: -6.5, chords: ["Dm9"], texture: "fragment" });
 
-// ----------------------------------------------------------------- the busses
-const padBus = stereoBuf(LEN), pluckBus = stereoBuf(LEN), bellBus = stereoBuf(LEN);
-const bassBus = stereoBuf(LEN), drumBus = stereoBuf(LEN), airBus = stereoBuf(LEN);
+// The lines before the country is looked up: the title, the form being filled
+// in, and then the one that starts the typing. Taken by position within that
+// span rather than by index, because a line was inserted into the middle of
+// the film between two takes and indices from the front are only safe until
+// somebody does that at the front.
+const briefLines = linesIn(firstVoice, cues.lookupStart);
+const typingLine = briefLines.length > 2 ? briefLines.at(-1).start : cues.lookupStart - BAR * 2;
+push("title", firstVoice, briefLines[1]?.start ?? typingLine,
+  { level: -10.5, chords: ["Dm"], texture: "solo" });
+// The dullest picture in the film gets the stillest music: the harmony barely
+// moves while the form is filled in, and the piano plays four notes.
+push("brief", briefLines[1]?.start ?? typingLine, typingLine,
+  { level: -9, chords: ["Dm9", "Dm9", "Am7"], texture: "still" });
+push("typing", typingLine, cues.lookupEnd, { level: -8.5, chords: ["Cmaj9"], texture: "typing" });
+push("place", cues.lookupEnd, cues.operators, { level: -7.5, chords: ["Fmaj9"], texture: "warm" });
+// The lift. Everything the first forty seconds has been holding back.
+push("LIFT", cues.operators, cues.operators + LIFT_BARS * BAR,
+  { level: -4, chords: ["G69"], texture: "lift" });
+push("list", cues.operators + LIFT_BARS * BAR, cues.send,
+  { level: -6.5, chords: ["Am7", "Cmaj9b", "Dm9", "Fmaj9"], texture: "arp" });
+const pulseFrom = lastLineBefore(cues.waitStart).start;
+push("demo", cues.send, pulseFrom, { level: -8.5, chords: ["Cmaj9", "Am7"], texture: "calm" });
+// A pulse, for the first time in the film: from here the music is on its own.
+push("pulse", pulseFrom, cues.waitStart, { level: -7.5, chords: ["cAm7"], texture: "pulse" });
+push("BUILD", cues.waitStart, cues.waitEnd, { level: -2.5, chords: null, texture: "build" });
+push("land", cues.waitEnd, linesIn(cues.waitEnd, cues.moneyShot)[1]?.start ?? cues.moneyShot,
+  { level: -8.5, chords: ["Fmaj9b"], texture: "exhale" });
+push("replies", linesIn(cues.waitEnd, cues.moneyShot)[1]?.start ?? cues.moneyShot, cues.moneyShot,
+  { level: -10, chords: ["Fmaj9b", "Dm9", "Dm"], texture: "thin" });
+// The argument of the film is made here and the voice has to own it, so the
+// score does the hardest thing it can, which is very nearly stop.
+push("MONEY", cues.moneyShot, cues.selected, { level: -12, chords: null, texture: "money" });
+push("return", cues.selected, cues.endCard, { level: -11, chords: ["Dm9", "Cmaj9b"], texture: "theme" });
+push("end", cues.endCard, LEN, { level: -3.5, chords: null, texture: "end" });
+
+const sectionAt = (t) => plan.find((s) => t >= s.from && t < s.to) ?? plan.at(-1);
+
+// ------------------------------------------------ chords, one per spoken line
+// While someone is speaking the harmony changes on their line, snapped to the
+// nearest beat. A section with more lines than chords cycles; a section with
+// no lines in it gets one chord at its own start.
+const changes = [];
+for (const sec of plan) {
+  if (!sec.chords) continue;
+  const inside = linesIn(sec.from, sec.to);
+  const anchors = (inside.length ? [sec.from, ...inside.map((l) => l.start)] : [sec.from]).sort((a, b) => a - b);
+  // drop an anchor that is within half a bar of the previous one
+  const kept = [];
+  for (const a of anchors) if (!kept.length || a - kept.at(-1) > BAR * 0.5) kept.push(a);
+  // A long section with fewer lines than chords would otherwise sit on one
+  // chord for twenty seconds. Split its widest gap on a bar line until the
+  // progression has somewhere to go, but never closer than two bars apart.
+  while (kept.length < sec.chords.length) {
+    let widest = -1, gap = 0;
+    for (let i = 0; i < kept.length; i += 1) {
+      const g = (kept[i + 1] ?? sec.to) - kept[i];
+      if (g > gap) { gap = g; widest = i; }
+    }
+    if (gap < BAR * 2) break;
+    kept.splice(widest + 1, 0, kept[widest] + Math.round(gap / 2 / BAR) * BAR);
+  }
+  kept.forEach((a, i) => changes.push({ at: snap(a), chord: sec.chords[i % sec.chords.length], sec }));
+}
+changes.sort((a, b) => a.at - b.at);
+
+// ===================================================================== BUSES ==
+const pianoBus = stereoBuf(LEN + 2), harpBus = stereoBuf(LEN + 2), bowBus = stereoBuf(LEN + 2);
+const bassBus = stereoBuf(LEN + 2), bellBus = stereoBuf(LEN + 2);
 const S = (t) => Math.round(t * SR);
 
-for (let bar = 1; bar <= BARS; bar += 1) {
-  const sec = sectionAt(bar);
-  const name = chords[bar];
-  const notes = V[name];
-  const root = ROOT[name];
-  const t0 = barAt(bar);
-  const nextSame = chords[bar + 1] === name;
+// Struck notes are nudged off the grid and off each other's dynamics. A player
+// lands near the beat, slightly late, and never repeats a velocity exactly.
+const humanT = (t) => t + (rndi() - 0.35) * 0.044;
+const humanV = (v) => v * (1 + (rndi() - 0.5) * 0.18);
+const keyNote = (t, midi, vel, pan = 0) => add(pianoBus, feltPiano(midi, humanV(vel)), S(humanT(t)), 1, pan);
+const roll = (t, midis, vel, spread = 0.024) => midis.forEach((m, i) =>
+  add(pianoBus, feltPiano(m, vel * (0.82 + 0.30 * (i / Math.max(1, midis.length - 1)))),
+    S(t + i * spread + (rndi() - 0.5) * 0.010), 1, (i - midis.length / 2) * 0.05));
+const pluckNote = (t, midi, vel, pan) => add(harpBus, harp(midi, vel), S(t + (rndi() - 0.5) * 0.008), 1, pan);
+const bassNote = (t, midi, vel) => add(bassBus, pizzBass(midi, humanV(vel)), S(humanT(t)), 1, 0);
+const bellNote = (t, midi, vel, pan) => add(bellBus, vibes(midi, vel), S(t), 1, pan);
 
-  // ---- pad: one note per voice per bar, overlapping into the next bar so the
-  // chord change is a real voice movement rather than a crossfade.
-  notes.forEach((m, v) => {
-    const len = BAR * (nextSame ? 1.9 : 1.25);
-    const pan = (v - 1.5) / 1.5 * 0.55;
-    const open = sec.name === "wait" ? 0.35 + 0.65 * ((bar - 28) / 3) : sec.pad + 0.3;
-    add(padBus, padVoice(mtof(m), len, 0.16 * sec.pad, { detune: 8, open, q: 1.15 }), S(t0), 1, pan);
-  });
+/** One chord of bowed strings: two players per voice, a few cents apart. */
+const pad = (t, dur, midis, amp, attack) => midis.forEach((m, i) => {
+  const wide = ((i / Math.max(1, midis.length - 1)) * 1.5 - 0.75) * 0.72;
+  for (const [cents, side] of [[-3.6, -0.13], [3.1, 0.13]]) {
+    add(bowBus, bowedString(m + cents / 100, dur, amp * (m < 48 ? 1.10 : 0.92) / Math.SQRT2, {
+      attack: attack + i * 0.12, release: 2.2, swell: 0.10,
+      vib: m < 46 ? 0.0018 : 0.0032, vibHz: 4.42 + (rndi() - 0.5) * 0.9,
+      partials: m < 46 ? 36 : 26,
+    }), S(t), 1, wide + side);
+  }
+});
 
-  // ---- bass
-  const bassHits = { whole: [0], half: [0, 2], eighth: [0, 1.5, 2, 3.5] }[sec.bassPat] ?? [0];
-  for (const beat of bassHits) {
-    const len = sec.bassPat === "whole" ? BAR * 1.05 : BEAT * 1.6;
-    add(bassBus, bass(mtof(root), len, 0.32), S(t0 + beat * BEAT), 1, 0);
+const arpRun = (from, to, midis, perBeat, vel) => {
+  const seq = [...midis, ...midis.slice(1, -1).reverse()];
+  let i = 0;
+  for (let t = from; t < to - 1e-6; t += BEAT / perBeat) {
+    const onBeat = Math.abs(t / BEAT - Math.round(t / BEAT)) < 1e-3;
+    pluckNote(t, seq[i % seq.length], vel * (onBeat ? 1.2 : 1) * (0.9 + rndi() * 0.16),
+      0.22 + ((i % 3) - 1) * 0.10);
+    i += 1;
+  }
+};
+
+// ============================================================== THE WRITING ==
+// The pad follows the chord changes, each holding into the next so the strings
+// never stop. The first draft of this score left five holes at section joins
+// where one chord had released before the next had spoken, and they were the
+// loudest thing in it.
+const OVERLAP = BEAT * 1.4;
+changes.forEach((c, i) => {
+  // A chord holds until the next one has spoken, but never past the end of
+  // its own section: the section after "thin" is the money shot, and a pad
+  // bleeding sixteen seconds into that would undo the one decision the score
+  // is built around.
+  const next = Math.min(changes[i + 1]?.at ?? Infinity, c.sec.to);
+  const attack = { lift: 0.55, build: 0.5, pulse: 0.6, end: 0.35, typing: 1.6, still: 2.4, solo: 3.2 }[c.sec.texture] ?? 1.2;
+  pad(c.at, Math.min(next + OVERLAP, c.at + 16) - c.at, CH[c.chord], 0.055, attack);
+});
+
+for (const sec of plan) {
+  const inside = changes.filter((c) => c.at >= sec.from - 0.3 && c.at < sec.to);
+  const first = inside[0];
+  const bars = (sec.to - sec.from) / BAR;
+
+  if (sec.texture === "fragment") {
+    // the last two notes of the theme, out of context
+    keyNote(sec.from + BEAT * 0.6, THEME[1], 0.17, 0.12);
+    keyNote(sec.from + BEAT * 2.0, THEME[2], 0.20, 0.02);
+    bellNote(sec.from + BEAT * 2.0, THEME[2] + 12, 0.08, 0.25);
   }
 
-  // ---- plucks: the arpeggio is taken from the actual chord voicing, so the
-  // pattern moves with the voice leading instead of being transposed.
-  const arp = [...notes, notes[2] + 12, notes[3] + 12, notes[2] + 12];
-  const patterns = {
-    none: [],
-    sparse: [0, 2],
-    half: [0, 2],
-    // Syncopated rather than dense: a figure with a hole in it reads as music,
-    // a straight run of eighths reads as an arpeggiator.
-    eighth: [0, 0.75, 1.5, 2, 2.75, 3.5],
-    six: [0, 0.5, 0.75, 1.5, 2, 2.5, 2.75, 3.5],
-  };
-  const pat = patterns[sec.plucks] ?? [];
-  pat.forEach((beat, i) => {
-    const m = arp[(i + bar) % arp.length] + (sec.plucks === "sparse" || sec.plucks === "half" ? 12 : 0);
-    const accent = beat % 1 === 0 ? 1 : 0.62;
-    const vel = (sec.plucks === "sparse" ? 0.30 : 0.22) * accent * (0.85 + rnd() * 0.3);
-    const pan = ((i % 4) - 1.5) / 1.5 * 0.42;
-    // human timing: a few milliseconds of drift, never quantised dead
-    const jitter = (rnd() - 0.5) * 0.012;
-    add(pluckBus, pluck(mtof(m), 2.2, vel, { damp: 0.45, bright: 0.55 + rnd() * 0.15 }), S(t0 + beat * BEAT + jitter), 1, pan);
-  });
+  if (sec.texture === "solo") {
+    // the theme, stated once, alone, so it can be recognised three more times
+    roll(sec.from + BEAT * 0.5, [P.D3, P.A3], 0.19);
+    THEME.forEach((m, i) => keyNote(sec.from + BEAT * (2.0 + i * 1.8), m, [0.23, 0.21, 0.26][i], [0.10, 0.16, 0.05][i]));
+    keyNote(sec.from + BEAT * 7.4, P.F4, 0.15, -0.12);
+    keyNote(sec.from + BEAT * 9.6, P.E4, 0.14, 0);
+  }
 
-  // ---- percussion
-  if (sec.perc !== "none") {
-    const kicks = sec.perc === "full" ? [0, 2.5] : sec.perc === "light" ? [0] : sec.perc === "tail" ? (bar <= 48 ? [0] : []) : [];
-    for (const beat of kicks) add(drumBus, kick(0.26), S(t0 + beat * BEAT), 1, 0);
-    const shakes = sec.perc === "full" ? [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 0.75, 2.75] :
-      sec.perc === "shaker" ? [1, 3] : sec.perc === "light" ? [0.5, 1.5, 2.5, 3.5] :
-      sec.perc === "tail" ? (bar <= 48 ? [1, 3] : []) : [];
-    for (const beat of shakes) {
-      const vel = (beat % 1 === 0 ? 0.30 : 0.19) * (0.8 + rnd() * 0.4);
-      add(drumBus, shaker(vel), S(t0 + beat * BEAT + (rnd() - 0.5) * 0.010), 1, (rnd() - 0.5) * 0.5);
+  if (sec.texture === "still") {
+    for (const c of inside) {
+      roll(c.at, CH[c.chord].slice(0, 2), 0.16, 0.05);
+      keyNote(c.at + BAR * 1.0, CH[c.chord].at(-1), 0.14, 0.08);
     }
-    if (sec.perc === "full" && bar % 4 === 3) add(drumBus, rim(0.22), S(t0 + 3.5 * BEAT), 1, -0.35);
+  }
+
+  if (sec.texture === "typing") {
+    // the first rhythm in the piece, and deliberately an uneven one
+    const pattern = [0, 0.5, 1, 2, 2.5, 3, 3.33, 4, 4.5, 5, 6, 6.5];
+    for (const [i, b] of pattern.entries()) {
+      const t = sec.from + b * BEAT;
+      if (t > sec.to + BAR) break;
+      keyNote(t, i % 3 === 2 ? P.E4 : P.G4, 0.095 + (i % 4) * 0.012, 0.25);
+    }
+  }
+
+  if (sec.texture === "warm") {
+    // first warmth, and the piano climbs for the first time
+    [P.F4, P.A4, P.C5, P.E5].forEach((m, i) => keyNote(sec.from + i * BAR * 0.55, m, 0.20 + i * 0.005, -0.10 + i * 0.09));
+    // a harp note plants the instrument, so the arpeggio at the lift is not new
+    pluckNote(sec.from + BAR * 1.2, P.C5, 0.17, 0.30);
+    pluckNote(sec.from + BAR * 1.75, P.A4, 0.16, 0.30);
+  }
+
+  if (sec.texture === "lift") {
+    roll(sec.from, [P.G3, P.B3, P.D4, P.E4, P.A4], 0.42, 0.020);
+    arpRun(sec.from, sec.to, ARP.G69, 2, 0.28);
+    keyNote(sec.from + BAR * 0.5, P.B4, 0.30, 0.20);
+    bellNote(sec.from, P.B5, 0.13, 0.30);
+  }
+
+  if (sec.texture === "arp") {
+    // the lift settles rather than climbing further
+    inside.forEach((c, i) => {
+      const next = inside[i + 1]?.at ?? sec.to;
+      arpRun(c.at, Math.min(next, c.at + BAR * 2.6), ARP[c.chord] ?? ARP.Am7, 2, 0.19 - i * 0.012);
+      if (i === 1) THEME.forEach((m, k) => keyNote(c.at + k * BEAT * 1.5, m, [0.24, 0.22, 0.26][k], k * 0.06));
+      else keyNote(c.at, CH[c.chord][2], 0.20, -0.12 + i * 0.08);
+    });
+  }
+
+  if (sec.texture === "calm") {
+    inside.forEach((c, i) => {
+      keyNote(c.at, CH[c.chord].at(-1), 0.17, 0.12 - i * 0.14);
+      keyNote(c.at + BAR * 0.9, CH[c.chord][2], 0.14, -0.05);
+    });
+    bassNote(sec.from + BAR * 0.8, P.D2, 0.20);
+  }
+
+  if (sec.texture === "pulse") {
+    const n = Math.max(2, beatsBetween(sec.from, sec.to));
+    for (let b = 0; b < n; b += 1) bassNote(sec.from + b * BEAT, b === 2 ? P.E2 : P.A1, 0.26);
+    THEME.forEach((m, i) => keyNote(sec.from + i * BEAT * 1.3, m - 12, [0.20, 0.19, 0.21][i], -0.10 + i * 0.05));
+    arpRun(Math.max(sec.from, sec.to - BEAT * 2), sec.to, ARP.cAm7, 2, 0.15);
+  }
+
+  if (sec.texture === "build") {
+    // The one stretch with no narration over it, and the one dead hole in the
+    // picture: the wait, at six times speed. The harmonic rhythm doubles to a
+    // chord every two beats, the bass climbs, and the harp subdivides 2 -> 3
+    // -> 4 without the tempo moving, which tightens without hurrying. It ends
+    // on Cmaj9 however many chords fit, so the landing always resolves.
+    const SEQ = ["cAm7", "cEm7", "cDm9", "cG69", "cCmaj9"];
+    const RATE = [2, 2, 3, 4, 4];
+    const slots = Math.max(2, Math.min(SEQ.length, Math.floor(beatsBetween(sec.from, sec.to) / 2)));
+    const seq = SEQ.slice(SEQ.length - slots), rate = RATE.slice(RATE.length - slots);
+    const step = (sec.to - sec.from) / slots;
+    seq.forEach((name, i) => {
+      const t = snap(sec.from + i * step), tEnd = i + 1 < slots ? snap(sec.from + (i + 1) * step) : sec.to;
+      pad(t, tEnd - t + BEAT * 1.4, CH[name], 0.058 + i * 0.010, 0.5);
+      arpRun(t, tEnd, ARP[name], rate[i], 0.16 + i * 0.037);
+      for (let b = t; b < tEnd - 1e-6; b += BEAT) bassNote(b, ROOT[name], 0.26 + i * 0.026);
+      keyNote(t, ARP[name].at(-1), 0.19 + i * 0.030, ((i % 3) - 1) * 0.16);
+    });
+  }
+
+  if (sec.texture === "exhale") {
+    // The one accent in the score that is not on the beat grid: it is on the
+    // frame the counter reaches 3 of 3. Everything that has been running for
+    // the last eight seconds stops on it. The release is the point, not the
+    // hit.
+    [P.C5, P.E5, P.G5, P.B5, P.D6].forEach((m, i) =>
+      bellNote(cues.waitEnd + i * 0.016, m, 0.34 - i * 0.024, (i - 2) * 0.18));
+    bellNote(cues.waitEnd + 0.30, P.C4, 0.17, 0);
+    if (first) roll(first.at, [P.F3, P.C4, P.E4], 0.20, 0.05);
+    keyNote(sec.from + BAR * 1.1, P.A4, 0.16, 0.10);
+    keyNote(sec.from + BAR * 2.0, P.F4, 0.13, -0.10);
+  }
+
+  if (sec.texture === "thin") {
+    // three replies, three notes, and then a long decrescendo that is really a
+    // ramp into the silence of the money shot
+    [P.A5, P.F5, P.C5].forEach((m, i) => bellNote(sec.from + i * BAR * 0.62, m, 0.15 - i * 0.008, -0.3 + i * 0.3));
+    inside.forEach((c, i) => keyNote(c.at, [P.D4, P.A3, P.F3][i % 3], 0.15 - i * 0.03, -0.05 + i * 0.07));
+  }
+
+  if (sec.texture === "money") {
+    // A bare bowed fifth, D and A, and eighteen seconds with two events in
+    // them. At two thirds an E is added, so the chord becomes a Dm(add9) and
+    // still has no third; near the end that E moves up to F, which is the
+    // third arriving just in time to make the return sound prepared rather
+    // than sudden. No piano, no harp, no bell, no bass.
+    const span = sec.to - sec.from;
+    add(bowBus, bowedString(P.D2, span, 0.029, { attack: 3.2, release: 3.0, swell: 0.17, vib: 0.0014, partials: 30 }), S(sec.from), 1, -0.25);
+    add(bowBus, bowedString(P.A4, span, 0.0158, { attack: 3.8, release: 3.0, swell: 0.19, vib: 0.0022, partials: 22 }), S(sec.from), 1, 0.25);
+    const addE = sec.from + span * 0.48, toF = sec.to - BAR * 1.6;
+    add(bowBus, bowedString(P.E5, toF - addE, 0.0095, { attack: 4.2, release: 2.4, swell: 0.15, partials: 18 }), S(addE), 1, 0.05);
+    add(bowBus, bowedString(P.F5, sec.to - toF + BAR, 0.0114, { attack: 1.5, release: 2.0, partials: 18 }), S(toF), 1, 0.05);
+  }
+
+  if (sec.texture === "theme") {
+    // the theme returns, in the register it was first played in
+    THEME.forEach((m, i) => keyNote(sec.from + i * BEAT * 1.5, m, [0.235, 0.215, 0.255][i], [0.05, 0.12, 0][i]));
+    arpRun(sec.from + BAR * 0.6, Math.min(sec.to, sec.from + BAR * 1.6), ARP.Dm9, 2, 0.105);
+    const last = inside.at(-1);
+    if (last && last.at > sec.from + BAR) {
+      // the only crescendo in the last third, so the end card has something to
+      // resolve
+      [P.E5, P.D5, P.B4].forEach((m, i) => keyNote(last.at + i * BEAT * 1.2, m, [0.26, 0.24, 0.26][i], 0.15 - i * 0.12));
+    }
+  }
+
+  if (sec.texture === "end") {
+    // Cmaj9 -> Fmaj9 -> Dm9: a plagal descent that arrives without
+    // congratulating anybody, with the theme in octaves over the Fmaj9.
+    const t0 = snap(sec.from);
+    const steps = [["eCmaj9", 0], ["eFmaj9", BAR * 0.42], ["eDm9", BAR * 0.84]];
+    for (const [name, off] of steps) pad(t0 + off, BAR * 1.6, CH[name], 0.070, 0.35);
+    roll(t0, [P.C3, P.G3, P.C4, P.E4, P.G4, P.B4], 0.42, 0.022);
+    roll(t0 + BAR * 0.42, [P.F2, P.C3, P.E3, P.A3, P.C4], 0.38, 0.022);
+    keyNote(t0 + BAR * 0.55, P.A4, 0.31, -0.06);
+    keyNote(t0 + BAR * 0.55, P.A5, 0.23, 0.14);
+    roll(t0 + BAR * 0.84, [P.D2, P.D3, P.A3, P.C4, P.E4, P.F4], 0.44, 0.024);
+    keyNote(t0 + BAR * 0.84 + 0.16, P.D5, 0.27, 0.05);
+    bellNote(t0 + BAR * 0.84, P.D5, 0.15, 0.20);
   }
 }
 
-// ---- the theme, three statements
-const statements = [
-  { bar: 15, octave: 0,  gain: 0.20, ratio: 14, spread: 0.18 },
-  { bar: 31, octave: 12, gain: 0.17, ratio: 11, spread: -0.18 },
-  { bar: 47, octave: 0,  gain: 0.23, ratio: 14, spread: 0.0, slow: true },
-];
-for (const st of statements) {
-  for (const [barOff, beat, midi, lenBeats] of THEME) {
-    // the end statement halves in density: it stretches over the same bars but
-    // only the long notes survive, which reads as a ritardando without one.
-    if (st.slow && lenBeats < 1.5) continue;
-    const t = barAt(st.bar + barOff, beat);
-    const len = Math.min(lenBeats * BEAT * 2.2, 4.5);
-    add(bellBus, fmBell(mtof(midi + st.octave), len, st.gain, { ratio: st.ratio, index: 5.4, bodyDecay: len * 0.55 }), S(t), 1, st.spread);
-    // a quiet octave-below double thickens the top statement
-    if (st.octave) add(bellBus, fmBell(mtof(midi), len, st.gain * 0.45, { ratio: 7, index: 3.2, bodyDecay: len * 0.5 }), S(t), 1, -st.spread);
-  }
-}
-
-// ---- air: a breath of filtered noise that swells through the wait and lifts
-// into the arrival, so the strip-down still has movement in it.
-{
-  const n = Math.round(LEN * SR);
-  const raw = new Float32Array(n);
-  for (let i = 0; i < n; i += 1) raw[i] = rnd() * 2 - 1;
-  const swellStart = barAt(28), swellEnd = barAt(31);
-  const shaped = lowpass(highpass(raw, 500), 3400);
-  for (let i = 0; i < n; i += 1) {
-    const t = i / SR;
-    let g = 0.006 + 0.004 * Math.sin(2 * Math.PI * t / 23);
-    if (t >= swellStart && t < swellEnd) g += 0.075 * Math.pow((t - swellStart) / (swellEnd - swellStart), 2.4);
-    if (t >= swellEnd && t < swellEnd + 1.6) g += 0.075 * Math.max(0, 1 - (t - swellEnd) / 1.6);
-    shaped[i] *= g;
-  }
-  for (let i = 0; i < n; i += 1) { airBus[0][i] += shaped[i]; airBus[1][i] += shaped[i] * 0.82; }
-}
-
-// ------------------------------------------------- the arc (mix automation)
-// A gain curve that follows the sections, ramping over one bar at each change
-// so the film never hears a level jump. This is the arc; everything above is
-// only the arrangement.
+// ================================================================== THE ARC ==
+// Macro dynamics live here rather than in sixty note velocities, so re-timing
+// the score to a new cut does not mean re-balancing it by hand. One bar to
+// move between levels, so the film never hears a step.
 function arcGain(t) {
-  const bar = t / BAR + 1;
-  const cur = sectionAt(Math.max(1, Math.min(BARS, Math.floor(bar)))) ?? sections.at(-1);
-  const prev = sections[Math.max(0, sections.indexOf(cur) - 1)];
-  const intoSection = bar - cur.from;
-  const ramp = 1.0;                       // one bar to move between levels
-  const levelDb = intoSection < ramp && cur !== prev
-    ? prev.level + (cur.level - prev.level) * (intoSection / ramp)
-    : cur.level;
+  const sec = sectionAt(t);
+  const i = plan.indexOf(sec);
+  const prev = plan[Math.max(0, i - 1)];
+  const into = t - sec.from;
+  const levelDb = into < BAR && prev !== sec
+    ? prev.level + (sec.level - prev.level) * (into / BAR)
+    : sec.level;
   return Math.pow(10, levelDb / 20);
 }
-for (const buf of [padBus, pluckBus, bellBus, bassBus, drumBus]) {
-  for (let i = 0; i < buf[0].length; i += 1) {
-    const g = arcGain(i / SR);
-    buf[0][i] *= g; buf[1][i] *= g;
-  }
-}
 
-// ------------------------------------------------------------------- the mix
-// Different reverb sends per instrument: the bass stays dry and centred, the
-// plucks and bell sit back in the room, the pad is almost all room.
-const wet = stereoBuf(LEN);
-const send = (buf, amount) => { for (let c = 0; c < 2; c += 1) for (let i = 0; i < wet[c].length; i += 1) wet[c][i] += buf[c][i] * amount; };
-send(padBus, 0.55); send(pluckBus, 0.40); send(bellBus, 0.50); send(drumBus, 0.12); send(bassBus, 0.02);
-const [rvL, rvR] = reverb(wet[0], wet[1], { size: 1.35, damp: 0.42, preDelay: 0.024 });
-
-const mix = stereoBuf(LEN);
-mixInto(mix, padBus, 1.0);
-mixInto(mix, pluckBus, 1.0);
-mixInto(mix, bellBus, 1.0);
-mixInto(mix, bassBus, 1.0);
-// The percussion and the air layer are band-limited before they reach the mix,
-// so the shakers read as breath rather than sizzle over the narration.
-for (let c = 0; c < 2; c += 1) { drumBus[c] = lowpass(drumBus[c], 9000); airBus[c] = lowpass(airBus[c], 6500); }
-mixInto(mix, drumBus, 1.0);
-mixInto(mix, airBus, 1.0);
-mixInto(mix, [rvL, rvR], 0.62);
-
-// Bus tone: roll off the sub the film's voice does not need, and take the
-// 2-4 kHz consonant band down a little so the narration always wins.
-for (let c = 0; c < 2; c += 1) {
-  let x = highpass(highpass(mix[c], 62), 62);
-  const dip = lowpass(highpass(x, 1800), 4500);
-  for (let i = 0; i < x.length; i += 1) x[i] -= dip[i] * 0.42;
-  mix[c] = x;
-}
-
-// Final shape: fade in over the first bar, fade the tail out.
-const n = mix[0].length;
-const fadeIn = Math.round(1.2 * SR), tailStart = Math.round((BARS * BAR + 0.5) * SR);
+// ================================================================== THE MIX ==
+const n = Math.round(LEN * SR);
+// The pedal. Every struck note - piano and harp alike - drives a bank of
+// undamped diatonic strings, which is what a sustain pedal physically is.
+// This is the difference between a piano and a row of one-shots.
+const PEDAL = [P.D2, P.A2, P.D3, P.F3, P.A3, P.C4, P.D4, P.E4, P.F4, P.G4, P.A4, P.B4, P.C5, P.D5, P.E5, P.F5, P.A5];
+const struckL = new Float32Array(n), struckR = new Float32Array(n);
 for (let i = 0; i < n; i += 1) {
+  struckL[i] = pianoBus[0][i] + harpBus[0][i] * 0.55;
+  struckR[i] = pianoBus[1][i] + harpBus[1][i] * 0.55;
+}
+const halo = sympathetic(
+  Float32Array.from({ length: n }, (_, i) => (struckL[i] + struckR[i]) * 0.5),
+  PEDAL, { coupling: 0.075, rt60: 2.8, damp: 2600, spread: 0.04 },
+);
+
+const dry = stereoBuf(LEN);
+mixInto(dry, pianoBus, 1.0);
+mixInto(dry, harpBus, 1.0);
+mixInto(dry, bowBus, 1.0);
+mixInto(dry, bassBus, 1.0);
+mixInto(dry, bellBus, 1.0);
+for (let i = 0; i < n; i += 1) { dry[0][i] += halo[i] * 0.85; dry[1][i] += halo[i] * 0.78; }
+
+// the arc, applied before the room so the room follows the dynamics
+for (let i = 0; i < n; i += 1) { const g = arcGain(i / SR); dry[0][i] *= g; dry[1][i] *= g; }
+
+// Different sends per instrument: the bass stays dry and centred, the bell and
+// the pad are mostly room.
+const wet = stereoBuf(LEN);
+const sendTo = (buf, amt) => { for (let c = 0; c < 2; c += 1) for (let i = 0; i < n; i += 1) wet[c][i] += buf[c][i] * amt * arcGain(i / SR); };
+sendTo(pianoBus, 0.34); sendTo(harpBus, 0.40); sendTo(bowBus, 0.44); sendTo(bellBus, 0.56); sendTo(bassBus, 0.22);
+const [rvL, rvR] = hall(wet[0], wet[1], { rt60: 3.1, damp: 4600, preDelay: 0.030, width: 1.15 });
+for (let i = 0; i < n; i += 1) { dry[0][i] += rvL[i]; dry[1][i] += rvR[i]; }
+
+// A trace of room tone, so the quiet stretches are a room and not a file.
+for (let i = 0; i < n; i += 1) {
+  const g = 0.00075 * (0.7 + 0.3 * Math.sin(2 * Math.PI * i / SR / 23));
+  const a = rndi() * 2 - 1, b = rndi() * 2 - 1;
+  dry[0][i] += a * g; dry[1][i] += b * g;
+}
+
+// The voice pocket is cut here rather than left to the mix.
+for (let c = 0; c < 2; c += 1) {
+  applyBiquad(dry[c], biquad("hp", 44, 0.7));
+  applyBiquad(dry[c], biquad("lowshelf", 115, 0.8, 1.0));
+  applyBiquad(dry[c], biquad("peak", 240, 0.75, -3.4));    // the voice's fundamentals
+  applyBiquad(dry[c], biquad("peak", 480, 0.9, -1.8));     // its first formant
+  applyBiquad(dry[c], biquad("peak", 2450, 0.9, -2.4));    // its consonants
+  applyBiquad(dry[c], biquad("highshelf", 6500, 0.7, 1.6));
+}
+
+// The last chord rings and is then taken off, so the closing words are clean.
+// This is a written decay, not a fade under the voice: the score is finished
+// before the film's last clause instead of ducking beneath it.
+const silentBy = Math.min(LEN - 0.3, lastVoice.end - 2.4);
+const fadeFrom = Math.max(cues.endCard + BAR * 1.1, silentBy - 1.8);
+for (let i = 0; i < n; i += 1) {
+  const t = i / SR;
   let g = 1;
-  if (i < fadeIn) g *= i / fadeIn;
-  if (i > tailStart) g *= Math.max(0, 1 - (i - tailStart) / (n - tailStart));
-  mix[0][i] *= g; mix[1][i] *= g;
+  if (t < 0.25) g *= t / 0.25;
+  if (t > fadeFrom) g *= t >= silentBy ? 0 : 0.5 + 0.5 * Math.cos(Math.PI * (t - fadeFrom) / (silentBy - fadeFrom));
+  dry[0][i] *= g; dry[1][i] *= g;
 }
-// Peaks first, level second. A single 3.6 ms transient stack (a kick, a pluck
-// and a bell landing on the same sample) was setting the peak and costing 17 dB
-// of headroom, so the bus is driven into a soft saturator that rounds those
-// spikes off, and only then normalised.
-{
-  // set the working level from the body of the signal, not its loudest sample
-  const sample = [];
-  for (let i = 0; i < n; i += 997) sample.push(Math.max(Math.abs(mix[0][i]), Math.abs(mix[1][i])));
-  sample.sort((a, b) => a - b);
-  const p95 = sample[Math.floor(sample.length * 0.95)] || 1e-6;
-  const drive = 0.42 / p95;
-  const ceiling = 0.86;
-  for (let c = 0; c < 2; c += 1) for (let i = 0; i < n; i += 1) {
-    mix[c][i] = ceiling * Math.tanh(mix[c][i] * drive / ceiling);
-  }
-}
+
+// A fixed output gain, not peak normalisation: with a normaliser, quietening
+// one section makes every other section louder and balancing two cues against
+// each other becomes circular. The mix sets the final level anyway.
+// Drive into a soft saturator and let it round off the peaks, rather than
+// normalising to them: a struck six-note chord puts a 3 ms transient 10 dB
+// over anything else in the piece, and dividing the whole score by it throws
+// away the level everywhere else. Below about a third of full scale this is
+// linear, so the quiet two thirds of the film are untouched.
+const MASTER = 2.57, CEILING = 0.85;
 let peak = 0;
-for (let c = 0; c < 2; c += 1) for (let i = 0; i < n; i += 1) peak = Math.max(peak, Math.abs(mix[c][i]));
-const norm = Math.pow(10, -6 / 20) / Math.max(peak, 1e-9);
-for (let c = 0; c < 2; c += 1) for (let i = 0; i < n; i += 1) mix[c][i] *= norm;
-
-const out = process.argv[2] ?? "score.wav";
-writeWav(out, mix, SR);
-
-console.log(`${out}  ${(n / SR).toFixed(2)}s  ${BPM.toFixed(1)} BPM  ${BARS} bars  money bar at ${((MONEY_BAR - 1) * BAR).toFixed(2)}s  peak ${db(peak * norm).toFixed(1)} dBFS`);
-console.log("\nsection levels (RMS, dB) - the arc:");
-for (const s of sections) {
-  const a = Math.round(barAt(s.from) * SR), b = Math.min(n, Math.round(barAt(s.to + 1) * SR));
-  const mono = Float32Array.from(mix[0].slice(a, b), (v, i) => (v + mix[1][a + i]) / 2);
-  console.log(`  ${s.name.padEnd(8)} bars ${String(s.from).padStart(2)}-${String(s.to).padStart(2)}  ` +
-    `${barAt(s.from).toFixed(1).padStart(6)}s  ${db(rms(mono)).toFixed(1).padStart(6)} dB`);
+for (let c = 0; c < 2; c += 1) for (let i = 0; i < n; i += 1) {
+  dry[c][i] = CEILING * Math.tanh(dry[c][i] * MASTER / CEILING);
+  peak = Math.max(peak, Math.abs(dry[c][i]));
 }
-// The one alignment that has to be exact, checked rather than assumed.
-const moneyAt = arg("money", 105.71);
-console.log(`\nmoney shot: film ${moneyAt.toFixed(2)}s, bar ${MONEY_BAR} at ${barAt(MONEY_BAR).toFixed(2)}s, off by ${(barAt(MONEY_BAR) - moneyAt).toFixed(3)}s`);
+if (peak > 0.9) console.error(`WARNING: peak ${peak.toFixed(3)} - lower MASTER in videos/score.mjs`);
+
+writeWav(OUT, dry, SR);
+
+// ================================================================== REPORT ==
+const mono = Float32Array.from(dry[0], (v, i) => (v + dry[1][i]) / 2);
+console.log(`${OUT}  ${LEN.toFixed(2)}s  ${BPM} BPM  D Dorian  ${changes.length} chord changes  peak ${db(peak).toFixed(1)} dBFS`);
+console.log(`cues: ${haveCues ? cuesPath : "NOT FOUND - fell back to --money/--len"}` +
+  `   lines: ${hasLines ? `${lines.length} from ${linesPath}` : "none"}`);
+
+console.log("\nthe arc (section, span, relative level written, level measured):");
+for (const s of plan) {
+  const a = Math.round(s.from * SR), b = Math.min(n, Math.round(s.to * SR));
+  console.log(`  ${s.name.padEnd(9)} ${s.from.toFixed(1).padStart(6)} - ${s.to.toFixed(1).padStart(6)}s ` +
+    `${String(s.level).padStart(6)} dB  ${db(rms(mono, a, b)).toFixed(1).padStart(6)} dB RMS`);
+}
+
+console.log("\nhow close each cue lands to a beat:");
+const report = [["operators (the lift)", cues.operators], ["waitStart (speed-up)", cues.waitStart],
+  ["waitEnd (replies land)", cues.waitEnd], ["moneyShot", cues.moneyShot],
+  ["selected", cues.selected], ["endCard", cues.endCard]];
+let worst = 0;
+for (const [name, t] of report) {
+  const d = snap(t) - t;
+  worst = Math.max(worst, Math.abs(d));
+  console.log(`  ${name.padEnd(24)} ${t.toFixed(3).padStart(8)}s  beat at ${snap(t).toFixed(3)}s  off by ${(d * 1000).toFixed(0).padStart(5)} ms`);
+}
+const allDrift = WEIGHTED.map(([t]) => Math.abs(snap(t) - t));
+console.log(`  worst of the six: ${(worst * 1000).toFixed(0)} ms;  mean over all ${allDrift.length} cues and lines: ` +
+  `${(allDrift.reduce((a, b) => a + b, 0) / allDrift.length * 1000).toFixed(0)} ms`);
+console.log(`\nmusic stops at ${silentBy.toFixed(2)}s; the last words end at ${lastVoice.end.toFixed(2)}s ` +
+  `(${(lastVoice.end - silentBy).toFixed(2)}s of unaccompanied voice)`);
