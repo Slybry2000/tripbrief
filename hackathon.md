@@ -1006,9 +1006,6 @@ cleared and named for the advisor instead of shown, and a requirement answer's
 note loses any number its quote does not contain (`figuresIn`,
 `figureIsQuoted` and `unquotedFigures` in `convex/proposals.ts`). Numbers are
 read the way operators write them: "2,380", "2.380" and "2 380" are all 2380.
-The idea that a value must be supported by its own quote, not merely by a
-quote that exists, came up while reading other entries in this hackathon; the
-implementation here is our own.
 
 **A record of a real run** (`proof/end-to-end.json`, written by
 `scripts/make-proof.mjs`). It is read out of the production database, not
