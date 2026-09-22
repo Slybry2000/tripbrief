@@ -1,0 +1,116 @@
+{
+  "generatedAt": "2026-09-22T16:00:17.172Z",
+  "howThisWasMade": "Read out of the production Convex deployment by scripts/make-proof.mjs. Nothing here is typed by hand.",
+  "deployment": "https://hip-minnow-543.convex.cloud",
+  "liveApp": "https://hip-minnow-543.convex.site",
+  "demoMode": {
+    "on": true,
+    "whatItMeans": "Requests are really sent through AgentMail, but to a stand-in inbox the project owns, never to the operator. The operator's reply is then written by OpenAI in the operator's voice and read back through the same pipeline a real reply uses. The operators, their websites and their published addresses are real."
+  },
+  "totals": {
+    "briefs": 12,
+    "requestsSent": 34,
+    "proposalsRecorded": 36,
+    "repliesReceived": 34,
+    "operatorsFoundOnTheWeb": 56,
+    "operatorsWithAPublishedAddress": 48,
+    "countriesResearched": 2
+  },
+  "firecrawlAndOpenAI_placeResearch": {
+    "place": "Portugal",
+    "sources": [
+      "https://www.audleytravel.com/us/portugal/best-time-to-visit",
+      "https://www.ricksteves.com/europe/portugal/best-time-to-go-to-portugal",
+      "https://www.gocollette.com/en-us/travel-blog/portugal-weather-by-season",
+      "https://www.foodnwinevacations.com/portugal-tours-heart-of-portugal-tour",
+      "https://globalwellnessinstitute.org/wellness-in-portugal/"
+    ]
+  },
+  "run": {
+    "brief": "Wellness Escape",
+    "createdAt": "2026-09-20T05:53:03.781Z",
+    "operators": [
+      {
+        "operator": "Bali Agung Tour",
+        "website": "https://bali-agung-tours.com",
+        "publishedAddress": "agung@bali-agung-tours.com",
+        "addressFoundOnItsOwnSite": true,
+        "requestSentAt": "2026-09-20T05:53:52.034Z",
+        "requestDeliveredTo": "impossiblemoney718@agentmail.to",
+        "agentMailThreadId": "b437f475-4c8b-484f-bc9c-04bceffcd37c",
+        "outboundMessageId": "<010001a0bd60c83a-9c6c4381-5ef3-44e7-bcca-ab828e6cabb2-000000@email.amazonses.com>",
+        "replyReceivedAt": "2026-09-20T05:54:43.164Z",
+        "replyMatchedBy": "thread",
+        "replySimulated": true,
+        "netPricePerPerson": 2600,
+        "requirementsAnswered": 18,
+        "answersWithAVerbatimQuote": 18,
+        "answerTally": {
+          "yes": 18,
+          "partly": 0,
+          "no": 0
+        },
+        "oneQuotedAnswer": {
+          "answer": "yes",
+          "key": "budget",
+          "note": "",
+          "quote": "The total net price per person for the 7-night wellness package is USD 2,600, slightly under your target."
+        }
+      },
+      {
+        "operator": "Explera DMC Indonesia",
+        "website": "https://www.explera.id",
+        "publishedAddress": "b2b@explera.id",
+        "addressFoundOnItsOwnSite": true,
+        "requestSentAt": "2026-09-20T05:53:52.575Z",
+        "requestDeliveredTo": "impossiblemoney718@agentmail.to",
+        "agentMailThreadId": "c22f197f-0a73-4772-b738-6daf38e7efe8",
+        "outboundMessageId": "<010001a0bd60cade-f2430f5a-8220-4bfc-98e7-a292778eae73-000000@email.amazonses.com>",
+        "replyReceivedAt": "2026-09-20T05:54:44.266Z",
+        "replyMatchedBy": "thread",
+        "replySimulated": true,
+        "netPricePerPerson": 2625,
+        "requirementsAnswered": 18,
+        "answersWithAVerbatimQuote": 18,
+        "answerTally": {
+          "yes": 16,
+          "partly": 2,
+          "no": 0
+        },
+        "oneQuotedAnswer": {
+          "answer": "partly",
+          "key": "dayShape",
+          "note": "",
+          "quote": "Two days require an early start before 9am due to transfer times: Day 3 for the transfer to East Java and Day 5 for a gentle cultural outing; these are exceptions to the no start before 9am rule."
+        }
+      },
+      {
+        "operator": "Come2Indonesia",
+        "website": "https://come2indonesia.com",
+        "publishedAddress": "info@come2indonesia.com",
+        "addressFoundOnItsOwnSite": true,
+        "requestSentAt": "2026-09-20T05:53:53.188Z",
+        "requestDeliveredTo": "impossiblemoney718@agentmail.to",
+        "agentMailThreadId": "a2bb0797-1908-4714-bee9-1c0691768db3",
+        "outboundMessageId": "<010001a0bd60cd15-be477276-076f-4bd8-9a28-4e5fac92c3dc-000000@email.amazonses.com>",
+        "replyReceivedAt": "2026-09-20T05:54:31.541Z",
+        "replyMatchedBy": "thread",
+        "replySimulated": true,
+        "netPricePerPerson": 2625,
+        "requirementsAnswered": 18,
+        "answersWithAVerbatimQuote": 18,
+        "answerTally": {
+          "yes": 16,
+          "partly": 2,
+          "no": 0
+        },
+        "oneQuotedAnswer": {
+          "answer": "partly",
+          "key": "rooms",
+          "note": "",
+          "quote": "We can hold the 8 twin rooms as requested; singles are limited, so we offer one single included and the other single at a supplement; the two twins willing to convert to doubles can be accommodated without price changes."
+        }
+      }
+    ]
+  }
+}

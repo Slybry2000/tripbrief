@@ -992,3 +992,33 @@ line can finish; before, it was cut off mid-word.
 Final file 2:21, 1920x1080, 38 MB, -14.0 LUFS integrated, -1.2 dBTP. Checked
 by transcribing the finished audio: all twenty lines present, in order, none
 overlapping, the last one complete.
+
+### 2026-09-22 - a figure must be inside its own quote, and a record of a real run
+
+**The figure check.** The reply check already refused a quote the operator
+never wrote. It did not catch a genuine quote sitting beside a number nobody
+wrote: "We can host 16 guests" is a real sentence and supports nothing about a
+price of 2,600. Now the figures a comparison is decided on (net price, group
+size, deposit) must each appear inside the evidence quote the model gave for
+that field; checking against the whole reply would be weaker, because "16" or
+"2027" turn up in unrelated sentences. A figure with nothing behind it is
+cleared and named for the advisor instead of shown, and a requirement answer's
+note loses any number its quote does not contain (`figuresIn`,
+`figureIsQuoted` and `unquotedFigures` in `convex/proposals.ts`). Numbers are
+read the way operators write them: "2,380", "2.380" and "2 380" are all 2380.
+The idea that a value must be supported by its own quote, not merely by a
+quote that exists, came up while reading other entries in this hackathon; the
+implementation here is our own.
+
+**A record of a real run** (`proof/end-to-end.json`, written by
+`scripts/make-proof.mjs`). It is read out of the production database, not
+typed: the three operators of the most recent complete run, the addresses
+each one publishes on its own site, the AgentMail thread and outbound message
+id of every request, when each reply landed and how it was matched to its
+request, and every answer's verbatim quote. It states demo mode plainly: the
+requests are really sent, to a stand-in inbox the project owns, and the
+replies are written by OpenAI in each operator's voice. Capability tokens and
+account ids are never read into it. At the time of writing: 56 operators found
+on the web, 48 with a published address, 34 requests sent, 34 replies read.
+
+84 tests, typecheck and lint pass.
