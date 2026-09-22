@@ -1028,3 +1028,10 @@ body { background: var(--paper); font-family: var(--body); color: var(--ink); -w
 @media (min-width: 761px) { .reader-facts > div:last-child:nth-child(odd) { grid-column: auto; } }
 
 .progress-wrap { background: var(--paper); }
+
+/* Follow-ups: a draft spans the operator's row, and the open must-haves read as a list. */
+.follow-up-panel .reply-compose .draft-review { flex: 1 1 100%; margin-top: 8px; }
+.follow-up-panel .draft-review label { display: grid; gap: 6px; font-size: .85rem; color: var(--muted); }
+.follow-up-panel .draft-review textarea { width: 100%; font-size: .9rem; line-height: 1.45; }
+.follow-up-panel .gap-list { margin: 8px 0 0; padding-left: 18px; color: var(--red); font-size: .85rem; display: grid; gap: 4px; }
+.follow-up-panel .inline-success { margin-top: 8px; }

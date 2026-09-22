@@ -2,6 +2,7 @@ import { defineApp } from "convex/server";
 import { v } from "convex/values";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config";
 import staticHosting from "@convex-dev/static-hosting/convex.config";
+import workflow from "@convex-dev/workflow/convex.config";
 
 const app = defineApp({
   env: {
@@ -28,9 +29,15 @@ const app = defineApp({
     // The stand-in inbox that receives every demo request in place of the real
     // operator's address.
     DEMO_OPERATOR_INBOX: v.optional(v.string()),
+    // How many days a sent request may go unanswered before one polite nudge is
+    // drafted for the agency to approve. Three when unset.
+    FOLLOW_UP_NUDGE_DAYS: v.optional(v.string()),
   },
 });
 app.use(rateLimiter);
+// The nudge timer: one durable workflow per sent request, which survives
+// redeploys while it sleeps.
+app.use(workflow);
 // The app owns the root so Convex Auth keeps its exact /api/auth and
 // /.well-known routes; convex/http.ts registers the static catch-all last.
 app.use(staticHosting);

@@ -140,6 +140,22 @@ export const record = internalMutation({
         row = byThread;
         matchedBy = "thread";
       }
+      // A follow-up is sent in the request's own thread, but should the provider
+      // ever hand back a new thread for it, the answer is still exact.
+      if (!row) {
+        const followUp = await ctx.db
+          .query("followUps")
+          .withIndex("by_providerThreadId", (q) => q.eq("providerThreadId", args.threadId))
+          .first();
+        const request =
+          followUp && followUp.owner === mailbox.owner
+            ? await ctx.db.get("briefOperators", followUp.briefOperatorId)
+            : null;
+        if (request) {
+          row = request;
+          matchedBy = "thread";
+        }
+      }
     }
     const from = args.fromEmail.trim().toLowerCase();
     if (!row && from) {

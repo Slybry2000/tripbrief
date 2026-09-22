@@ -393,6 +393,10 @@ briefs: defineTable({
     sendError: v.optional(v.string()),
     openedAt: v.optional(v.number()),
     proposalId: v.optional(v.id("proposals")),
+    // The one nudge timer this request may ever have, and when it wakes. Set once,
+    // when the request is first sent.
+    nudgeWorkflowId: v.optional(v.string()),
+    nudgeDueAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -458,6 +462,49 @@ briefs: defineTable({
     .index("by_owner", ["owner"])
     .index("by_messageId", ["messageId"])
     .index("by_inboxId", ["inboxId"]),
+
+  // A message the agency may send an operator after the request, in the same
+  // thread: a nudge when it has gone quiet, or a question about the must-haves its
+  // reply left open. It is a draft until a person approves its exact text, and the
+  // approval is kept beside the text so any later edit is seen to void it.
+  followUps: defineTable({
+    briefId: v.id("briefs"),
+    owner: v.string(),
+    briefOperatorId: v.id("briefOperators"),
+    operatorSlug: v.string(),
+    kind: v.union(v.literal("nudge"), v.literal("gaps")),
+    // "nudge:<request>" or "gaps:<brief>:<operator>". One row per key, ever, which
+    // is what limits a request to one nudge and an operator to one gap question.
+    dedupeKey: v.string(),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("sending"),
+      v.literal("sent"),
+      v.literal("failed"),
+      v.literal("discarded"),
+      v.literal("cancelled"),
+    ),
+    // The requirement keys a gap question asks about. Bounded by the brief's
+    // requirement list, which is a few dozen at most.
+    requirementKeys: v.array(v.string()),
+    text: v.string(),
+    // Exactly the text the agency approved. It must still equal `text` at the
+    // moment of sending, or nothing is sent.
+    approvedText: v.optional(v.string()),
+    approvedAt: v.optional(v.number()),
+    approvedBy: v.optional(v.string()),
+    deliveredTo: v.optional(v.string()),
+    providerMessageId: v.optional(v.string()),
+    providerThreadId: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+    sendError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_dedupeKey", ["dedupeKey"])
+    .index("by_briefId", ["briefId"])
+    .index("by_providerThreadId", ["providerThreadId"]),
 
   // Published websites an advisor found while looking for new operators. A
   // candidate is evidence, not a network member: it becomes an operator only

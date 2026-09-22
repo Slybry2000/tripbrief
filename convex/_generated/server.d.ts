@@ -37,6 +37,7 @@ type Env = {
   readonly DEMO_MODE: string | undefined;
   readonly DEMO_OPERATOR_INBOX: string | undefined;
   readonly FIRECRAWL_API_KEY: string | undefined;
+  readonly FOLLOW_UP_NUDGE_DAYS: string | undefined;
   readonly OPENAI_API_KEY: string | undefined;
   readonly SEND_ALLOWED_EMAILS: string | undefined;
   readonly SITE_URL: string | undefined;
