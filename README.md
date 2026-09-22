@@ -274,3 +274,9 @@ app still works, and nothing can send.
   against the published baselines.
 - `src/data/` — destinations and ready-made programs (reference data).
 - `hackathon.md` — the build log, in order, saying what actually ran.
+
+## Licence
+
+All rights reserved. The source is published so it can be read and judged, not
+reused: see `LICENSE.txt`. Revisions up to commit 3283d63 (2026-09-22) were
+published under Apache 2.0, and that grant still covers those revisions.
