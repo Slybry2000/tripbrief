@@ -5,7 +5,7 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 import { api } from "./_generated/api";
-import { cleanAnswers, validateDraft } from "./proposals";
+import { cleanAnswers, figuresIn, validateDraft } from "./proposals";
 import schema from "./schema";
 import { demoBrief as brief } from "./fixtures.test";
 
@@ -165,4 +165,87 @@ test("answers are bounded and one per requirement", () => {
   const cleaned = cleanAnswers(many);
   expect(cleaned).toHaveLength(40);
   expect(cleaned[0].note.length).toBeLessThanOrEqual(600);
+});
+
+test("a figure is read the way an operator writes it", () => {
+  expect(figuresIn("Net is 2,380 USD")).toEqual([2380]);
+  expect(figuresIn("2.380 EUR por persona")).toEqual([2380]);
+  expect(figuresIn("IDR 38 500 000 each")).toEqual([38500000]);
+  expect(figuresIn("a 12.5% deposit, 16 guests")).toEqual([12.5, 16]);
+  // A separator is punctuation or a space, never a digit or a letter: an
+  // earlier build read the zeros in "10000" as separators and saw 1000.
+  expect(figuresIn("a 10000 IDR fee in 2027")).toEqual([10000, 2027]);
+  expect(figuresIn(`2${String.fromCharCode(160)}380 per person`)).toEqual([2380]);
+});
+
+// A real quote can still sit beside a number nobody wrote. These pin the rule
+// that each figure the comparison is decided on must be inside its own quote.
+const figureReply =
+  "We can host 16 guests. Net is 2,380 USD per person, land only. A 30% deposit secures the dates.";
+const figureDraft = (draft: Record<string, unknown>, evidence: { field: string; quote: string }[]) =>
+  validateDraft(
+    { draft: { programName: "Chiang Mai Week", startDate: "2027-10-16", ...draft }, evidence, caveats: [] },
+    figureReply,
+    brief,
+    [{ slug: "thailand", name: "Thailand" }],
+  );
+
+test("a price stands only when the operator's quote for it states that price", () => {
+  const kept = figureDraft({ netPricePerPerson: 2380 }, [
+    { field: "netPricePerPerson", quote: "Net is 2,380 USD per person" },
+  ]);
+  expect(kept.draft.netPricePerPerson).toBe(2380);
+
+  // The quote is genuine, but the price the model put beside it is not in it.
+  const invented = figureDraft({ netPricePerPerson: 2600 }, [
+    { field: "netPricePerPerson", quote: "Net is 2,380 USD per person" },
+  ]);
+  expect(invented.draft.netPricePerPerson).toBe(0);
+  expect(invented.droppedEvidence).toContain("Net price per person: not in the operator's words");
+});
+
+test("a figure borrowed from a different sentence of the reply does not count", () => {
+  // 16 is in the reply, but only the price was quoted: the group size has no
+  // quote of its own, so it is cleared rather than trusted.
+  const borrowed = figureDraft({ groupSizeAccepted: 16, depositPercent: 30 }, [
+    { field: "netPricePerPerson", quote: "Net is 2,380 USD per person" },
+    { field: "depositPercent", quote: "A 30% deposit secures the dates." },
+  ]);
+  expect(borrowed.draft.groupSizeAccepted).toBe(0);
+  expect(borrowed.draft.depositPercent).toBe(30);
+  expect(borrowed.droppedEvidence).toContain("Group size accepted: not in the operator's words");
+});
+
+test("an answer's note may not state a number its quote does not contain", () => {
+  const result = validateDraft(
+    {
+      draft: {
+        programName: "Chiang Mai Week",
+        startDate: "2027-10-16",
+        requirementAnswers: [
+          // Real quote, invented figure in the note.
+          { key: "budget", answer: "yes", note: "Comes in at 2,600 per person", quote: "Net is 2,380 USD per person, land only." },
+          { key: "travelerCount", answer: "yes", note: "All 16 fit", quote: "We can host 16 guests." },
+        ],
+      },
+      evidence: [{ field: "netPricePerPerson", quote: "Net is 2,380 USD per person" }],
+      caveats: [],
+    },
+    figureReply,
+    brief,
+    [{ slug: "thailand", name: "Thailand" }],
+    {
+      requirements: [
+        { key: "budget", id: "R1", label: "Budget", statement: "A net of $2,625" },
+        { key: "travelerCount", id: "R3", label: "Group size", statement: "16 travellers" },
+      ],
+    },
+  );
+  const byKey = new Map(result.draft.requirementAnswers.map((item) => [item.key, item]));
+  // The answer and the operator's words stay; only the unsupported note goes.
+  expect(byKey.get("budget")?.answer).toBe("yes");
+  expect(byKey.get("budget")?.quote).toBe("Net is 2,380 USD per person, land only.");
+  expect(byKey.get("budget")?.note).toBe("");
+  expect(byKey.get("travelerCount")?.note).toBe("All 16 fit");
+  expect(result.droppedEvidence).toContain("R1 Budget: a figure not in the quote");
 });

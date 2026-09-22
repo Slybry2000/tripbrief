@@ -49,6 +49,32 @@ export function quoteIsPresent(quote: string, source: string) {
   return needle.length > 0 && normaliseQuote(source).includes(needle);
 }
 
+// Every number written in a piece of text, with thousands separators read as
+// such: "2,380", "2.380" and "2 380" are all 2380, and "12.5" stays 12.5.
+export function figuresIn(value: string): number[] {
+  const joined = normaliseQuote(value).replace(/(\d)[,. ](?=\d{3}(?!\d))/g, "$1");
+  return (joined.match(/\d+(?:\.\d+)?/g) ?? []).map(Number);
+}
+
+// A quote that is really in the reply can still sit beside a number the
+// operator never wrote: "We can host 16 guests" does not support a price of
+// 2,600. So a figure only counts as the operator's when it is inside the words
+// quoted for it.
+export function figureIsQuoted(figure: number, quote: string) {
+  if (!figure) return true;
+  return figuresIn(quote).some((found) => Math.abs(found - figure) < 0.5);
+}
+
+// The figures a sentence of the model's own asserts that its quote does not.
+// Single digits are left alone, because "day 2" or "one of 3" is ordinal
+// talk rather than a claim about a price, a group size or a deadline.
+export function unquotedFigures(note: string, quote: string) {
+  const quoted = figuresIn(quote);
+  return figuresIn(note).filter(
+    (figure) => figure >= 10 && !quoted.some((found) => Math.abs(found - figure) < 0.5),
+  );
+}
+
 // Every field the operator or the advisor supplies is normalised here. Optional
 // columns are always written with a neutral value rather than omitted, so a
 // revision can clear an earlier claim without a partial-update ambiguity.
@@ -415,7 +441,7 @@ export const draftFromReply = action({
       apiKey: key,
       model: MODEL,
       developer:
-        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Dates are YYYY-MM-DD; when the reply gives a day and month without a year, use the year of the travel window. Every item in evidence, and every requirement answer's quote, must be copied character for character out of the reply, exactly as written: do not paraphrase, shorten, tidy, correct or join two sentences. Answer a numbered requirement with yes, partly or no only when the reply addresses it, quoting the words that show it; answer not_stated otherwise. This is a review draft for a human, never a recommendation.",
+        "You read an incoming tour operator's emailed reply to a travel agency and fill in a structured proposal. Use only what the reply states. Never invent a price, a date, an inclusion or a deadline: use an empty string, 0 or an empty list when the reply does not say. Dates are YYYY-MM-DD; when the reply gives a day and month without a year, use the year of the travel window. Every item in evidence, and every requirement answer's quote, must be copied character for character out of the reply, exactly as written: do not paraphrase, shorten, tidy, correct or join two sentences. Give netPricePerPerson, groupSizeAccepted and depositPercent each an evidence item whose field is exactly that name, quoting the words that state the figure; a figure without one is cleared. A requirement answer's note must not state a number its quote does not contain. Answer a numbered requirement with yes, partly or no only when the reply addresses it, quoting the words that show it; answer not_stated otherwise. This is a review draft for a human, never a recommendation.",
       user: [
         "THE REQUEST",
         `Destination options the operator could propose: ${allowedDestinations
@@ -700,13 +726,31 @@ export function validateDraft(
       droppedEvidence.push(`${spec.id} ${spec.label}`);
       continue;
     }
-    requirementAnswers.push({
-      key,
-      answer,
-      note: typeof entry.note === "string" ? text(entry.note, 600) : "",
-      quote: text(quote, 600),
-    });
+    // The answer and its quote stand; a note that states a figure the quote
+    // does not contain is the model speaking, not the operator, so it goes.
+    let note = typeof entry.note === "string" ? text(entry.note, 600) : "";
+    if (verifiable && unquotedFigures(note, quote).length > 0) {
+      droppedEvidence.push(`${spec.id} ${spec.label}: a figure not in the quote`);
+      note = "";
+    }
+    requirementAnswers.push({ key, answer, note, quote: text(quote, 600) });
   }
+
+  // The figures a comparison is decided on must each be in the operator's own
+  // words quoted for that field. The model names the field it is evidencing,
+  // so a price is checked against the price quote, not against the reply as a
+  // whole, where "16" or "2027" could turn up in some unrelated sentence. A
+  // figure with no quote behind it is cleared, and named, rather than trusted.
+  const quotesFor = (field: string) =>
+    cleanedEvidence
+      .filter((item) => item.field.toLowerCase() === field.toLowerCase())
+      .map((item) => item.quote);
+  const checkFigure = (field: string, label: string, value: number) => {
+    if (!verifiable || !value) return value;
+    if (quotesFor(field).some((quote) => figureIsQuoted(value, quote))) return value;
+    droppedEvidence.push(`${label}: not in the operator's words`);
+    return 0;
+  };
 
   // If the model produced evidence and none of it can be found, it is inventing
   // wholesale and the draft must not be offered at all.
@@ -723,7 +767,11 @@ export function validateDraft(
       endDate: iso(str("endDate")),
       nights: Math.max(0, Math.min(120, Math.round(num("nights")))),
       availability,
-      groupSizeAccepted: Math.max(0, Math.round(num("groupSizeAccepted"))),
+      groupSizeAccepted: checkFigure(
+        "groupSizeAccepted",
+        "Group size accepted",
+        Math.max(0, Math.round(num("groupSizeAccepted"))),
+      ),
       hotelLevel: text(str("hotelLevel"), 60),
       hotelNotes: text(str("hotelNotes"), LONG),
       transportation: arr("transportation"),
@@ -735,14 +783,19 @@ export function validateDraft(
       changesOrAdditions: arr("changesOrAdditions"),
       cannotProvide: arr("cannotProvide"),
       finalFit: Math.max(0, Math.min(100, Math.round(num("finalFit")))),
-      netPricePerPerson: money(num("netPricePerPerson")),
+      netPricePerPerson: checkFigure(
+        "netPricePerPerson",
+        "Net price per person",
+        money(num("netPricePerPerson")),
+      ),
       currency: ["USD", "EUR", "IDR"].includes(str("currency"))
         ? str("currency")
         : "USD",
       pricingAssumptions: text(str("pricingAssumptions"), LONG),
-      depositPercent: Math.max(
-        0,
-        Math.min(100, Math.round(num("depositPercent"))),
+      depositPercent: checkFigure(
+        "depositPercent",
+        "Deposit percent",
+        Math.max(0, Math.min(100, Math.round(num("depositPercent")))),
       ),
       depositDueDaysBefore: days(num("depositDueDaysBefore")),
       finalHeadcountDaysBefore: days(num("finalHeadcountDaysBefore")),
