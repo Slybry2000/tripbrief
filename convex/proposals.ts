@@ -4,6 +4,7 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { briefFields, proposalRecord, requirementAnswer } from "./schema";
 import { structuredResponse } from "./openai";
+import { readDocuments } from "./replyAttachments";
 
 const MODEL = "gpt-4.1-mini";
 const SHORT = 160;
@@ -133,6 +134,8 @@ export function cleanAnswers(answers: AnswerInput[]): AnswerInput[] {
       answer: item.answer,
       note: text(item.note, 600),
       ...(quote ? { quote } : {}),
+      // The mark travels with the quote it describes, and never without one.
+      ...(quote && item.unverified ? { unverified: true } : {}),
     });
   }
   return [...byKey.values()].slice(0, 40);
@@ -274,6 +277,8 @@ export const recordEmailed = mutation({
     proposal: proposalRecord,
     sourceText: v.string(),
     standardised: v.boolean(),
+    // Figures the draft kept on a quote from an attached PDF.
+    unverifiedFields: v.optional(v.array(v.string())),
   },
   returns: v.object({ proposalId: v.id("proposals") }),
   handler: async (ctx, args) => {
@@ -311,6 +316,11 @@ export const recordEmailed = mutation({
       standardisedAt: args.standardised ? now : 0,
       standardisedBy: args.standardised ? MODEL : "",
       sourceText: args.sourceText.trim().slice(0, 20_000),
+      // Written whenever there is a mark to set or one to clear, so a proposal
+      // re-recorded from the email alone does not keep an earlier PDF-only mark.
+      ...(args.unverifiedFields?.length || existing?.unverifiedFields
+        ? { unverifiedFields: lines(args.unverifiedFields ?? [], 10) }
+        : {}),
     };
     let proposalId;
     if (existing) {
@@ -381,7 +391,10 @@ type RequirementBrief = Infer<typeof requirementBrief>;
 type DraftFields = Infer<typeof draftValidator>;
 type DraftReply = {
   draft: DraftFields;
-  evidence: { field: string; quote: string }[];
+  evidence: { field: string; quote: string; unverified?: boolean }[];
+  attachmentsRead?: string[];
+  attachmentsLeftOut?: string[];
+  unverifiedFields?: string[];
   droppedEvidence: string[];
   quoteCheck: boolean;
   caveats: string[];
@@ -396,10 +409,25 @@ export const draftFromReply = action({
     sourceText: v.string(),
     destinations: v.array(v.object({ slug: v.string(), name: v.string() })),
     requirements: v.optional(v.array(requirementBrief)),
+    // The stored reply the text came from. When it carried PDFs, the model reads
+    // those too.
+    inboxMessageId: v.optional(v.id("inboxMessages")),
   },
   returns: v.object({
     draft: draftValidator,
-    evidence: v.array(v.object({ field: v.string(), quote: v.string() })),
+    evidence: v.array(
+      v.object({
+        field: v.string(),
+        quote: v.string(),
+        // True for a quote from an attached PDF, which could not be checked.
+        unverified: v.optional(v.boolean()),
+      }),
+    ),
+    // The PDFs the model read, and any it could not be given.
+    attachmentsRead: v.optional(v.array(v.string())),
+    attachmentsLeftOut: v.optional(v.array(v.string())),
+    // Figures kept only on a PDF quote.
+    unverifiedFields: v.optional(v.array(v.string())),
     // Fields whose quote could not be found in the reply. The draft is still
     // useful, but the advisor knows exactly which parts to check by hand — the
     // rule from the RFP work: anything unsupported is dropped and named.
@@ -427,6 +455,15 @@ export const draftFromReply = action({
       );
     const key = env.OPENAI_API_KEY?.trim();
     if (!key) throw new ConvexError("AI drafting has not been configured.");
+    const attached = args.inboxMessageId
+      ? await readDocuments(
+          ctx,
+          await ctx.runQuery(internal.replyAttachments.forDraft, {
+            briefId: args.briefId,
+            inboxMessageId: args.inboxMessageId,
+          }),
+        )
+      : { files: [], read: [], leftOut: [] };
     await ctx.runMutation(internal.integrationLimits.consumeAnalysis, {
       briefId: args.briefId,
     });
@@ -467,6 +504,13 @@ export const draftFromReply = action({
         "",
         "THE OPERATOR'S REPLY",
         sourceText,
+        ...(attached.files.length
+          ? [
+              "",
+              `THE OPERATOR ATTACHED ${attached.files.length === 1 ? "A PDF" : `${attached.files.length} PDFS`} TO THE REPLY: ${attached.read.join(", ")}`,
+              "The attachment is part of the reply. Where the email itself says something, quote the email. Only for what the email does not say, quote the attachment, copied character for character.",
+            ]
+          : []),
       ].join("\n"),
       schemaName: "operator_proposal_draft",
       schema: draftSchema(
@@ -474,10 +518,18 @@ export const draftFromReply = action({
         allowedDestinations.map((item) => item.slug),
         requirements,
       ),
+      ...(attached.files.length ? { files: attached.files } : {}),
     });
-    return validateDraft(raw, sourceText, brief, allowedDestinations, {
+    const result = validateDraft(raw, sourceText, brief, allowedDestinations, {
       requirements,
+      documentRead: attached.files.length > 0,
     });
+    if (!attached.read.length && !attached.leftOut.length) return result;
+    return {
+      ...result,
+      attachmentsRead: attached.read,
+      attachmentsLeftOut: attached.leftOut,
+    };
   },
 });
 
@@ -634,12 +686,22 @@ export function validateDraft(
     "desiredExperiences" | "importantRequirements"
   >,
   destinations: { slug: string; name: string }[],
-  options: { verifiable?: boolean; requirements?: RequirementBrief[] } = {},
+  options: {
+    verifiable?: boolean;
+    requirements?: RequirementBrief[];
+    documentRead?: boolean;
+  } = {},
 ) {
   // A document the model read directly cannot have its quotes checked against
   // text we never extracted, so the draft is returned as unverified instead of
   // being refused. The interface says which of the two it is holding.
   const verifiable = options.verifiable !== false;
+  // An email that came with a PDF is both at once. A quote found in the email is
+  // checked exactly as before. One that is not may be the PDF's words or may be
+  // invented, and we cannot tell which, so instead of being dropped it is kept
+  // and marked unverified: the advisor opens the PDF to check it.
+  const documentRead = verifiable && options.documentRead === true;
+  const unverifiedFields: string[] = [];
   const reject = (): never => {
     throw new ConvexError(
       "The AI draft did not match the operator's reply. Record the proposal by hand instead.",
@@ -681,7 +743,7 @@ export function validateDraft(
     ? (str("availability") as ProposalInput["availability"])
     : ("Confirmation Required" as const);
 
-  const cleanedEvidence: { field: string; quote: string }[] = [];
+  const cleanedEvidence: { field: string; quote: string; unverified?: boolean }[] = [];
   const droppedEvidence: string[] = [];
   for (const item of evidence) {
     if (
@@ -696,6 +758,10 @@ export function validateDraft(
     const quote = item.quote.trim();
     if (!quote) continue;
     const field = text(item.field, 60);
+    if (documentRead && !quoteIsPresent(quote, sourceText)) {
+      cleanedEvidence.push({ field, quote: text(quote, 600), unverified: true });
+      continue;
+    }
     if (verifiable && !quoteIsPresent(quote, sourceText)) {
       // The model wrote something the operator did not. That quote is never shown
       // as evidence; the field is reported instead, so the advisor checks it.
@@ -722,7 +788,9 @@ export function validateDraft(
     if (!spec || (answer !== "yes" && answer !== "partly" && answer !== "no"))
       continue;
     const quote = typeof entry.quote === "string" ? entry.quote.trim() : "";
-    if (!quote || (verifiable && !quoteIsPresent(quote, sourceText))) {
+    const fromDocument =
+      documentRead && quote.length > 0 && !quoteIsPresent(quote, sourceText);
+    if (!quote || (verifiable && !fromDocument && !quoteIsPresent(quote, sourceText))) {
       droppedEvidence.push(`${spec.id} ${spec.label}`);
       continue;
     }
@@ -733,7 +801,13 @@ export function validateDraft(
       droppedEvidence.push(`${spec.id} ${spec.label}: a figure not in the quote`);
       note = "";
     }
-    requirementAnswers.push({ key, answer, note, quote: text(quote, 600) });
+    requirementAnswers.push({
+      key,
+      answer,
+      note,
+      quote: text(quote, 600),
+      ...(fromDocument ? { unverified: true } : {}),
+    });
   }
 
   // The figures a comparison is decided on must each be in the operator's own
@@ -741,13 +815,23 @@ export function validateDraft(
   // so a price is checked against the price quote, not against the reply as a
   // whole, where "16" or "2027" could turn up in some unrelated sentence. A
   // figure with no quote behind it is cleared, and named, rather than trusted.
-  const quotesFor = (field: string) =>
+  const quotesFor = (field: string, unverified = false) =>
     cleanedEvidence
-      .filter((item) => item.field.toLowerCase() === field.toLowerCase())
+      .filter(
+        (item) =>
+          item.field.toLowerCase() === field.toLowerCase() &&
+          (item.unverified === true) === unverified,
+      )
       .map((item) => item.quote);
   const checkFigure = (field: string, label: string, value: number) => {
     if (!verifiable || !value) return value;
     if (quotesFor(field).some((quote) => figureIsQuoted(value, quote))) return value;
+    // The figure is inside its own quote, but that quote is the PDF's: it
+    // stands, named as unchecked, rather than being shown as the email's.
+    if (documentRead && quotesFor(field, true).some((quote) => figureIsQuoted(value, quote))) {
+      unverifiedFields.push(field);
+      return value;
+    }
     droppedEvidence.push(`${label}: not in the operator's words`);
     return 0;
   };
@@ -807,6 +891,7 @@ export function validateDraft(
     },
     evidence: cleanedEvidence.slice(0, 12),
     droppedEvidence: [...new Set(droppedEvidence)].slice(0, 40),
+    ...(documentRead ? { unverifiedFields: [...new Set(unverifiedFields)] } : {}),
     quoteCheck: verifiable,
     caveats: Array.isArray(caveats)
       ? caveats

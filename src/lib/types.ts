@@ -242,6 +242,8 @@ export type OperatorProposal = {
   simulated?: boolean;
   // The operator's own words, when the proposal came from an email.
   sourceText?: string;
+  // Figures that stand only on a quote from an attached PDF, not checked.
+  unverifiedFields?: string[];
 };
 
 export type RequirementAnswerValue = "yes" | "partly" | "no";
@@ -251,6 +253,8 @@ export type RequirementAnswer = {
   answer: RequirementAnswerValue;
   note: string;
   quote?: string;
+  // The quote came from a PDF the operator attached, and could not be checked.
+  unverified?: boolean;
 };
 
 export type WorkbackItem = {

@@ -13,7 +13,10 @@ export async function structuredResponse(args: {
   // A document the model should read as well as the text. Used when an operator
   // hands over their own trip document rather than a page we can fetch.
   file?: { filename: string; dataUrl: string };
+  // More than one, for an emailed reply that carried several PDFs.
+  files?: { filename: string; dataUrl: string }[];
 }): Promise<unknown> {
+  const documents = [...(args.file ? [args.file] : []), ...(args.files ?? [])];
   let response: Response;
   try {
     response = await fetch("https://api.openai.com/v1/responses", {
@@ -27,16 +30,16 @@ export async function structuredResponse(args: {
         store: false,
         input: [
           { role: "developer", content: args.developer },
-          args.file
+          documents.length
             ? {
                 role: "user",
                 content: [
                   { type: "input_text", text: args.user },
-                  {
+                  ...documents.map((document) => ({
                     type: "input_file",
-                    filename: args.file.filename,
-                    file_data: args.file.dataUrl,
-                  },
+                    filename: document.filename,
+                    file_data: document.dataUrl,
+                  })),
                 ],
               }
             : { role: "user", content: args.user },
