@@ -1036,3 +1036,18 @@ body { background: var(--paper); font-family: var(--body); color: var(--ink); -w
 @media (min-width: 761px) { .reader-facts > div:last-child:nth-child(odd) { grid-column: auto; } }
 
 .progress-wrap { background: var(--paper); }
+
+/* Attachments on an emailed reply, and anything read only from one. Gold, the
+   same as "partly": present, but not something to take on trust. */
+.reader-attachments { margin: 0 0 18px; padding-bottom: 6px; border-bottom: 1px dashed var(--line); }
+.reader-attachments h4 { margin-top: 0; }
+.reader-attachments ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.reader-attachments li { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); }
+.reader-attachments li.skipped, .reader-attachments li.failed { background: #f4f6f5; }
+.reader-attachments a { color: var(--green); font-weight: 700; word-break: break-all; }
+.reader-attachments small { color: var(--muted); font-size: .8rem; }
+.attachment-count { display: block; color: var(--muted); font-size: .8rem; }
+.evidence-list blockquote.unverified { border-left-color: var(--gold); background: var(--gold-bg); }
+.answer-quote.unverified, .requirement-grid q.unverified { border-left-color: var(--gold); }
+.unverified-mark { display: block; color: var(--gold); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.inline-warning.unverified-notice { color: var(--gold); background: var(--gold-bg); border-color: #ead3a6; }

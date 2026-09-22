@@ -220,6 +220,8 @@ export const get = query({
           simulated: v.boolean(),
           // The operator's own words when the proposal came from an email.
           sourceText: v.string(),
+          // Figures that stand only on an attached PDF, not checked.
+          unverifiedFields: v.optional(v.array(v.string())),
         }),
       ),
     }),
@@ -292,6 +294,9 @@ export const get = query({
         requirementAnswers: proposal.requirementAnswers ?? [],
         simulated: proposal.simulated === true,
         sourceText: proposal.sourceText ?? "",
+        ...(proposal.unverifiedFields?.length
+          ? { unverifiedFields: proposal.unverifiedFields }
+          : {}),
       })),
     };
   },
@@ -587,6 +592,15 @@ export const remove = mutation({
       .take(200);
     for (const message of messages)
       await ctx.db.delete("inboxMessages", message._id);
+    // The PDFs operators attached go with the mail they came on.
+    const attachments = await ctx.db
+      .query("inboxAttachments")
+      .withIndex("by_briefId", (q) => q.eq("briefId", brief._id))
+      .take(200);
+    for (const attachment of attachments) {
+      if (attachment.storageId) await ctx.storage.delete(attachment.storageId);
+      await ctx.db.delete("inboxAttachments", attachment._id);
+    }
     await ctx.db.delete("briefs", brief._id);
     return null;
   },

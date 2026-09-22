@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { ConvexError, v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import type { Doc } from "./_generated/dataModel";
+import { attachmentMeta, noteAttachments, readAttachments } from "./replyAttachments";
 
 const clean = (value: unknown, limit: number) =>
   typeof value === "string" ? value.slice(0, limit) : "";
@@ -106,6 +107,8 @@ export const record = internalMutation({
     text: v.string(),
     messageId: v.string(),
     receivedAt: v.number(),
+    // Only what the webhook says about each file; the bytes are fetched after.
+    attachments: v.optional(v.array(attachmentMeta)),
   },
   returns: v.union(
     v.literal("recorded"),
@@ -157,7 +160,7 @@ export const record = internalMutation({
     }
 
     const now = Date.now();
-    await ctx.db.insert("inboxMessages", {
+    const inboxMessageId = await ctx.db.insert("inboxMessages", {
       briefId: row?.briefId ?? null,
       owner: mailbox.owner,
       briefOperatorId: row?._id,
@@ -173,6 +176,12 @@ export const record = internalMutation({
       messageId: args.messageId.slice(0, 300),
       receivedAt: args.receivedAt,
     });
+    if (args.attachments?.length)
+      await noteAttachments(
+        ctx,
+        { _id: inboxMessageId, briefId: row?.briefId ?? null, owner: mailbox.owner },
+        args.attachments,
+      );
     if (row) await ctx.db.patch("briefs", row.briefId, { updatedAt: now });
     // A reply that was filed is something the advisor needs to know about; mail
     // that could not be filed is already visible on the home view.
@@ -248,6 +257,7 @@ export function readInboundEvent(body: unknown) {
   const message = body.message as Record<string, unknown>;
   const inboxId = clean(message.inbox_id, 200);
   if (!inboxId) throw new ConvexError("The message carried no inbox.");
+  const attachments = readAttachments(message);
   const from =
     typeof message.from === "string"
       ? message.from
@@ -273,5 +283,8 @@ export function readInboundEvent(body: unknown) {
       300,
     ),
     receivedAt: Date.now(),
+    // Left out entirely when there are none, so a plain reply is recorded
+    // exactly as it always was.
+    ...(attachments.length ? { attachments } : {}),
   };
 }

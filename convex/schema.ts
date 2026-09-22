@@ -229,6 +229,10 @@ export const requirementAnswer = v.object({
   // The operator's own words, when the answer was drafted from an emailed reply.
   // Always a verbatim quote of that reply, or absent.
   quote: v.optional(v.string()),
+  // True when the quote came from a PDF the operator attached, which the model
+  // read directly. We hold no text to check it against, so it is never shown as
+  // the operator's checked words.
+  unverified: v.optional(v.boolean()),
 });
 
 // The structured proposal an operator returns. This is the object the advisor
@@ -427,6 +431,9 @@ briefs: defineTable({
     // rather than through its response link. A model draft is checked against
     // this text, never against a paraphrase of it.
     sourceText: v.optional(v.string()),
+    // The figures that stand only on a quote from an attached PDF, which could
+    // not be checked. Absent means every quoted figure was found in the email.
+    unverifiedFields: v.optional(v.array(v.string())),
   })
     .index("by_briefId", ["briefId"])
     .index("by_briefId_and_operatorSlug", ["briefId", "operatorSlug"]),
@@ -458,6 +465,32 @@ briefs: defineTable({
     .index("by_owner", ["owner"])
     .index("by_messageId", ["messageId"])
     .index("by_inboxId", ["inboxId"]),
+
+  // A file an operator attached to an emailed reply. One row per attachment the
+  // reply carried, kept or not: an itinerary we skipped is named with the
+  // reason, so the advisor knows to open the mail rather than assume there was
+  // nothing. Only PDFs are fetched, and their bytes live in file storage.
+  inboxAttachments: defineTable({
+    inboxMessageId: v.id("inboxMessages"),
+    briefId: v.union(v.null(), v.id("briefs")),
+    owner: v.string(),
+    providerAttachmentId: v.string(),
+    filename: v.string(),
+    contentType: v.string(),
+    size: v.number(),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("stored"),
+      v.literal("skipped"),
+      v.literal("failed"),
+    ),
+    reason: v.optional(v.string()),
+    storageId: v.optional(v.id("_storage")),
+    createdAt: v.number(),
+    settledAt: v.optional(v.number()),
+  })
+    .index("by_inboxMessageId", ["inboxMessageId"])
+    .index("by_briefId", ["briefId"]),
 
   // Published websites an advisor found while looking for new operators. A
   // candidate is evidence, not a network member: it becomes an operator only

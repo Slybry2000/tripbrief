@@ -27,6 +27,7 @@ import type * as outbound from "../outbound.js";
 import type * as places from "../places.js";
 import type * as proposals from "../proposals.js";
 import type * as replies from "../replies.js";
+import type * as replyAttachments from "../replyAttachments.js";
 import type * as research from "../research.js";
 import type * as seedData from "../seedData.js";
 import type * as vocabulary from "../vocabulary.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   places: typeof places;
   proposals: typeof proposals;
   replies: typeof replies;
+  replyAttachments: typeof replyAttachments;
   research: typeof research;
   seedData: typeof seedData;
   vocabulary: typeof vocabulary;
