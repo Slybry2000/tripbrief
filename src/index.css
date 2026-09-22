@@ -615,6 +615,14 @@ fieldset { border: 0; margin: 28px 0 0; padding: 0; }
 .proposal-compare-table .gap-line { color: var(--red); font-weight: 700; }
 .proposal-compare-table .clear-line { color: var(--green); font-weight: 700; }
 .proposal-compare-table button { margin-top: 6px; padding: 8px; font-size: .63rem; }
+/* A reply landing mid-review is news, not an error: sand rather than red, and it
+   stays in view while the advisor is scrolled down among the cards. */
+.compare-changed { position: sticky; top: 88px; z-index: 5; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; margin: 0 0 14px; padding: 12px 16px; border: 1px solid #e6d6b8; border-left: 3px solid var(--gold); border-radius: 12px; background: var(--sand); box-shadow: var(--shadow); }
+.compare-changed > div { display: grid; gap: 3px; flex: 1 1 420px; }
+.compare-changed strong { font-size: .92rem; }
+.compare-changed span { color: var(--muted); font-size: .85rem; line-height: 1.45; }
+.compare-changed button { padding: 9px 14px; font-size: .8rem; }
+.proposal-compare-table .updated-tag { align-self: flex-start; padding: 3px 7px; border-radius: 99px; background: var(--gold-bg); color: var(--gold); font-size: .58rem; font-weight: 800; }
 .selection-confirm { display: grid; grid-template-columns: 64px 1fr auto; gap: 22px; align-items: center; padding: 26px; background: white; border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow); }
 .selection-confirm .selected-icon { margin: 0; }
 .selection-confirm h1 { margin: 5px 0 7px; font: 2.2rem Georgia, serif; }

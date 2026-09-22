@@ -3,8 +3,12 @@ import { ConvexError, v, type Infer } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import schema, { briefFields, briefStatus, proposalRecord, requirementAnswer } from "./schema";
 import type { Doc } from "./_generated/dataModel";
+import { comparisonFingerprint, STALE_PICK_MESSAGE } from "../src/lib/pickFingerprint";
 
 export const MAX_SHORTLIST = 5;
+// How many proposals the comparison reads. The selection mutation reads the same
+// number, so it fingerprints exactly the set the page was showing.
+const COMPARED_PROPOSALS = 20;
 const TOKEN = /^[A-Za-z0-9_-]{40,80}$/;
 
 // Convex object validators are strict, so a returned brief is picked field by
@@ -232,7 +236,7 @@ export const get = query({
     const proposals = await ctx.db
       .query("proposals")
       .withIndex("by_briefId", (q) => q.eq("briefId", brief._id))
-      .take(20);
+      .take(COMPARED_PROPOSALS);
     return {
       brief: {
         _id: brief._id,
@@ -526,6 +530,8 @@ export const recordDecision = mutation({
     briefId: v.id("briefs"),
     proposalId: v.id("proposals"),
     reason: v.optional(v.string()),
+    // What the agency was looking at when it chose, from `comparisonFingerprint`.
+    seenFingerprint: v.string(),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -535,6 +541,16 @@ export const recordDecision = mutation({
     const proposal = await ctx.db.get("proposals", args.proposalId);
     if (!proposal || proposal.briefId !== brief._id)
       throw new ConvexError("That proposal does not belong to this brief.");
+    // Recomputed inside the transaction, so a reply that lands after this read
+    // conflicts with the pick instead of slipping in behind it.
+    const current = await ctx.db
+      .query("proposals")
+      .withIndex("by_briefId", (q) => q.eq("briefId", brief._id))
+      .take(COMPARED_PROPOSALS);
+    const now = comparisonFingerprint(
+      current.map((row) => ({ ...row, id: row._id })),
+    );
+    if (now.overall !== args.seenFingerprint) throw new ConvexError(STALE_PICK_MESSAGE);
     await ctx.db.patch("briefs", brief._id, {
       selectedProposalId: proposal._id,
       status: "selected",
