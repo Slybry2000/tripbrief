@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as demo from "../demo.js";
 import type * as demoResponder from "../demoResponder.js";
 import type * as destinations from "../destinations.js";
+import type * as followUps from "../followUps.js";
 import type * as http from "../http.js";
 import type * as integrationLimits from "../integrationLimits.js";
 import type * as mailboxes from "../mailboxes.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   demo: typeof demo;
   demoResponder: typeof demoResponder;
   destinations: typeof destinations;
+  followUps: typeof followUps;
   http: typeof http;
   integrationLimits: typeof integrationLimits;
   mailboxes: typeof mailboxes;
@@ -96,5 +98,6 @@ export declare const internal: FilterApi<
 
 export declare const components: {
   rateLimiter: import("@convex-dev/rate-limiter/_generated/component.js").ComponentApi<"rateLimiter">;
+  workflow: import("@convex-dev/workflow/_generated/component.js").ComponentApi<"workflow">;
   staticHosting: import("@convex-dev/static-hosting/_generated/component.js").ComponentApi<"staticHosting">;
 };

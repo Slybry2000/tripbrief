@@ -1051,3 +1051,9 @@ body { background: var(--paper); font-family: var(--body); color: var(--ink); -w
 .answer-quote.unverified, .requirement-grid q.unverified { border-left-color: var(--gold); }
 .unverified-mark { display: block; color: var(--gold); font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .inline-warning.unverified-notice { color: var(--gold); background: var(--gold-bg); border-color: #ead3a6; }
+/* Follow-ups: a draft spans the operator's row, and the open must-haves read as a list. */
+.follow-up-panel .reply-compose .draft-review { flex: 1 1 100%; margin-top: 8px; }
+.follow-up-panel .draft-review label { display: grid; gap: 6px; font-size: .85rem; color: var(--muted); }
+.follow-up-panel .draft-review textarea { width: 100%; font-size: .9rem; line-height: 1.45; }
+.follow-up-panel .gap-list { margin: 8px 0 0; padding-left: 18px; color: var(--red); font-size: .85rem; display: grid; gap: 4px; }
+.follow-up-panel .inline-success { margin-top: 8px; }

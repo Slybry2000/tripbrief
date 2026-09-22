@@ -12,6 +12,7 @@ import type { Doc } from "./_generated/dataModel";
 import type { Id } from "./_generated/dataModel";
 import { displayName, parseInbox } from "./mailboxes";
 import { demoMode } from "./demo";
+import { startNudgeTimer } from "./followUps";
 
 // The brief's inbox is the only thing that sends, and it sends one operator its
 // own link. Nothing here can reach a second address, and no message ever
@@ -398,6 +399,9 @@ export const markSent = internalMutation({
       updatedAt: now,
     });
     if (args.mailboxId) await ctx.db.patch("mailboxes", args.mailboxId, { lastUsedAt: now });
+    // The nudge timer starts with the request, in the same transaction, so a sent
+    // request can never be left without one or given two.
+    await startNudgeTimer(ctx, row);
     const brief = await ctx.db.get("briefs", row.briefId);
     if (brief && brief.status === "draft")
       await ctx.db.patch("briefs", brief._id, { status: "sent", updatedAt: now });
