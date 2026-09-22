@@ -8,12 +8,12 @@
 - **Repo:** https://github.com/Slybry2000/tripbrief
 - **Frontend:** https://hip-minnow-543.convex.site
 - **Convex deployment:** https://hip-minnow-543.convex.cloud
-- **Components:** @convex-dev/rate-limiter, @convex-dev/static-hosting
+- **Components:** @convex-dev/workflow, @convex-dev/rate-limiter, @convex-dev/static-hosting
 - **Convex features:** schema, indexes, queries, mutations, actions, realtime queries, auth HTTP routes, per-workspace ownership, rate-limiter quotas, static hosting of the frontend
 - **Auth:** Convex Auth
 - **AI models:** gpt-4.1-mini
 - **Started:** 2026-09-12T07:27:18Z
-- **Last updated:** 2026-09-19
+- **Last updated:** 2026-09-22
 
 ## Log
 
@@ -1019,3 +1019,42 @@ account ids are never read into it. At the time of writing: 56 operators found
 on the web, 48 with a published address, 34 requests sent, 34 replies read.
 
 84 tests, typecheck and lint pass.
+
+### 2026-09-22 - follow-ups, PDF replies, and a pick that cannot go stale
+
+Three features, built in parallel and merged together (`e9be4ec`).
+
+**Follow-ups in the request's own thread** (`convex/followUps.ts`,
+`src/FollowUps.tsx`). Sending a request now starts a durable timer on the
+Workflow component (`components.workflow`, started in `outbound.markSent` in
+the same transaction that records the send). After three days of silence it
+drafts one polite nudge; if any reply has arrived, it ends without drafting.
+When a reply leaves must-haves unanswered, partly met, or put off ("TBC", "we
+will confirm"), the agency can draft one follow-up that names exactly those
+requirements by number. Both are fixed templates, never written by the model,
+and neither is ever sent automatically: the agency approves the exact text,
+any edit voids the approval, and the send re-checks all of it in one step.
+One nudge per request and one gap question per operator are enforced by a
+unique key in the data. In demo mode, and on any thread that began in demo
+mode, the only possible recipient is the stand-in inbox.
+
+**PDF itineraries count** (`convex/replyAttachments.ts`). Operators often
+reply with a PDF. Attachments on a matched reply are fetched from AgentMail,
+checked to really be PDFs, stored in Convex file storage, and served only to
+the brief's owner. Drafting a proposal reads them too. Because a quote from a
+PDF cannot be checked against text we never extracted, anything that rests only
+on one is kept but marked "not quote-checked" in the data and wherever it is
+shown. Mail that cannot be matched to a brief is never downloaded.
+
+**A pick cannot be made on data the agency never saw**
+(`src/lib/pickFingerprint.ts`). Replies land live, so the comparison can move
+while someone is deciding. Choosing a trip now carries a fingerprint of what
+was on screen (each proposal's price, dates, availability and requirement
+answers), computed by one shared function on both sides. The server recomputes
+it and refuses a pick that no longer matches; the screen says what changed and
+asks for a fresh look. Bookkeeping such as announcement timestamps does not
+count as a change.
+
+Verified on production by driving the whole flow end to end: the pick was
+accepted, and each of the three requests started its nudge timer. 116 tests,
+typecheck and lint pass.
