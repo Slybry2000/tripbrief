@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 import { demoBrief as brief } from "./fixtures.test";
+import { comparisonFingerprint } from "../src/lib/pickFingerprint";
 
 const modules = import.meta.glob("./**/*.ts");
 const token = (letter: string) => letter.repeat(43);
@@ -163,15 +164,21 @@ test("a decision can only name a proposal that belongs to the brief", async () =
     token: token("a"),
     proposal,
   });
+  const seen = await t.query(api.briefs.get, { briefId: second.briefId });
+  const seenFingerprint = comparisonFingerprint(
+    seen!.proposals.map((row) => ({ ...row, id: row._id })),
+  ).overall;
   await expect(
     t.mutation(api.briefs.recordDecision, {
       briefId: first.briefId,
       proposalId,
+      seenFingerprint,
     }),
   ).rejects.toThrow("does not belong");
   await t.mutation(api.briefs.recordDecision, {
     briefId: second.briefId,
     proposalId,
+    seenFingerprint,
     reason: "Strongest final fit, and the operator confirmed the window.",
   });
   const bundle = await t.query(api.briefs.get, { briefId: second.briefId });
